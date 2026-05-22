@@ -1,0 +1,52 @@
+[project]
+name = "dft_local"
+authors = [ {name = "Maxwell Gisborne", email = "maxwell.gisborne@plymouth.ac.uk"}, ]
+version = "0.4.0"
+requires-python = ">= 3.10"
+dependencies = [
+    "scipy >= 1.14",
+    "numpy >= 2.1",
+    "PyYAML >= 6.0",
+    "six >= 1.16",
+    # "ricetypes >=0.1.2",
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+# [tool.setuptools.packages.find]
+# where = ["src"]
+
+[tool.setuptools.package-data]
+"*" = ["*.so", "*.mplstyle"]
+
+[tool.pytest.ini_options]
+addopts = [
+    '--import-mode=importlib',
+]
+
+[project.optional-dependencies]
+dev = [
+    "ipykernel>=6.29",
+    "ipython>=8.27",
+    "jupyter_client>=8.6",
+    "jupyter_core>=5.7",
+    "ipykernel>=6.29",
+    "ipython>=8.27",
+    ]
+
+
+plots = [
+    "fonttools >= 4.54",
+    "matplotlib >= 3.9",
+    "matplotlib-inline >= 0.1",
+    ]
+    
+
+# pybigdft = [
+#     "PyBigDFT >= 1.0.9",
+#     "pyFutile >= 1.9.3",
+#     ]
+
+all = ['dft_local[dev,plots]']
