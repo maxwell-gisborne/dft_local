@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 
-
 from dft_local import SparseDataset, AtomBlockMatrix
 
 
@@ -263,3 +262,6 @@ def test_matrix_dimension_matches_atom_channels(data):
 
     assert data.H.shape == (expected, expected)
     assert data.S.shape == (expected, expected)
+
+
+
