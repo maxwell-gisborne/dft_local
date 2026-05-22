@@ -2,7 +2,7 @@ from typing import Self
 from dataclasses import dataclass, replace
 from pathlib import Path
 from scipy.io import mmread
-from scipy.sparse import spmatrix, csr_matrix
+from scipy.sparse import spmatrix, csr_matrix, bsr_matrix
 import numpy as np
 from numpy import array, arange, ndarray
 from numpy.typing import NDArray
@@ -81,6 +81,7 @@ class SparseMetadata:
 
     @classmethod
     def load(cls, path: Path, units: Units) -> Self:
+        path = Path(path)
         require_file(path)
 
         positions: list[list[float]] = []
@@ -193,6 +194,7 @@ class AtomBlock:
     dR: np.ndarray
     block: np.ndarray
 
+
 @dataclass(frozen=True)
 class SparseDataset:
     root: Path
@@ -204,6 +206,7 @@ class SparseDataset:
 
     @classmethod
     def load(cls, root: Path, units: Units = eVag) -> Self:
+        root = Path(root)
         root = require_dir(root)
 
         metadata = SparseMetadata.load(root / "sparsematrix_metadata.dat", units=units)
@@ -230,30 +233,11 @@ class SparseDataset:
         return self
 
 
+    # note: that H blocsk are not hermitian!! symmetrize if needed
     def atom_block(self, M: spmatrix, a: int, b: int) -> np.ndarray:
         ia = self.basis.basis_indices(a)
         ib = self.basis.basis_indices(b)
         return M[ia[:, None], ib].toarray()
-
-    # def coupled_atoms(self, M: spmatrix, a: int) -> list[tuple[int, float, float, np.ndarray]]:
-    #     ia = self.basis.basis_indices(a)
-    #     row_block = M[ia, :].tocsr()
-
-    #     basis_cols = row_block.nonzero()[1]
-    #     atoms_b = np.unique(self.metadata.atom_of_basis[basis_cols])
-
-    #     out: list[tuple[int, float, float, np.ndarray]] = []
-    #     Ra = self.metadata.positions[a]
-
-    #     for b in atoms_b:
-    #         block = self.atom_block(M, a, int(b))
-    #         norm = float(np.linalg.norm(block))
-    #         dR = self.metadata.positions[b] - Ra
-    #         dist = float(np.linalg.norm(dR))
-    #         out.append((int(b), dist, norm, dR))
-
-    #     out.sort(key=lambda x: x[2], reverse=True)
-    #     return out
 
     def coupled_atoms( self, M: spmatrix, a: int, ) -> list[AtomBlock]:
         """
@@ -302,6 +286,54 @@ class SparseDataset:
 
         out.sort(key=lambda block: block.norm, reverse=True)
         return out
+
+
+@dataclass(frozen=True)
+class AtomBlockMatrix:
+    M: bsr_matrix
+    positions: np.ndarray
+    symbols: np.ndarray
+
+    @classmethod
+    def from_sparse(cls, M: spmatrix, data: SparseDataset) -> Self:
+        nchan = data.basis.nchannels
+        perm = data.basis.atom_basis.ravel()
+
+        # Put basis into atom-major order:
+        # atom 0 channels, atom 1 channels, ...
+        M_atom_ordered = M[perm, :][:, perm].tobsr(blocksize=(nchan, nchan))
+
+        return cls(
+            M=M_atom_ordered,
+            positions=data.metadata.positions,
+            symbols=data.metadata.symbols,
+        )
+
+    def atom_block_row_raw(self, a: int):
+        start = self.M.indptr[a]
+        stop = self.M.indptr[a + 1]
+        return self.M.indices[start:stop], self.M.data[start:stop]
+
+    def coupled_atom_blocks(self, a: int):
+        atoms_b, blocks = self.atom_block_row_raw(a)
+
+        Ra = self.positions[a]
+        dR = self.positions[atoms_b] - Ra
+        distances = np.linalg.norm(dR, axis=1)
+        norms = np.linalg.norm(blocks, axis=(1, 2))
+
+        order = np.argsort(-norms)
+
+        return [
+            AtomBlock(
+                atom_b=int(atoms_b[i]),
+                dist=float(distances[i]),
+                norm=float(norms[i]),
+                dR=dR[i],
+                block=blocks[i],
+            )
+            for i in order
+        ]
 
 
 
@@ -357,6 +389,9 @@ data = SparseDataset.load(Path("./test_run/run_dir/data"))
 meta = data.metadata
 H = data.H
 S = data.S
+
+H_blocks = AtomBlockMatrix.from_sparse(data.H, data)
+S_blocks = AtomBlockMatrix.from_sparse(data.S, data)
 
 
 
