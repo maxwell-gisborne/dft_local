@@ -3,11 +3,14 @@ from dataclasses import dataclass
 from collections import Counter, deque
 from pathlib import Path
 from scipy.io import mmread
-from scipy.sparse import spmatrix, csr_matrix, bsr_matrix
+from scipy.sparse import bsr_matrix
 from scipy.spatial import cKDTree
 import numpy as np
 from numpy.typing import NDArray
 
+def freeze_array(a):
+    a.flags.writeable = False
+    return a
 
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
@@ -190,11 +193,41 @@ class BasisMap:
 @dataclass(frozen=True)
 class AtomBlock:
     atom_b: int
-    dist: float
+    distance: float
     norm: float
     dR: np.ndarray
     block: np.ndarray
 
+def atom_ordered_bsr(M, basis):
+    perm = basis.atom_basis.ravel()
+    out = M[perm, :][:, perm].tobsr(blocksize=(basis.nchannels, basis.nchannels))
+    if out.indptr.size != basis.natoms + 1:
+        raise ValueError("BSR does not have one block row per atom")
+    return out
+
+def block_row_raw(M:bsr_matrix, atom: int):
+    start = M.indptr[atom]
+    stop = M.indptr[atom + 1]
+    return M.indices[start:stop], M.data[start:stop]
+
+
+def block_view_bsr(M: bsr_matrix, a: int, b: int) -> np.ndarray:
+    """Return read-only block view if present, otherwise a new zero block."""
+    start = M.indptr[a]
+    stop = M.indptr[a + 1]
+
+    row_cols = M.indices[start:stop]
+    row_blocks = M.data[start:stop]
+
+    matches = np.flatnonzero(row_cols == b)
+
+    if len(matches) == 0:
+        return freeze_array(np.zeros(M.blocksize, dtype=M.dtype))
+
+    if len(matches) > 1:
+        raise ValueError(f"Duplicate block entry for a={a}, b={b}")
+
+    return row_blocks[int(matches[0])]
 
 @dataclass(frozen=True)
 class SparseDataset:
@@ -202,8 +235,8 @@ class SparseDataset:
     units: Units
     metadata: SparseMetadata
     basis: BasisMap
-    H: csr_matrix
-    S: csr_matrix
+    H: bsr_matrix
+    S: bsr_matrix
 
     @classmethod
     def load(cls, root: Path, units: Units = eVag) -> Self:
@@ -213,113 +246,45 @@ class SparseDataset:
         metadata = SparseMetadata.load(root / "sparsematrix_metadata.dat", units=units)
         basis = BasisMap.from_metadata(metadata)
 
-        H = mmread(require_file(root / "hamiltonian_sparse.mtx")).tocsr() * units.E
-        S = mmread(require_file(root / "overlap_sparse.mtx")).tocsr()
+        H = atom_ordered_bsr(mmread(require_file(root / "hamiltonian_sparse.mtx")).tocsr() * units.E, basis)
+        S = atom_ordered_bsr(mmread(require_file(root / "overlap_sparse.mtx")).tocsr(), basis)
+
+        for A in (H, S):
+            freeze_array(A.data)
+            freeze_array(A.indices)
+            freeze_array(A.indptr)
+        
+        freeze_array(metadata.positions)
+        freeze_array(metadata.atom_of_basis)
+        freeze_array(metadata.channel_of_basis)
+        freeze_array(metadata.symbols)
 
         return cls(root=root, units=units, metadata=metadata, basis=basis, H=H, S=S).validate()
 
+
     def validate(self) -> Self:
-        if self.H.shape[0] != self.H.shape[1]:
-            raise ValueError(f"H is not square: {self.H.shape}")
+        expected_shape = (
+            self.metadata.nbasis,
+            self.metadata.nbasis,
+        )
 
-        if self.S.shape != self.H.shape:
-            raise ValueError(f"S shape {self.S.shape} != H shape {self.H.shape}")
+        for M, M_name in [ (self.H, 'H'), (self.S, 'S')]:
+            if M.shape != expected_shape:
+                raise ValueError(f"{M_name} shape {M.shape} != {expected_shape}")
 
-        if self.H.shape[0] != self.metadata.nbasis:
-            raise ValueError(f"Matrix dimension {self.H.shape[0]} != nbasis {self.metadata.nbasis}")
+            if M.blocksize != (self.basis.nchannels, self.basis.nchannels):
+                raise ValueError(f"Bad {M_name} blocksize: {M.blocksize}")
 
-        if self.basis.nchannels != 4:
-            raise ValueError(f"Expected 4 channels per atom, got {self.basis.nchannels}")
+            if M.indptr.size != self.metadata.natoms + 1:
+                raise ValueError(f"{M_name} does not have one block row per atom")
 
         return self
 
+    def coupled_atoms(self, M:bsr_matrix, atom: int):
+        atoms_b, blocks = block_row_raw(M, atom)
 
-    # note: that H blocsk are not hermitian!! symmetrize if needed
-    def atom_block(self, M: spmatrix, a: int, b: int) -> np.ndarray:
-        ia = self.basis.basis_indices(a)
-        ib = self.basis.basis_indices(b)
-        return M[ia[:, None], ib].toarray()
-
-    def coupled_atoms( self, M: spmatrix, a: int, ) -> list[AtomBlock]:
-        """
-        Return coupled atom blocks from atom a.
-
-        Each entry is:
-            AtomBlock(atom_b, distance, block_norm, dR, block)
-
-        This avoids repeated sparse slicing by extracting the 4-row sparse block once.
-        """
-        ia = self.basis.basis_indices(a)
-        row_block = M[ia, :].tocoo()
-
-        atom_of_col = self.metadata.atom_of_basis[row_block.col]
-        channel_of_col = self.metadata.channel_of_basis[row_block.col]
-
-        blocks: dict[int, np.ndarray] = {}
-
-        for local_row, atom_b, channel_b, value in zip(
-            row_block.row,
-            atom_of_col,
-            channel_of_col,
-            row_block.data,
-        ):
-            atom_b = int(atom_b)
-
-            block = blocks.get(atom_b)
-            if block is None:
-                block = np.zeros((self.basis.nchannels, self.basis.nchannels), dtype=M.dtype)
-                blocks[atom_b] = block
-
-            block[int(local_row), int(channel_b)] += value
-
-        Ra = self.metadata.positions[a]
-        out: list[AtomBlock] = []
-
-        for atom_b, block in blocks.items():
-            dR = self.metadata.positions[atom_b] - Ra
-            dist = float(np.linalg.norm(dR))
-            norm = float(np.linalg.norm(block))
-            out.append(AtomBlock(atom_b = atom_b,
-                                 dist = dist,
-                                 norm = norm,
-                                 dR = dR,
-                                 block = block))
-
-        out.sort(key=lambda block: block.norm, reverse=True)
-        return out
-
-
-@dataclass(frozen=True)
-class AtomBlockMatrix:
-    M: bsr_matrix
-    positions: np.ndarray
-    symbols: np.ndarray
-
-    @classmethod
-    def from_sparse(cls, M: spmatrix, data: SparseDataset) -> Self:
-        nchan = data.basis.nchannels
-        perm = data.basis.atom_basis.ravel()
-
-        # Put basis into atom-major order:
-        # atom 0 channels, atom 1 channels, ...
-        M_atom_ordered = M[perm, :][:, perm].tobsr(blocksize=(nchan, nchan))
-
-        return cls(
-            M=M_atom_ordered,
-            positions=data.metadata.positions,
-            symbols=data.metadata.symbols,
-        )
-
-    def atom_block_row_raw(self, a: int):
-        start = self.M.indptr[a]
-        stop = self.M.indptr[a + 1]
-        return self.M.indices[start:stop], self.M.data[start:stop]
-
-    def coupled_atom_blocks(self, a: int):
-        atoms_b, blocks = self.atom_block_row_raw(a)
-
-        Ra = self.positions[a]
-        dR = self.positions[atoms_b] - Ra
+        Ra = self.metadata.positions[atom]
+        dR = self.metadata.positions[atoms_b] - Ra
         distances = np.linalg.norm(dR, axis=1)
         norms = np.linalg.norm(blocks, axis=(1, 2))
 
@@ -328,14 +293,13 @@ class AtomBlockMatrix:
         return [
             AtomBlock(
                 atom_b=int(atoms_b[i]),
-                dist=float(distances[i]),
+                distance=float(distances[i]),
                 norm=float(norms[i]),
                 dR=dR[i],
                 block=blocks[i],
             )
             for i in order
         ]
-
 
 
 def coupled_atoms_table(M, data: SparseDataset, a: int):
@@ -345,7 +309,7 @@ def coupled_atoms_table(M, data: SparseDataset, a: int):
             {
                 "atom_b": block.atom_b,
                 "symbol": data.metadata.symbols[block.atom_b],
-                "distance": block.dist,
+                "distance": block.distance,
                 "block_norm": block.norm,
                 "block": block.block,
                 "dRx": block.dR[0],
@@ -364,14 +328,14 @@ def coupled_atoms_table_by_distance(M, data: SparseDataset, a: int):
             {
                 "atom_b": block.atom_b,
                 "symbol": data.metadata.symbols[block.atom_b],
-                "distance": block.dist,
+                "distance": block.distance,
                 "block_norm": block.norm,
                 "block": block.block,
                 "dRx": block.dR[0],
                 "dRy": block.dR[1],
                 "dRz": block.dR[2],
             }
-            for block in sorted(data.coupled_atoms(M, a), key = lambda block:block.dist)
+            for block in sorted(data.coupled_atoms(M, a), key = lambda block:block.distance)
         ]
     )
 
@@ -535,13 +499,13 @@ class NearestNeighbourGraph:
             indptr.append(len(indices))
 
         return cls(
-            positions=positions,
+            positions=freeze_array(positions),
             a0=a0,
             cutoff=float(cutoff),
-            indptr=np.asarray(indptr, dtype=np.int64),
-            indices=np.asarray(indices, dtype=np.int64),
-            distances=np.asarray(distances, dtype=np.float64),
-            vectors=np.asarray(vectors, dtype=np.float64),
+            indptr=freeze_array(np.asarray(indptr, dtype=np.int64)),
+            indices=freeze_array(np.asarray(indices, dtype=np.int64)),
+            distances=freeze_array(np.asarray(distances, dtype=np.float64)),
+            vectors=freeze_array(np.asarray(vectors, dtype=np.float64)),
         )
 
     @property
@@ -630,13 +594,14 @@ class EdgeDirections:
     plane_e2: FloatArray             # shape (3,)
     plane_normal: FloatArray         # shape (3,)
 
+
     @classmethod
     def from_geometry(
         cls,
-        geom: "NearestNeighbourGraph",
+        geom: NearestNeighbourGraph,
         *,
         anchor_atom: int | None = None,
-    ) -> "EdgeDirections":
+    ) -> Self:
         if anchor_atom is None:
             anchor_atom = geom.choose_anchor()
 
@@ -669,8 +634,8 @@ class EdgeDirections:
         return cls(
             anchor_atom=int(anchor_atom),
             anchor_neighbours=anchor_neighbours,
-            d_vectors=d_vectors,
-            d_unit=d_unit,
+            d_vectors=freeze_array(d_vectors),
+            d_unit=freeze_array(d_unit),
             plane_e1=plane_e1,
             plane_e2=plane_e2,
             plane_normal=plane_normal,
@@ -787,16 +752,19 @@ class EdgeGroupLabels:
     eps: IntArray
     anchor_atom: int
     visited: NDArray[np.bool_]
+    element_to_atom: dict[GdElement, int]
+    geometry: NearestNeighbourGraph
+    edges: EdgeDirections
 
     @classmethod
     def from_geometry(
         cls,
-        geom: "NearestNeighbourGraph",
-        edge_dirs: "EdgeDirections",
+        geom: NearestNeighbourGraph,
+        edge_dirs: EdgeDirections,
         *,
         anchor_atom: int | None = None,
         strict: bool = True,
-    ) -> "EdgeGroupLabels":
+    ) -> Self:
         if anchor_atom is None:
             anchor_atom = edge_dirs.anchor_atom
 
@@ -852,6 +820,7 @@ class EdgeGroupLabels:
                 f"Total conflicts={len(conflicts)}"
             )
 
+        element_to_atom = {}
         for a, g in enumerate(labels):
             if g is None:
                 continue
@@ -860,12 +829,21 @@ class EdgeGroupLabels:
             n[a] = g.n
             eps[a] = g.eps
 
+            if g in element_to_atom:
+                raise ValueError(
+                    f"Duplicate G_d label {g}: atoms {element_to_atom[g]} and {a}"
+                )
+            element_to_atom[g] = a
+
         return cls(
-            m=m,
-            n=n,
-            eps=eps,
+            m=freeze_array(m),
+            n=freeze_array(n),
+            eps=freeze_array(eps),
             anchor_atom=int(anchor_atom),
-            visited=visited,
+            visited=freeze_array(visited),
+            element_to_atom=element_to_atom,
+            geometry = geom,
+            edges = edge_dirs,
         )
 
     @property
@@ -894,9 +872,35 @@ class EdgeGroupLabels:
         """
         return self.element(a).inverse() * self.element(b)
 
+    def gd_reconstructed_positions(
+        labels:Self,
+    ) -> FloatArray:
+        R0 = geom.positions[labels.anchor_atom]
+
+        d1, d2, d3 = labels.edges.d_vectors
+
+        ax = d1 - d2
+        ay = d1 - d3
+
+        return (
+            R0
+            + labels.m[:, None] * ax[None, :]
+            + labels.n[:, None] * ay[None, :]
+            + labels.eps[:, None] * d1[None, :]
+        )
+
+
+    def gd_position_errors(
+        labels: Self,
+    ) -> FloatArray:
+        R_pred = labels.gd_reconstructed_positions()
+        return np.linalg.norm(R_pred - geom.positions, axis=1)
+
+
     def diagnostics(self) -> dict:
         visited_count = int(np.sum(self.visited))
         eps_counts = dict(Counter(map(int, self.eps[self.visited])))
+        err = self.gd_position_errors()
 
         return {
             "natoms": self.natoms,
@@ -908,16 +912,15 @@ class EdgeGroupLabels:
             "m_max": int(np.max(self.m[self.visited])) if visited_count else None,
             "n_min": int(np.min(self.n[self.visited])) if visited_count else None,
             "n_max": int(np.max(self.n[self.visited])) if visited_count else None,
+            "positino_reconstruction_errors": {'max': float(err.max()), 'mean': float(err.mean()), 'medium': float(np.median(err))},
         }
+
 
 
 data = SparseDataset.load(Path("./test_run/run_dir/data"))
 meta = data.metadata
 H = data.H
 S = data.S
-H_blocks = AtomBlockMatrix.from_sparse(data.H, data)
-S_blocks = AtomBlockMatrix.from_sparse(data.S, data)
-
 
 geom = NearestNeighbourGraph.from_positions(data.metadata.positions)
 anchor = geom.choose_anchor()
@@ -926,7 +929,6 @@ labels = EdgeGroupLabels.from_geometry(geom, edges)
 
 
 # print(coupled_atoms_table(H, data, 0))
-
 
 from pprint import pprint
 pprint(geom.diagnostics())

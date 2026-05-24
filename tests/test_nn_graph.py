@@ -1,31 +1,7 @@
 import numpy as np
 import pytest
 
-from dft_local import NearestNeighbourGraph,SparseDataset,EdgeDirections, GdElement, EdgeGroupLabels
-
-@pytest.fixture(scope="session")
-def data():
-    return SparseDataset.load("./test_run/run_dir/data")
-
-
-@pytest.fixture(scope="session")
-def geom(data):
-    return NearestNeighbourGraph.from_positions(data.metadata.positions)
-
-
-@pytest.fixture(scope="session")
-def edge_dirs(geom):
-    return EdgeDirections.from_geometry(geom)
-
-@pytest.fixture(scope="session")
-def edges(geom):
-    return EdgeDirections.from_geometry(geom)
-
-
-@pytest.fixture(scope="session")
-def labels(geom, edges):
-    return EdgeGroupLabels.from_geometry(geom, edges)
-
+from dft_local import GdElement
 
 def test_geometry_a0_positive(geom):
     assert np.isfinite(geom.a0)

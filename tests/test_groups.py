@@ -3,7 +3,6 @@ import pytest
 
 from dft_local import GdElement
 
-
 def test_gd_identity():
     e = GdElement.identity()
     x = GdElement.x()
@@ -67,3 +66,13 @@ def test_hexagon_relation():
     e = GdElement.identity()
 
     assert d3 * d2 * d1 * d3 * d2 * d1 == e
+
+def test_group_label_reverse_lookup(labels):
+    for a in range(labels.natoms):
+        g = labels.element(a)
+        assert labels.element_to_atom.get(g) == a
+
+
+def test_gd_labels_reconstruct_positions(labels):
+    err = labels.gd_position_errors()
+    assert np.max(err) < 1e-6

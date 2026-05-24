@@ -1,22 +1,13 @@
 import numpy as np
 import pytest
+from scipy.sparse import bsr_matrix
 
-from dft_local import SparseDataset, AtomBlockMatrix
+from dft_local import SparseDataset
 
 
 @pytest.fixture(scope="session")
 def data():
     return SparseDataset.load("./test_run/run_dir/data")
-
-
-@pytest.fixture(scope="session")
-def H_blocks(data):
-    return AtomBlockMatrix.from_sparse(data.H, data)
-
-
-@pytest.fixture(scope="session")
-def S_blocks(data):
-    return AtomBlockMatrix.from_sparse(data.S, data)
 
 
 @pytest.fixture(scope="session")
@@ -31,6 +22,26 @@ def sample_atoms(data, rng):
     return rng.choice(n, size=size, replace=False)
 
 
+def bsr_row_raw(M: bsr_matrix, atom: int):
+    start = M.indptr[atom]
+    stop = M.indptr[atom + 1]
+    return M.indices[start:stop], M.data[start:stop]
+
+
+def atom_block_bsr(M: bsr_matrix, a: int, b: int, *, copy: bool = False):
+    atoms_b, blocks = bsr_row_raw(M, a)
+    hits = np.flatnonzero(atoms_b == b)
+
+    if len(hits) == 0:
+        out = np.zeros(M.blocksize, dtype=M.dtype)
+        return out.copy() if copy else out
+
+    if len(hits) > 1:
+        raise AssertionError(f"duplicate BSR block for a={a}, b={b}")
+
+    block = blocks[int(hits[0])]
+    return block.copy() if copy else block
+
 
 def assert_blocks_close(A, B, *, atol=1e-8, rtol=1e-6, context=""):
     if not np.allclose(A, B, atol=atol, rtol=rtol):
@@ -41,76 +52,43 @@ def assert_blocks_close(A, B, *, atol=1e-8, rtol=1e-6, context=""):
             f"block mismatch {context}: norm error={err}, relative={rel}"
         )
 
-def check_raw_row_against_atom_block(data, block_matrix, M, a, atol=1e-12):
-    atoms_b, blocks = block_matrix.atom_block_row_raw(a)
 
-    for b, block in zip(atoms_b, blocks):
-        direct = data.atom_block(M, a, int(b))
-        assert_blocks_close(
-            block,
-            direct,
-            atol=atol,
-            context=f"a={a}, b={int(b)}",
-        )
-
-
-
-def check_pretty_against_raw(block_matrix, a, atol=1e-12):
-    atoms_b, blocks = block_matrix.atom_block_row_raw(a)
-    raw = {int(b): block for b, block in zip(atoms_b, blocks)}
-
-    pretty = block_matrix.coupled_atom_blocks(a)
-
-    # Works if pretty returns AtomBlock dataclasses.
-    pretty_blocks = {int(x.atom_b): x.block for x in pretty}
-
-    assert set(raw) == set(pretty_blocks)
-
-    for b in raw:
-        assert_blocks_close(
-            raw[b],
-            pretty_blocks[b],
-            atol=atol,
-            context=f"a={a}, b={b}",
-        )
-
-
-def check_bsr_roundtrip(data, block_matrix, M, atol=1e-12):
-    perm = data.basis.atom_basis.ravel()
-
-    M_atom_ordered = M[perm, :][:, perm].tocsr()
-    M_from_bsr = block_matrix.M.tocsr()
-
-    diff = M_atom_ordered - M_from_bsr
-
-    if diff.nnz == 0:
-        return
-
-    max_err = np.max(np.abs(diff.data))
-    assert max_err <= atol
-
-
-def check_block_hermitian(data, block_matrix, M, atoms, atol=1e-7, rtol=1e-5):
+def check_block_hermitian(M: bsr_matrix, atoms, *, atol=1e-7, rtol=1e-5):
     for a in atoms:
         a = int(a)
-        atoms_b, blocks = block_matrix.atom_block_row_raw(a)
+        atoms_b, blocks = bsr_row_raw(M, a)
 
         for b, Mab in zip(atoms_b, blocks):
             b = int(b)
-            Mba = data.atom_block(M, b, a)
+            Mba = atom_block_bsr(M, b, a)
 
             assert_blocks_close(
                 Mab,
                 Mba.conj().T,
                 atol=atol,
+                rtol=rtol,
                 context=f"a={a}, b={b}",
             )
+
+
+def coupled_atom_blocks(M: bsr_matrix, positions: np.ndarray, a: int):
+    atoms_b, blocks = bsr_row_raw(M, a)
+
+    Ra = positions[a]
+    dR = positions[atoms_b] - Ra
+    distances = np.linalg.norm(dR, axis=1)
+    norms = np.linalg.norm(blocks, axis=(1, 2))
+
+    order = np.argsort(-norms)
+
+    return atoms_b[order], blocks[order], distances[order], norms[order], dR[order]
 
 
 def test_dataset_shapes(data):
     assert data.H.shape[0] == data.H.shape[1]
     assert data.S.shape == data.H.shape
     assert data.H.shape[0] == data.metadata.nbasis
+
     assert data.basis.nchannels == 4
     assert data.basis.atom_basis.shape == (
         data.metadata.natoms,
@@ -118,65 +96,111 @@ def test_dataset_shapes(data):
     )
 
 
-def test_H_bsr_roundtrip(data, H_blocks):
-    check_bsr_roundtrip(data, H_blocks, data.H)
+def test_H_and_S_are_bsr(data):
+    assert isinstance(data.H, bsr_matrix)
+    assert isinstance(data.S, bsr_matrix)
 
 
-def test_S_bsr_roundtrip(data, S_blocks):
-    check_bsr_roundtrip(data, S_blocks, data.S)
+def test_H_bsr_has_expected_blocksize(data):
+    assert data.H.blocksize == (data.basis.nchannels, data.basis.nchannels)
+    assert data.H.indptr.shape == (data.metadata.natoms + 1,)
+    assert data.H.data.shape[1:] == data.H.blocksize
 
 
-def test_H_raw_rows_match_direct_atom_blocks(data, H_blocks, sample_atoms):
-    for a in sample_atoms:
-        check_raw_row_against_atom_block(data, H_blocks, data.H, int(a))
+def test_S_bsr_has_expected_blocksize(data):
+    assert data.S.blocksize == (data.basis.nchannels, data.basis.nchannels)
+    assert data.S.indptr.shape == (data.metadata.natoms + 1,)
+    assert data.S.data.shape[1:] == data.S.blocksize
 
 
-def test_S_raw_rows_match_direct_atom_blocks(data, S_blocks, sample_atoms):
-    for a in sample_atoms:
-        check_raw_row_against_atom_block(data, S_blocks, data.S, int(a))
+def test_bsr_indices_are_atom_indices(data):
+    assert np.all(data.H.indices >= 0)
+    assert np.all(data.H.indices < data.metadata.natoms)
+
+    assert np.all(data.S.indices >= 0)
+    assert np.all(data.S.indices < data.metadata.natoms)
 
 
-def test_H_pretty_rows_match_raw_rows(H_blocks, sample_atoms):
-    for a in sample_atoms:
-        check_pretty_against_raw(H_blocks, int(a))
+def test_bsr_rows_have_matching_lengths(data, sample_atoms):
+    for M in [data.H, data.S]:
+        for a in sample_atoms:
+            atoms_b, blocks = bsr_row_raw(M, int(a))
+
+            assert len(atoms_b) == len(blocks)
+            assert blocks.ndim == 3
+            assert blocks.shape[1:] == M.blocksize
 
 
-def test_S_pretty_rows_match_raw_rows(S_blocks, sample_atoms):
-    for a in sample_atoms:
-        check_pretty_against_raw(S_blocks, int(a))
+def test_bsr_rows_have_no_duplicate_atom_columns(data, sample_atoms):
+    for M in [data.H, data.S]:
+        for a in sample_atoms:
+            atoms_b, _blocks = bsr_row_raw(M, int(a))
+            assert len(set(map(int, atoms_b))) == len(atoms_b)
 
 
+def test_atom_block_bsr_matches_raw_row(data, sample_atoms):
+    for M in [data.H, data.S]:
+        for a in sample_atoms:
+            a = int(a)
+            atoms_b, blocks = bsr_row_raw(M, a)
 
-@pytest.mark.xfail(reason="Raw BigDFT H is not exactly block-Hermitian before symmetrisation")
-def test_H_block_hermitian(data, H_blocks, sample_atoms):
-    check_block_hermitian(data, H_blocks, data.H, sample_atoms)
+            for b, block in zip(atoms_b, blocks):
+                direct = atom_block_bsr(M, a, int(b))
 
-def test_H_global_hermitian_defect(data):
-    defect = data.H - data.H.getH()
-    rel = np.linalg.norm(defect.data) / np.linalg.norm(data.H.data)
-    assert rel < 1e-5
+                assert_blocks_close(
+                    block,
+                    direct,
+                    atol=1e-12,
+                    rtol=0.0,
+                    context=f"a={a}, b={int(b)}",
+                )
 
-def test_S_global_hermitian_defect(data):
-    defect = data.S - data.S.getH()
-    rel = np.linalg.norm(defect.data) / np.linalg.norm(data.S.data)
 
-    assert rel < 1e-10
+def test_missing_atom_block_returns_zero(data, sample_atoms):
+    """
+    Find at least one absent block in each sampled row and check zero return.
+    """
+    natoms = data.metadata.natoms
 
-def test_symmetrised_H_block_hermitian(data, sample_atoms):
-    H_herm = 0.5 * (data.H + data.H.getH())
-    H_herm_blocks = AtomBlockMatrix.from_sparse(H_herm, data)
+    for M in [data.H, data.S]:
+        checked = False
 
-    check_block_hermitian(
-        data,
-        H_herm_blocks,
-        H_herm,
-        sample_atoms,
-        atol=1e-12,
-        rtol=1e-10,
-    )
+        for a in sample_atoms:
+            a = int(a)
+            atoms_b, _blocks = bsr_row_raw(M, a)
+            present = set(map(int, atoms_b))
 
-def test_S_block_hermitian(data, S_blocks, sample_atoms):
-    check_block_hermitian(data, S_blocks, data.S, sample_atoms)
+            for b in range(natoms):
+                if b not in present:
+                    block = atom_block_bsr(M, a, b)
+                    assert block.shape == M.blocksize
+                    assert np.all(block == 0)
+                    checked = True
+                    break
+
+            if checked:
+                break
+
+        assert checked
+
+
+def test_sparse_values_are_finite(data):
+    assert np.all(np.isfinite(data.H.data))
+    assert np.all(np.isfinite(data.S.data))
+
+
+def test_sparse_structure_is_frozen(data):
+    for M in [data.H, data.S]:
+        assert not M.data.flags.writeable
+        assert not M.indices.flags.writeable
+        assert not M.indptr.flags.writeable
+
+
+def test_matrix_dimension_matches_atom_channels(data):
+    expected = data.metadata.natoms * data.basis.nchannels
+
+    assert data.H.shape == (expected, expected)
+    assert data.S.shape == (expected, expected)
 
 
 def test_basis_map_is_permutation(data):
@@ -184,6 +208,7 @@ def test_basis_map_is_permutation(data):
 
     assert len(perm) == data.metadata.nbasis
     assert set(map(int, perm)) == set(range(data.metadata.nbasis))
+
 
 def test_atom_basis_roundtrip(data):
     for atom in range(data.metadata.natoms):
@@ -193,75 +218,106 @@ def test_atom_basis_roundtrip(data):
             assert data.metadata.atom_of_basis[alpha] == atom
             assert data.metadata.channel_of_basis[alpha] == channel
 
-def test_H_bsr_has_expected_blocksize(H_blocks, data):
-    assert H_blocks.M.blocksize == (data.basis.nchannels, data.basis.nchannels)
-    assert H_blocks.M.shape == data.H.shape
 
-
-def test_S_bsr_has_expected_blocksize(S_blocks, data):
-    assert S_blocks.M.blocksize == (data.basis.nchannels, data.basis.nchannels)
-    assert S_blocks.M.shape == data.S.shape
-
-def test_raw_rows_have_matching_lengths(H_blocks, sample_atoms):
+def test_coupled_atom_blocks_sorted_by_norm(data, sample_atoms):
     for a in sample_atoms:
-        atoms_b, blocks = H_blocks.atom_block_row_raw(int(a))
+        _atoms_b, _blocks, _distances, norms, _dR = coupled_atom_blocks(
+            data.H,
+            data.metadata.positions,
+            int(a),
+        )
 
-        assert len(atoms_b) == len(blocks)
-        assert blocks.ndim == 3
-        assert blocks.shape[1:] == H_blocks.M.blocksize
-
-
-def test_coupled_atom_blocks_sorted_by_norm(H_blocks, sample_atoms):
-    for a in sample_atoms:
-        rows = H_blocks.coupled_atom_blocks(int(a))
-        norms = [x.norm for x in rows]
-
-        assert norms == sorted(norms, reverse=True)
+        assert np.all(norms[:-1] >= norms[1:])
 
 
-def test_coupled_atom_blocks_distances(data, H_blocks, sample_atoms):
+def test_coupled_atom_blocks_distances(data, sample_atoms):
     for a in sample_atoms:
         a = int(a)
+        atoms_b, _blocks, distances, _norms, dR = coupled_atom_blocks(
+            data.H,
+            data.metadata.positions,
+            a,
+        )
+
         Ra = data.metadata.positions[a]
 
-        for x in H_blocks.coupled_atom_blocks(a):
-            expected_dR = data.metadata.positions[x.atom_b] - Ra
+        for i, b in enumerate(atoms_b):
+            expected_dR = data.metadata.positions[int(b)] - Ra
             expected_distance = np.linalg.norm(expected_dR)
 
-            assert np.allclose(x.dR, expected_dR)
-            assert np.isclose(x.dist, expected_distance)
+            assert np.allclose(dR[i], expected_dR)
+            assert np.isclose(distances[i], expected_distance)
 
 
-def test_coupled_atom_blocks_norms(H_blocks, sample_atoms):
+def test_coupled_atom_blocks_norms(data, sample_atoms):
     for a in sample_atoms:
-        for x in H_blocks.coupled_atom_blocks(int(a)):
-            assert np.isclose(x.norm, np.linalg.norm(x.block))
+        _atoms_b, blocks, _distances, norms, _dR = coupled_atom_blocks(
+            data.H,
+            data.metadata.positions,
+            int(a),
+        )
 
-def test_overlap_diagonal_blocks_are_finite(data, S_blocks, sample_atoms):
+        assert np.allclose(norms, np.linalg.norm(blocks, axis=(1, 2)))
+
+
+def test_overlap_diagonal_blocks_are_finite(data, sample_atoms):
     for a in sample_atoms:
         a = int(a)
-        direct = data.atom_block(data.S, a, a)
+        Saa = atom_block_bsr(data.S, a, a)
 
-        assert np.all(np.isfinite(direct))
-        assert np.linalg.norm(direct) > 0
+        assert np.all(np.isfinite(Saa))
+        assert np.linalg.norm(Saa) > 0
+
 
 def test_overlap_diagonal_entries_positive(data, sample_atoms):
     for a in sample_atoms:
-        Saa = data.atom_block(data.S, int(a), int(a))
+        Saa = atom_block_bsr(data.S, int(a), int(a))
         diag = np.diag(Saa)
 
         assert np.all(diag > 0)
 
 
-def test_sparse_values_are_finite(data):
-    assert np.all(np.isfinite(data.H.data))
-    assert np.all(np.isfinite(data.S.data))
+def test_H_global_hermitian_defect(data):
+    defect = data.H - data.H.getH()
+    rel = np.linalg.norm(defect.data) / np.linalg.norm(data.H.data)
 
-def test_matrix_dimension_matches_atom_channels(data):
-    expected = data.metadata.natoms * data.basis.nchannels
-
-    assert data.H.shape == (expected, expected)
-    assert data.S.shape == (expected, expected)
+    # Raw BigDFT H is not exactly Hermitian, but should be close.
+    assert rel < 1e-5
 
 
+def test_S_global_hermitian_defect(data):
+    defect = data.S - data.S.getH()
 
+    if defect.nnz == 0:
+        return
+
+    rel = np.linalg.norm(defect.data) / np.linalg.norm(data.S.data)
+    assert rel < 1e-10
+
+
+@pytest.mark.xfail(reason="Raw BigDFT H is not exactly block-Hermitian before symmetrisation")
+def test_H_block_hermitian_raw(data, sample_atoms):
+    check_block_hermitian(data.H, sample_atoms)
+
+
+def test_S_block_hermitian(data, sample_atoms):
+    check_block_hermitian(data.S, sample_atoms, atol=1e-10, rtol=1e-8)
+
+
+def test_symmetrised_H_global_hermitian(data):
+    H_herm = 0.5 * (data.H + data.H.getH())
+    defect = H_herm - H_herm.getH()
+
+    if defect.nnz:
+        assert np.max(np.abs(defect.data)) < 1e-12
+
+
+def test_symmetrised_H_block_hermitian(data, sample_atoms):
+    H_herm = 0.5 * (data.H + data.H.getH())
+
+    check_block_hermitian(
+        H_herm,
+        sample_atoms,
+        atol=1e-12,
+        rtol=1e-10,
+    )
