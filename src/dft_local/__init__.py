@@ -1,10 +1,11 @@
-from typing import Self
-from dataclasses import dataclass
+from typing import Self, Tuple
+from dataclasses import dataclass, replace
 from collections import Counter, deque
 from pathlib import Path
 from scipy.io import mmread
 from scipy.sparse import bsr_matrix
 from scipy.spatial import cKDTree
+from scipy.linalg import eigvalsh, eigh
 import numpy as np
 from numpy.typing import NDArray
 
@@ -12,8 +13,15 @@ def freeze_array(a):
     a.flags.writeable = False
     return a
 
+def freeze_bsr(M):
+    M.data.flags.writeable = False
+    M.indices.flags.writeable = False
+    M.indptr.flags.writeable = False
+    return M
+
 FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
+BlockArray = NDArray[np.float64] | NDArray[np.complex128]
 
 
 @dataclass(frozen=True)
@@ -249,10 +257,9 @@ class SparseDataset:
         H = atom_ordered_bsr(mmread(require_file(root / "hamiltonian_sparse.mtx")).tocsr() * units.E, basis)
         S = atom_ordered_bsr(mmread(require_file(root / "overlap_sparse.mtx")).tocsr(), basis)
 
-        for A in (H, S):
-            freeze_array(A.data)
-            freeze_array(A.indices)
-            freeze_array(A.indptr)
+
+        freeze_bsr(H)
+        freeze_bsr(S)
         
         freeze_array(metadata.positions)
         freeze_array(metadata.atom_of_basis)
@@ -894,7 +901,7 @@ class EdgeGroupLabels:
         labels: Self,
     ) -> FloatArray:
         R_pred = labels.gd_reconstructed_positions()
-        return np.linalg.norm(R_pred - geom.positions, axis=1)
+        return np.linalg.norm(R_pred - labels.geometry.positions, axis=1)
 
 
     def diagnostics(self) -> dict:
@@ -912,9 +919,777 @@ class EdgeGroupLabels:
             "m_max": int(np.max(self.m[self.visited])) if visited_count else None,
             "n_min": int(np.min(self.n[self.visited])) if visited_count else None,
             "n_max": int(np.max(self.n[self.visited])) if visited_count else None,
-            "positino_reconstruction_errors": {'max': float(err.max()), 'mean': float(err.mean()), 'medium': float(np.median(err))},
+            "position_reconstruction_errors": {
+                "max": float(err.max()),
+                "mean": float(err.mean()),
+                "median": float(np.median(err)),
+            },
         }
 
+
+def relative_labels_for_row(labels: EdgeGroupLabels, atom: int, atoms_b: IntArray):
+    """
+    Vectorised relative labels for a BSR block row.
+
+    Returns arrays h_m, h_n, h_eps such that
+
+        h = g_atom^-1 g_b
+
+    for each b in atoms_b.
+    """
+
+    '''
+    For atoms a and b:
+
+    g_a = (r_a, eps_a)
+    g_b = (r_b, eps_b)
+
+        with group law
+
+    (r,e)(r',e') = (r + (-1)^e r', e xor e')
+
+        Then
+
+    h = g_a^-1 g_b
+
+        is:
+
+    h.r = (-1)^eps_a * (r_b - r_a)
+    h.eps = eps_a xor eps_b
+    ''' 
+
+    atom = int(atom)
+    atoms_b = np.asarray(atoms_b, dtype=np.int64)
+
+    sign = 1 if labels.eps[atom] == 0 else -1
+
+    h_m = sign * (labels.m[atoms_b] - labels.m[atom])
+    h_n = sign * (labels.n[atoms_b] - labels.n[atom])
+    h_eps = labels.eps[atom] ^ labels.eps[atoms_b]
+
+    return h_m, h_n, h_eps
+
+@dataclass(frozen=True, slots=True)
+class GdKernelArrays:
+    h_m: IntArray              # shape (N,)
+    h_n: IntArray              # shape (N,)
+    h_eps: IntArray            # shape (N,)
+    blocks: BlockArray         # shape (N, q, q)
+    matrix_name: str = ""
+
+    @classmethod
+    def from_anchored(
+        cls,
+        M: bsr_matrix,
+        labels: EdgeGroupLabels,
+        anchor_atom: int | None = None,
+        matrix_name: str = "",
+        copy_blocks: bool = False,
+    ):
+        if anchor_atom is None:
+            anchor_atom = labels.anchor_atom
+
+        atoms_b, blocks = block_row_raw(M, anchor_atom)
+
+        h_m, h_n, h_eps = relative_labels_for_row(labels, anchor_atom, atoms_b)
+
+        if copy_blocks:
+            blocks = freeze_array(np.array(blocks, copy=True))
+
+        return cls(
+            h_m=freeze_array(np.asarray(h_m, dtype=np.int64)),
+            h_n=freeze_array(np.asarray(h_n, dtype=np.int64)),
+            h_eps=freeze_array(np.asarray(h_eps, dtype=np.int64)),
+            blocks=np.asarray(blocks),
+            matrix_name=matrix_name,
+        )
+
+    @classmethod
+    def from_average(
+        cls,
+        M: bsr_matrix,
+        labels: EdgeGroupLabels,
+        anchors: IntArray | None = None,
+        matrix_name: str = "",
+    ) -> Self:
+        """
+        Average block rows over anchors to form an effective homogeneous kernel.
+
+            K(h) = average_a M[a, a h]
+
+        where h = g_a^-1 g_b.
+        """
+        if anchors is None:
+            anchors = labels.geometry.core_bulk_atoms()
+
+        anchors = np.asarray(anchors, dtype=np.int64)
+
+        if len(anchors) == 0:
+            raise ValueError("No anchors supplied for averaged kernel")
+
+        sums: dict[tuple[int, int, int], np.ndarray] = {}
+        counts: dict[tuple[int, int, int], int] = {}
+
+        for a in anchors:
+            a = int(a)
+            atoms_b, blocks = block_row_raw(M, a)
+
+            h_m, h_n, h_eps = relative_labels_for_row(labels, a, atoms_b)
+
+            for hm, hn, he, block in zip(h_m, h_n, h_eps, blocks):
+                key = (int(hm), int(hn), int(he))
+
+                if key not in sums:
+                    sums[key] = np.zeros_like(block, dtype=np.result_type(block, np.float64))
+                    counts[key] = 0
+
+                sums[key] += block
+                counts[key] += 1
+
+        # Deterministic ordering: eps, then m, then n, or choose m,n,eps.
+        keys = sorted(sums.keys(), key=lambda x: (x[2], x[0], x[1]))
+
+        h_m = np.asarray([k[0] for k in keys], dtype=np.int64)
+        h_n = np.asarray([k[1] for k in keys], dtype=np.int64)
+        h_eps = np.asarray([k[2] for k in keys], dtype=np.int64)
+
+        blocks = np.asarray(
+            [sums[k] / counts[k] for k in keys],
+            dtype=np.result_type(M.data, np.float64),
+        )
+
+        freeze_array(h_m)
+        freeze_array(h_n)
+        freeze_array(h_eps)
+        freeze_array(blocks)
+
+        return cls(
+            h_m=h_m,
+            h_n=h_n,
+            h_eps=h_eps,
+            blocks=blocks,
+            matrix_name=matrix_name,
+        )
+
+    def __post_init__(self) -> None:
+        N = len(self.h_m)
+
+        if self.h_n.shape != (N,):
+            raise ValueError("h_n shape mismatch")
+        if self.h_eps.shape != (N,):
+            raise ValueError("h_eps shape mismatch")
+        if self.blocks.ndim != 3:
+            raise ValueError(f"blocks must have shape (N,q,q), got {self.blocks.shape}")
+        if self.blocks.shape[0] != N:
+            raise ValueError("blocks/support length mismatch")
+        if self.blocks.shape[1] != self.blocks.shape[2]:
+            raise ValueError("blocks must be square")
+        if not np.all((self.h_eps == 0) | (self.h_eps == 1)):
+            raise ValueError("h_eps must contain only 0 and 1")
+        if not np.all(np.isfinite(self.blocks)):
+            raise ValueError("blocks contain NaN or Inf")
+
+    def star_symmetrised(
+        self,
+        missing: str = "zero",
+        matrix_name: str | None = None,
+    ) -> Self:
+        """
+        Return kernel satisfying
+
+            K(h^-1) = K(h)^†
+
+        by replacing
+
+            K(h) -> 1/2 [ K(h) + K(h^-1)^† ]
+
+        If missing='zero', absent inverse blocks are treated as zero.
+        If missing='keep', absent inverse blocks are kept as 1/2 K(h), and the
+        inverse support is added as 1/2 K(h)^†.
+        """
+        if missing not in ("zero", "keep"):
+            raise ValueError("missing must be 'zero' or 'keep'")
+
+        q = self.blocksize
+
+        by_key: dict[tuple[int, int, int], np.ndarray] = {
+            (int(m), int(n), int(e)): block
+            for m, n, e, block in zip(self.h_m, self.h_n, self.h_eps, self.blocks)
+        }
+
+        all_keys = set(by_key)
+
+        if missing == "keep":
+            for key in list(by_key):
+                all_keys.add(gd_inverse_label(*key))
+
+        out: dict[tuple[int, int, int], np.ndarray] = {}
+
+        zero = np.zeros((q, q), dtype=np.result_type(self.blocks, np.complex128))
+
+        for key in all_keys:
+            inv = gd_inverse_label(*key)
+
+            K_h = by_key.get(key, zero)
+            K_inv = by_key.get(inv, zero)
+
+            out[key] = 0.5 * (K_h + K_inv.conj().T)
+
+        keys = sorted(out.keys(), key=lambda x: (x[2], x[0], x[1]))
+
+        h_m = np.asarray([k[0] for k in keys], dtype=np.int64)
+        h_n = np.asarray([k[1] for k in keys], dtype=np.int64)
+        h_eps = np.asarray([k[2] for k in keys], dtype=np.int64)
+        blocks = np.asarray([out[k] for k in keys], dtype=np.complex128)
+
+        freeze_array(h_m)
+        freeze_array(h_n)
+        freeze_array(h_eps)
+        freeze_array(blocks)
+
+        return type(self)(
+            h_m=h_m,
+            h_n=h_n,
+            h_eps=h_eps,
+            blocks=blocks,
+            matrix_name=self.matrix_name + " star-sym" if matrix_name is None else matrix_name,
+        )
+
+    @property
+    def support_size(self) -> int:
+        return len(self.h_m)
+
+
+    @property
+    def blocksize(self) -> int:
+        return self.blocks.shape[1]
+
+
+    def symbol_generic(kernel:Self,  k1: float, k2:float) -> np.ndarray:
+        """
+        Generic 2D irrep symbol for G_d.
+
+        Returns dense matrix with shape (2*q, 2*q).
+        """
+        K = kernel.blocks
+        q = K.shape[1]
+
+        theta = k1 * kernel.h_m + k2 * kernel.h_n
+        phase = np.exp(1j * theta)
+
+        out = np.zeros((2 * q, 2 * q), dtype=np.complex128)
+
+        even = kernel.h_eps == 0
+        odd = kernel.h_eps == 1
+
+        # eps = 0:
+        # Omega = [[phase, 0],
+        #          [0, conj(phase)]]
+        if np.any(even):
+            K0 = K[even]
+            p0 = phase[even]
+
+            out[0:q, 0:q] += np.einsum("h,hij->ij", p0, K0)
+            out[q:2*q, q:2*q] += np.einsum("h,hij->ij", np.conj(p0), K0)
+
+        # eps = 1:
+        # Omega = [[0, conj(phase)],
+        #          [phase, 0]]
+        if np.any(odd):
+            K1 = K[odd]
+            p1 = phase[odd]
+
+            out[0:q, q:2*q] += np.einsum("h,hij->ij", np.conj(p1), K1)
+            out[q:2*q, 0:q] += np.einsum("h,hij->ij", p1, K1)
+
+        return out
+
+    def symbol_fixed(self, k1: float, k2: float, sigma: int) -> np.ndarray:
+        """
+        One-dimensional fixed-point irrep symbol.
+
+        Valid at k in {0, pi}^2.
+        """
+        if sigma not in (-1, 1):
+            raise ValueError(f"sigma must be ±1, got {sigma}")
+
+        theta = k1 * self.h_m + k2 * self.h_n
+        coeff = np.exp(1j * theta) * (sigma ** self.h_eps)
+
+        return np.einsum("h,hij->ij", coeff, self.blocks).astype(np.complex128)
+
+    def diagnostics(self) -> dict:
+        norms = np.linalg.norm(self.blocks, axis=(1, 2))
+
+        return {
+            "matrix_name": self.matrix_name,
+            "support_size": self.support_size,
+            "blocksize": self.blocksize,
+            "num_even": int(np.sum(self.h_eps == 0)),
+            "num_odd": int(np.sum(self.h_eps == 1)),
+            "norm_min": float(np.min(norms)) if len(norms) else None,
+            "norm_max": float(np.max(norms)) if len(norms) else None,
+            "norm_median": float(np.median(norms)) if len(norms) else None,
+        }
+
+    def star_defect(self) -> dict:
+        """
+        Measure failure of K(h^-1) = K(h)^†.
+        """
+        by_key: dict[tuple[int, int, int], np.ndarray] = {
+            (int(m), int(n), int(e)): block
+            for m, n, e, block in zip(self.h_m, self.h_n, self.h_eps, self.blocks)
+        }
+
+        defects = []
+
+        seen = set()
+
+        for key, K_h in by_key.items():
+            if key in seen:
+                continue
+
+            inv = gd_inverse_label(*key)
+            seen.add(key)
+            seen.add(inv)
+
+            K_inv = by_key.get(inv)
+
+            if K_inv is None:
+                defects.append((key, None, np.inf, np.linalg.norm(K_h)))
+                continue
+
+            err = np.linalg.norm(K_h - K_inv.conj().T)
+            scale = max(np.linalg.norm(K_h), np.linalg.norm(K_inv), 1.0)
+            defects.append((key, inv, err, err / scale))
+
+        finite = [d[3] for d in defects if np.isfinite(d[3])]
+        missing = sum(1 for d in defects if d[1] is None)
+
+        return {
+            "matrix_name": self.matrix_name,
+            "support_size": self.support_size,
+            "num_missing_inverse": missing,
+            "star_defect_max": float(np.max(finite)) if finite else None,
+            "star_defect_mean": float(np.mean(finite)) if finite else None,
+            "star_defect_median": float(np.median(finite)) if finite else None,
+        }
+
+    def star_defect_table(self):
+        import pandas as pd
+
+        by_key = {
+            (int(m), int(n), int(e)): block
+            for m, n, e, block in zip(self.h_m, self.h_n, self.h_eps, self.blocks)
+        }
+
+        rows = []
+        seen = set()
+
+        for key, K_h in by_key.items():
+            if key in seen:
+                continue
+
+            inv = gd_inverse_label(*key)
+            seen.add(key)
+            seen.add(inv)
+
+            K_inv = by_key.get(inv)
+
+            if K_inv is None:
+                err = np.inf
+                rel = np.inf
+                norm_h = float(np.linalg.norm(K_h))
+                norm_inv = None
+            else:
+                err = float(np.linalg.norm(K_h - K_inv.conj().T))
+                norm_h = float(np.linalg.norm(K_h))
+                norm_inv = float(np.linalg.norm(K_inv))
+                rel = err / max(norm_h, norm_inv, 1.0)
+
+            rows.append({
+                "m": key[0],
+                "n": key[1],
+                "eps": key[2],
+                "inv_m": inv[0],
+                "inv_n": inv[1],
+                "inv_eps": inv[2],
+                "norm": norm_h,
+                "inv_norm": norm_inv,
+                "star_error": err,
+                "star_relative_error": rel,
+            })
+
+        return pd.DataFrame(rows).sort_values("star_relative_error", ascending=False)
+
+    def star_defect_table_filtered(K, *, min_norm=1e-2, max_radius=None):
+        table = K.star_defect_table()
+
+        table = table[table["norm"] >= min_norm]
+
+        if max_radius is not None:
+            radius = np.maximum(np.abs(table["m"]), np.abs(table["n"]))
+            table = table[radius <= max_radius]
+
+        return table.sort_values("star_relative_error", ascending=False)
+
+
+def hermitian_part(A: np.ndarray) -> np.ndarray:
+    return 0.5 * (A + A.conj().T)
+
+
+
+def gd_inverse_label(m: int, n: int, eps: int) -> tuple[int, int, int]:
+    sign = -1 if eps else 1
+    return (-sign * m, -sign * n, eps)
+
+
+@dataclass(frozen=True, slots=True)
+class DenseMatrixDiagnostics:
+    name: str
+    shape: tuple[int, int]
+    dtype: str
+    finite: bool
+    norm: float
+    hermitian_defect_abs: float
+    hermitian_defect_rel: float
+    eig_min: float | None = None
+    eig_max: float | None = None
+    condition_number_abs: float | None = None
+    positive_definite: bool | None = None
+
+    def as_dict(self) -> dict:
+        return {
+            "name": self.name,
+            "shape": self.shape,
+            "dtype": self.dtype,
+            "finite": self.finite,
+            "norm": self.norm,
+            "hermitian_defect_abs": self.hermitian_defect_abs,
+            "hermitian_defect_rel": self.hermitian_defect_rel,
+            "eig_min": self.eig_min,
+            "eig_max": self.eig_max,
+            "condition_number_abs": self.condition_number_abs,
+            "positive_definite": self.positive_definite,
+        }
+
+
+    @classmethod
+    def from_dense_matrix(
+        cls,
+        A: np.ndarray,
+        *,
+        name: str = "",
+        check_eigenvalues: bool = False,
+        positive_tol: float = 1e-10,
+        ) -> Self:
+
+        A = np.asarray(A)
+
+        if A.ndim != 2 or A.shape[0] != A.shape[1]:
+            raise ValueError(f"{name}: expected square matrix, got shape {A.shape}")
+
+        finite = bool(np.all(np.isfinite(A)))
+        norm = float(np.linalg.norm(A))
+
+        defect = A - A.conj().T
+        defect_abs = float(np.linalg.norm(defect))
+        defect_rel = defect_abs / max(norm, 1.0)
+
+        eig_min = None
+        eig_max = None
+        condition_number_abs = None
+        positive_definite = None
+
+        if check_eigenvalues:
+            # Use Hermitian part for diagnostic eigenvalues.
+            Ah = 0.5 * (A + A.conj().T)
+            eigs = eigvalsh(Ah)
+
+            eig_min = float(np.min(eigs))
+            eig_max = float(np.max(eigs))
+
+            abs_eigs = np.abs(eigs)
+            nonzero = abs_eigs[abs_eigs > 0]
+
+            if len(nonzero):
+                condition_number_abs = float(np.max(abs_eigs) / np.min(nonzero))
+            else:
+                condition_number_abs = np.inf
+
+            positive_definite = bool(eig_min > positive_tol)
+
+        return cls(
+            name=name,
+            shape=A.shape,
+            dtype=str(A.dtype),
+            finite=finite,
+            norm=norm,
+            hermitian_defect_abs=defect_abs,
+            hermitian_defect_rel=defect_rel,
+            eig_min=eig_min,
+            eig_max=eig_max,
+            condition_number_abs=condition_number_abs,
+            positive_definite=positive_definite,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SymbolPair:
+    KH: GdKernelArrays
+    KS: GdKernelArrays
+    k1: float
+    k2: float
+    degree: int = 2
+    sigma: int | None = None
+    name:str = ''
+
+    def star_symmetrised(self) -> Self:
+        return replace(
+            self,
+            KH=self.KH.star_symmetrised(matrix_name = self.name + " star"),
+            KS=self.KS.star_symmetrised(matrix_name = self.name + " star"),
+        )
+
+    def form(self) -> "LocalProblem":
+        match self.degree:
+            case 2:
+                if self.sigma is not None:
+                    raise ValueError("sigma should be None for generic 2D irrep")
+
+                Hk = self.KH.symbol_generic(self.k1, self.k2)
+                Sk = self.KS.symbol_generic(self.k1, self.k2)
+
+            case 1:
+                if self.sigma is None:
+                    raise ValueError("sigma is required for fixed-point 1D irrep")
+                if self.sigma not in (-1, 1):
+                    raise ValueError(f"sigma must be ±1, got {self.sigma}")
+
+                Hk = self.KH.symbol_fixed(self.k1, self.k2, sigma=self.sigma)
+                Sk = self.KS.symbol_fixed(self.k1, self.k2, sigma=self.sigma)
+
+            case _:
+                raise ValueError(f"Unsupported irrep degree: {self.degree}")
+
+        return LocalProblem(Hk=Hk, Sk=Sk, pair=self)
+
+       
+    def label(self) -> str:
+        if self.degree == 2:
+            return f"k=({self.k1:.6g},{self.k2:.6g}), degree=2"
+        return f"k=({self.k1:.6g},{self.k2:.6g}), degree=1, sigma={self.sigma}"
+
+
+@dataclass(frozen=True, slots=True)
+class LocalProblem:
+    Hk: np.ndarray
+    Sk: np.ndarray
+    pair: SymbolPair
+
+    def symmetrised(self) -> Self:
+        return replace(
+            self,
+            Hk=hermitian_part(self.Hk),
+            Sk=hermitian_part(self.Sk),
+        )
+
+    def overlap_eigenvalues(self) -> np.ndarray:
+        return eigvalsh(hermitian_part(self.Sk))
+
+    def check_overlap_positive(self, tol: float = 1e-10) -> None:
+        vals = self.overlap_eigenvalues()
+        vmin = float(np.min(vals))
+
+        if vmin <= tol:
+            raise ValueError(
+                f"Overlap symbol not positive definite: min eigenvalue={vmin}"
+            )
+
+    def solve(
+        self,
+        *,
+        symmetrise: bool = True,
+        check_overlap: bool = True,
+        overlap_tol: float = 1e-10,
+        eigvals_only: bool = False,
+    ):
+        problem = self.symmetrised() if symmetrise else self
+
+        if check_overlap:
+            problem.check_overlap_positive(tol=overlap_tol)
+
+        return eigh(problem.Hk, problem.Sk, eigvals_only=eigvals_only)
+
+    def energies(
+        self,
+        *,
+        symmetrise: bool = True,
+        check_overlap: bool = True,
+        overlap_tol: float = 1e-10,
+    ) -> np.ndarray:
+        return self.solve(
+            symmetrise=symmetrise,
+            check_overlap=check_overlap,
+            overlap_tol=overlap_tol,
+            eigvals_only=True,
+        )
+
+    def eigensystem(
+        self,
+        *,
+        symmetrise: bool = True,
+        check_overlap: bool = True,
+        overlap_tol: float = 1e-10,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        return self.solve(
+            symmetrise=symmetrise,
+            check_overlap=check_overlap,
+            overlap_tol=overlap_tol,
+            eigvals_only=False,
+        )
+
+    def diagnostics(problem: Self) -> dict:
+        Hdiag = DenseMatrixDiagnostics.from_dense_matrix(
+            problem.Hk,
+            name="H(k)",
+            check_eigenvalues=False,
+        )
+
+        Sdiag = DenseMatrixDiagnostics.from_dense_matrix(
+            problem.Sk,
+            name="S(k)",
+            check_eigenvalues=True,
+        )
+
+        return {
+            "pair": problem.pair.label(),
+            "H": Hdiag.as_dict(),
+            "S": Sdiag.as_dict(),
+            "energies": problem.energies().tolist(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LocalPath:
+    KH: GdKernelArrays
+    KS: GdKernelArrays
+    k1: np.ndarray
+    k2: np.ndarray
+    x: np.ndarray | None = None
+    labels: tuple[tuple[int, str], ...] = ()
+    name: str = ""
+
+    def __post_init__(self) -> None:
+        if self.k1.shape != self.k2.shape:
+            raise ValueError("k1 and k2 shape mismatch")
+        if self.x is not None and self.x.shape != self.k1.shape:
+            raise ValueError("x shape mismatch")
+
+    @classmethod
+    def from_points(
+        cls,
+        KH: GdKernelArrays,
+        KS: GdKernelArrays,
+        points: list[tuple[str, float, float]],
+        *,
+        points_per_segment: int = 80,
+        name: str = "",
+    ) -> Self:
+        k1_parts = []
+        k2_parts = []
+        x_parts = []
+        labels = []
+
+        x_current = 0.0
+
+        for seg_index, ((label_a, a1, a2), (label_b, b1, b2)) in enumerate(zip(points[:-1], points[1:])):
+            # Avoid duplicating joint points except for first segment.
+            t = np.linspace(0.0, 1.0, points_per_segment, endpoint=False)
+            if seg_index == len(points) - 2:
+                t = np.linspace(0.0, 1.0, points_per_segment + 1, endpoint=True)
+
+            seg_k1 = (1 - t) * a1 + t * b1
+            seg_k2 = (1 - t) * a2 + t * b2
+
+            dk = float(np.sqrt((b1 - a1)**2 + (b2 - a2)**2))
+            seg_x = x_current + t * dk
+
+            if seg_index == 0:
+                labels.append((0, label_a))
+
+            k1_parts.append(seg_k1)
+            k2_parts.append(seg_k2)
+            x_parts.append(seg_x)
+
+            x_current += dk
+            labels.append((sum(len(p) for p in k1_parts) - 1, label_b))
+
+        return cls(
+            KH=KH,
+            KS=KS,
+            k1=np.concatenate(k1_parts),
+            k2=np.concatenate(k2_parts),
+            x=np.concatenate(x_parts),
+            labels=tuple(labels),
+            name=name,
+        )
+
+    def pair(self, i: int) -> SymbolPair:
+        return SymbolPair(
+            KH=self.KH,
+            KS=self.KS,
+            k1=float(self.k1[i]),
+            k2=float(self.k2[i]),
+            name=self.name,
+        )
+
+    def form(self, i: int) -> LocalProblem:
+        return self.pair(i).form()
+
+    def energies(
+        self,
+        *,
+        symmetrise: bool = True,
+        check_overlap: bool = True,
+        overlap_tol: float = 1e-10,
+    ) -> np.ndarray:
+        rows = []
+
+        for i in range(len(self.k1)):
+            rows.append(
+                self.form(i).energies(
+                    symmetrise=symmetrise,
+                    check_overlap=check_overlap,
+                    overlap_tol=overlap_tol,
+                )
+            )
+
+        return np.asarray(rows)
+
+    def path_diagnostics(self: Self) -> dict:
+        E = path.energies()
+
+        return {
+            "name": path.name,
+            "num_kpoints": int(len(path.k1)),
+            "num_bands": int(E.shape[1]),
+            "energy_min": float(np.min(E)),
+            "energy_max": float(np.max(E)),
+            "x_min": float(np.min(path.x)) if path.x is not None else None,
+            "x_max": float(np.max(path.x)) if path.x is not None else None,
+            "labels": [
+                {"index": int(i), "label": label}
+                for i, label in path.labels
+            ],
+        }
+
+@dataclass(frozen = True)
+class LocalRegion:
+    def form(self):
+        pass
+    def solve(self):
+        pass
 
 
 data = SparseDataset.load(Path("./test_run/run_dir/data"))
@@ -931,7 +1706,64 @@ labels = EdgeGroupLabels.from_geometry(geom, edges)
 # print(coupled_atoms_table(H, data, 0))
 
 from pprint import pprint
-pprint(geom.diagnostics())
-pprint(geom.neighbour_vectors(anchor))
-pprint(edges.diagnostics(geom))
-pprint(labels.diagnostics())
+
+KH = GdKernelArrays.from_anchored(data.H, labels, matrix_name="H")
+KS = GdKernelArrays.from_anchored(data.S, labels, matrix_name="S")
+
+k1, k2 = 0.1, 0.2
+
+pair = SymbolPair(KH, KS, k1, k2)
+local = pair.form()
+local_sym = local.symmetrised()
+
+KH_avg = GdKernelArrays.from_average(data.H, labels, matrix_name="H average")
+KS_avg = GdKernelArrays.from_average(data.S, labels, matrix_name="S average")
+
+pair_avg = SymbolPair(KH_avg, KS_avg, k1, k2)
+local_avg = pair_avg.form()
+local_avg_sym = pair_avg.form().symmetrised()
+local_avg_star = pair_avg.star_symmetrised().form()
+
+KH_star = KH.star_symmetrised(matrix_name="H anchored star")
+KS_star = KS.star_symmetrised(matrix_name="S anchored star")
+
+KH_avg_star = KH_avg.star_symmetrised(matrix_name="H average star")
+KS_avg_star = KS_avg.star_symmetrised(matrix_name="S average star")
+
+
+# for K in [KH, KH_star, KH_avg, KH_avg_star]:
+#     Hk = K.symbol_generic(0.1, 0.2)
+#     print()
+#     print(K.matrix_name)
+#     pprint(DenseMatrixDiagnostics.from_dense_matrix(Hk, name=K.matrix_name).as_dict())
+
+# print('\n KH.star_defect:')
+# pprint(KH.star_defect())
+# print('\n KH_avg.star_defect:')
+# pprint(KH_avg.star_defect())
+
+# pprint(KH.star_defect_table().head(20))
+# pprint(KH_avg.star_defect_table().head(20))
+
+# pprint(KH_avg.star_defect_table_filtered(min_norm=1e-2, max_radius=3).head(20))
+
+KH_eff = KH_avg_star
+KS_eff = KS_avg_star
+
+points = [
+    ("Γ", 0.0, 0.0),
+    ("K", 2*np.pi/3, -2*np.pi/3),
+    ("M", np.pi, 0.0),
+    ("Γ", 0.0, 0.0),
+]
+
+path = LocalPath.from_points(
+    KH_eff,
+    KS_eff,
+    points,
+    points_per_segment=80,
+    name="average star",
+)
+
+E = path.energies()
+print(E.shape)  # (n_kpoints, 8)
