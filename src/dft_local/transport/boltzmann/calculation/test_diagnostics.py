@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dft_local.diagnostics.models import DiagnosticSpec
-from dft_local.transport.boltzmann.diagnostics import (
+from dft_local.transport.boltzmann.calculation.diagnostics import (
     compute_overview,
     diagnostics,
 )

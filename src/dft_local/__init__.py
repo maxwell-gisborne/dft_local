@@ -69,7 +69,7 @@ from dft_local.transport.bands.energy_surface_rectification import (
     rectify_local_region_energy_surfaces,
     transverse_energy_prediction,
 )
-from dft_local.transport.boltzmann.core import (
+from dft_local.transport.boltzmann.calculation.core import (
     BoltzmannConductivity,
     BoltzmannSampleResult,
     fermi_window,

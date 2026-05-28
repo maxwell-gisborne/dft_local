@@ -83,11 +83,41 @@ class DiagnosticApp:
         return [data]
 
     def index(self) -> str:
-        links = []
-        for spec in sorted(self.specs.values(), key=lambda s: (s.group, s.title)):
-            links.append(f"<li><a href='/d/{spec.id}'>{spec.group} · {spec.title}</a><br><small>{spec.description}</small></li>")
+        def render_tree(tree: dict[str, object]) -> str:
+            parts: list[str] = ["<ul>"]
 
-        body = "<h1>dft_local diagnostics</h1><ul>" + "\n".join(links) + "</ul>"
+            for key in sorted(tree):
+                value = tree[key]
+
+                if isinstance(value, dict):
+                    parts.append(f"<li><strong>{key}</strong>")
+                    parts.append(render_tree(value))
+                    parts.append("</li>")
+                else:
+                    spec = value
+                    parts.append(
+                        f"<li><a href='/d/{spec.id}'>{spec.title}</a>"
+                        f"<br><small><code>{spec.id}</code> · {spec.description}</small></li>"
+                    )
+
+            parts.append("</ul>")
+            return "\n".join(parts)
+
+        tree: dict[str, object] = {}
+
+        for spec in sorted(self.specs.values(), key=lambda s: s.id):
+            parts = spec.id.split(".")
+            cursor = tree
+
+            for part in parts[:-1]:
+                child = cursor.setdefault(part, {})
+                if not isinstance(child, dict):
+                    raise TypeError(f"Diagnostic namespace collision at {spec.id}")
+                cursor = child
+
+            cursor[parts[-1]] = spec
+
+        body = "<h1>dft_local diagnostics</h1>" + render_tree(tree)
         return render_page("dft_local diagnostics", body)
 
     def diagnostic_page(self, diagnostic_id: str, raw_inputs: dict[str, str]) -> str:

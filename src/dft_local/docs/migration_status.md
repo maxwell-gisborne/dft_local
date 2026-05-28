@@ -66,7 +66,7 @@ It owns:
 
 Boltzmann conductivity now lives in:
 
-    src/dft_local/transport/boltzmann/core.py
+    src/dft_local/transport/boltzmann/calculation/core.py
 
 It owns:
 

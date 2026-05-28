@@ -56,7 +56,7 @@ The same discovered test list is shown in the `dft_local.testsuite` diagnostic.
     src/dft_local/docs/migration_status.md
     src/dft_local/core/docs.md
     src/dft_local/transport/bands/docs.md
-    src/dft_local/transport/boltzmann/docs.md
+    src/dft_local/transport/boltzmann/calculation/docs.md
 
 ## Current status
 

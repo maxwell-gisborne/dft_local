@@ -10,7 +10,7 @@ import pytest
 from dft_local.core.kernels import GdKernelArrays
 from dft_local.core.local_problem import SymbolPair
 from dft_local.core.numerics import AU, Units, eVag
-from dft_local.transport.boltzmann.core import (
+from dft_local.transport.boltzmann.calculation.core import (
     K_B_HARTREE_PER_K,
     BoltzmannConductivity,
     fermi_window,

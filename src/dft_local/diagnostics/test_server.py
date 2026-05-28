@@ -40,7 +40,7 @@ def test_dft_local_server_can_render_testsuite_without_running_tests() -> None:
 
     assert "Test suite" in html
     assert "Discovered pytest targets" in html
-    assert "src/dft_local/transport/boltzmann/test_conductivity_business_logic.py" in html
+    assert "src/dft_local/transport/boltzmann/calculation/test_conductivity_business_logic.py" in html
 
 
 def test_band_path_page_renders_svg_graph() -> None:
@@ -164,3 +164,16 @@ def test_band_path_tables_render_selection_controls() -> None:
     assert "data-table-select='none'" in html
     assert "data-step='" in html
     assert "data-path-x='" in html
+
+
+def test_index_reflects_diagnostic_domain_hierarchy() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.index()
+
+    assert "<strong>transport</strong>" in html
+    assert "<strong>boltzmann</strong>" in html
+    assert "<strong>calculation</strong>" in html
+    assert "<code>transport.boltzmann.calculation.overview</code>" in html
+    assert "transport.boltzmann ·" not in html

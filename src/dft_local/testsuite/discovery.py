@@ -14,7 +14,7 @@ from dft_local.core.discovery import collect_from_modules
 
 
 DEFAULT_TEST_MODULES = (
-    "dft_local.transport.boltzmann.tests",
+    "dft_local.transport.boltzmann.calculation.tests",
     "dft_local.transport.bands.tests",
 )
 
