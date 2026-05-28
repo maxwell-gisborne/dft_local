@@ -70,6 +70,10 @@ class DiagnosticApp:
             elif path == "/":
                 body = self.index()
                 status = "200 OK"
+            elif path == "/docs" or path.startswith("/docs/"):
+                doc_id = path.removeprefix("/docs").strip("/")
+                body = self.docs_page(doc_id)
+                status = "200 OK"
             elif path.startswith("/d/"):
                 diagnostic_id = path.removeprefix("/d/")
                 body = self.diagnostic_page(diagnostic_id, raw_inputs)
