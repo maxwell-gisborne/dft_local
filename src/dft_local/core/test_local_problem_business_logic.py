@@ -1,22 +1,27 @@
+# Copied from repository-level tests during package migration.
+# These tests should target dft_local only.
+
 import numpy as np
 import pytest
 from scipy.linalg import eigvalsh
 
-from dft_local import (
-    SparseDataset,
-    NearestNeighbourGraph,
+from dft_local.core.dataset import SparseDataset
+from dft_local.core.geometry import (
     EdgeDirections,
     EdgeGroupLabels,
     GdElement,
-    GdKernelArrays,
-    SymbolPair,
-    LocalPath,
-    DenseMatrixDiagnostics,
-    block_row_raw,
-    gd_inverse_label,
-    hermitian_part,
-    eVag
+    NearestNeighbourGraph,
 )
+from dft_local.core.kernels import GdKernelArrays, gd_inverse_label
+from dft_local.core.local_problem import SymbolPair
+from dft_local.core.numerics import (
+    DenseMatrixDiagnostics,
+    eVag,
+    hermitian_part,
+)
+from dft_local.core.sparse import block_row_raw
+from dft_local.transport.bands.core import LocalPath
+
 
 
 @pytest.fixture(scope="session")
