@@ -37,31 +37,13 @@ function readGraphPayload(host) {
 }
 
 /**
- * @param {string} name
- * @param {Record<string, string>} attrs
- * @returns {SVGElement}
- */
-function svgEl(name, attrs = {}) {
-  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
-  for (const [key, value] of Object.entries(attrs)) {
-    el.setAttribute(key, value);
-  }
-  return el;
-}
-
-/**
  * @param {GraphPayload} payload
- * @returns {SVGSVGElement}
+ * @returns {{xmin:number, xmax:number, ymin:number, ymax:number}}
  */
-function makeGraphSvg(payload) {
-  const width = 1000;
-  const height = 520;
-  const margin = { left: 78, right: 24, top: 28, bottom: 62 };
-  const innerW = width - margin.left - margin.right;
-  const innerH = height - margin.top - margin.bottom;
-
+function graphBounds(payload) {
   /** @type {GraphPoint[]} */
   const all = [];
+
   for (const series of payload.series) {
     for (const point of series.points) {
       if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
@@ -70,22 +52,9 @@ function makeGraphSvg(payload) {
     }
   }
 
-  const svg = /** @type {SVGSVGElement} */ (svgEl("svg", {
-    class: "graph-svg graph-svg-component",
-    viewBox: `0 0 ${width} ${height}`,
-    role: "img",
-    "aria-label": payload.title || "Graph",
-  }));
-
-  svg.appendChild(svgEl("rect", {
-    class: "graph-bg",
-    x: "0",
-    y: "0",
-    width: String(width),
-    height: String(height),
-  }));
-
-  if (all.length === 0) return svg;
+  if (all.length === 0) {
+    return { xmin: -1, xmax: 1, ymin: -1, ymax: 1 };
+  }
 
   let xmin = Math.min(...all.map((p) => p.x));
   let xmax = Math.max(...all.map((p) => p.x));
@@ -104,6 +73,90 @@ function makeGraphSvg(payload) {
   const ypad = 0.06 * (ymax - ymin);
   ymin -= ypad;
   ymax += ypad;
+
+  return { xmin, xmax, ymin, ymax };
+}
+
+/**
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number}} view
+ * @param {number} fx
+ * @param {number} fy
+ * @param {number} factor
+ * @returns {{xmin:number, xmax:number, ymin:number, ymax:number}}
+ */
+function zoomView(view, fx, fy, factor) {
+  const x = view.xmin + fx * (view.xmax - view.xmin);
+  const y = view.ymin + fy * (view.ymax - view.ymin);
+
+  return {
+    xmin: x - (x - view.xmin) * factor,
+    xmax: x + (view.xmax - x) * factor,
+    ymin: y - (y - view.ymin) * factor,
+    ymax: y + (view.ymax - y) * factor,
+  };
+}
+
+/**
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number}} view
+ * @param {number} dxFraction
+ * @param {number} dyFraction
+ * @returns {{xmin:number, xmax:number, ymin:number, ymax:number}}
+ */
+function panView(view, dxFraction, dyFraction) {
+  const dx = dxFraction * (view.xmax - view.xmin);
+  const dy = dyFraction * (view.ymax - view.ymin);
+
+  return {
+    xmin: view.xmin - dx,
+    xmax: view.xmax - dx,
+    ymin: view.ymin + dy,
+    ymax: view.ymax + dy,
+  };
+}
+
+/**
+ * @param {string} name
+ * @param {Record<string, string>} attrs
+ * @returns {SVGElement}
+ */
+function svgEl(name, attrs = {}) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", name);
+  for (const [key, value] of Object.entries(attrs)) {
+    el.setAttribute(key, value);
+  }
+  return el;
+}
+
+/**
+ * @param {GraphPayload} payload
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number} | null} [view]
+ * @returns {SVGSVGElement}
+ */
+function makeGraphSvg(payload, view = null) {
+  const width = 1000;
+  const height = 520;
+  const margin = { left: 78, right: 24, top: 28, bottom: 62 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  const svg = /** @type {SVGSVGElement} */ (svgEl("svg", {
+    class: "graph-svg graph-svg-component",
+    viewBox: `0 0 ${width} ${height}`,
+    role: "img",
+    "aria-label": payload.title || "Graph",
+  }));
+
+  svg.appendChild(svgEl("rect", {
+    class: "graph-bg",
+    x: "0",
+    y: "0",
+    width: String(width),
+    height: String(height),
+  }));
+
+  const bounds = graphBounds(payload);
+  const activeView = view || bounds;
+  const { xmin, xmax, ymin, ymax } = activeView;
 
   const sx = (/** @type {number} */ x) => margin.left + ((x - xmin) / (xmax - xmin)) * innerW;
   const sy = (/** @type {number} */ y) => margin.top + ((ymax - y) / (ymax - ymin)) * innerH;
@@ -251,24 +304,87 @@ function makeGraphSvg(payload) {
 
 if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined") {
   class DftLineGraph extends HTMLElement {
-    connectedCallback() {
-      const payload = readGraphPayload(this);
-      if (!payload) return;
+    constructor() {
+      super();
+      /** @type {GraphPayload | null} */
+      this.payload = null;
+      /** @type {{xmin:number, xmax:number, ymin:number, ymax:number} | null} */
+      this.view = null;
+      /** @type {{x:number, y:number} | null} */
+      this.dragStart = null;
+    }
 
-      this.replaceChildren(makeGraphSvg(payload));
+    connectedCallback() {
+      this.payload = readGraphPayload(this);
+      if (!this.payload) return;
+
+      this.view = graphBounds(this.payload);
+      this.render();
+
+      this.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        if (!this.view) return;
+
+        const rect = this.getBoundingClientRect();
+        const fx = (event.clientX - rect.left) / rect.width;
+        const fy = 1.0 - (event.clientY - rect.top) / rect.height;
+        const factor = event.deltaY < 0 ? 0.82 : 1.22;
+
+        this.view = zoomView(this.view, fx, fy, factor);
+        this.render();
+      }, { passive: false });
+
+      this.addEventListener("pointerdown", (event) => {
+        this.setPointerCapture(event.pointerId);
+        this.dragStart = { x: event.clientX, y: event.clientY };
+      });
+
+      this.addEventListener("pointermove", (event) => {
+        if (!this.dragStart || !this.view) return;
+
+        const rect = this.getBoundingClientRect();
+        const dx = (event.clientX - this.dragStart.x) / rect.width;
+        const dy = (event.clientY - this.dragStart.y) / rect.height;
+
+        this.view = panView(this.view, dx, dy);
+        this.dragStart = { x: event.clientX, y: event.clientY };
+        this.render();
+      });
+
+      this.addEventListener("pointerup", (event) => {
+        this.releasePointerCapture(event.pointerId);
+        this.dragStart = null;
+      });
+
+      this.addEventListener("dblclick", () => this.resetView());
+
       this.setAttribute("data-ready", "true");
+    }
+
+    resetView() {
+      if (!this.payload) return;
+      this.view = graphBounds(this.payload);
+      this.render();
+    }
+
+    render() {
+      if (!this.payload || !this.view) return;
+
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.textContent = "Reset view";
+      reset.addEventListener("click", () => this.resetView());
+
+      const shell = document.createElement("div");
+      shell.className = "graph-component";
+      shell.appendChild(reset);
+      shell.appendChild(makeGraphSvg(this.payload, this.view));
+
+      this.replaceChildren(shell);
     }
   }
 
-  class DftKSpacePlot extends HTMLElement {
-    connectedCallback() {
-      const payload = readGraphPayload(this);
-      if (!payload) return;
-
-      this.replaceChildren(makeGraphSvg(payload));
-      this.setAttribute("data-ready", "true");
-    }
-  }
+  class DftKSpacePlot extends DftLineGraph {}
 
   if (!customElements.get("dft-line-graph")) {
     customElements.define("dft-line-graph", DftLineGraph);
@@ -279,4 +395,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export { nice, readGraphPayload, makeGraphSvg };
+export { nice, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView };
