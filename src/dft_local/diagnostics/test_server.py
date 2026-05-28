@@ -177,3 +177,26 @@ def test_index_reflects_diagnostic_domain_hierarchy() -> None:
     assert "<strong>calculation</strong>" in html
     assert "<code>transport.boltzmann.calculation.overview</code>" in html
     assert "transport.boltzmann ·" not in html
+
+
+def test_docs_index_reflects_source_domain_hierarchy() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.docs_page("")
+
+    assert "<strong>transport</strong>" in html
+    assert "<strong>boltzmann</strong>" in html
+    assert "href='/docs/transport.boltzmann.calculation'" in html
+    assert "<code>transport.boltzmann.calculation</code>" in html
+
+
+def test_docs_page_renders_markdown_document() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.docs_page("transport.boltzmann.calculation")
+
+    assert "<nav><a href='/'>diagnostics</a> · <a href='/docs/'>docs</a></nav>" in html
+    assert "<code>transport.boltzmann.calculation</code>" in html
+    assert "<h1>" in html or "<h2>" in html

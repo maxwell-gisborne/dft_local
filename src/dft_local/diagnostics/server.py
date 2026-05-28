@@ -6,6 +6,8 @@ uses explicit diagnostic discovery and the local structured model copy.
 
 from __future__ import annotations
 
+from html import escape
+import re
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -17,6 +19,7 @@ from dft_local.diagnostics.models import InputParseError, parse_inputs
 from dft_local.diagnostics.render import render_page, render_result
 
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
+DOCS_ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_default_context(root: str | Path = "test_run/run_dir/data") -> Any:
@@ -117,8 +120,164 @@ class DiagnosticApp:
 
             cursor[parts[-1]] = spec
 
-        body = "<h1>dft_local diagnostics</h1>" + render_tree(tree)
+        body = "<h1>dft_local diagnostics</h1><nav><a href='/docs/'>docs</a></nav>" + render_tree(tree)
         return render_page("dft_local diagnostics", body)
+
+    def docs_page(self, doc_id: str) -> str:
+        docs = self.discover_docs()
+
+        if not doc_id:
+            return render_page("dft_local docs", self.docs_index(docs))
+
+        if doc_id not in docs:
+            return render_page(
+                "Document not found",
+                "<nav><a href='/docs/'>docs</a></nav>"
+                f"<h1>Document not found</h1><p><code>{escape(doc_id)}</code></p>",
+            )
+
+        path = docs[doc_id]
+        body = (
+            "<nav><a href='/'>diagnostics</a> · <a href='/docs/'>docs</a></nav>"
+            f"<h1><code>{escape(doc_id)}</code></h1>"
+            f"<p><small>{escape(str(path.relative_to(DOCS_ROOT)))}</small></p>"
+            + self.render_markdown(path.read_text())
+        )
+        return render_page(f"docs · {doc_id}", body)
+
+    @staticmethod
+    def discover_docs() -> dict[str, Path]:
+        docs: dict[str, Path] = {}
+
+        for path in sorted(DOCS_ROOT.rglob("docs.md")):
+            if "__pycache__" in path.parts:
+                continue
+
+            rel = path.parent.relative_to(DOCS_ROOT)
+            doc_id = ".".join(rel.parts)
+
+            if doc_id == ".":
+                continue
+
+            docs[doc_id] = path
+
+        return docs
+
+    @staticmethod
+    def docs_index(docs: dict[str, Path]) -> str:
+        def render_tree(tree: dict[str, object]) -> str:
+            parts: list[str] = ["<ul>"]
+
+            for key in sorted(tree):
+                value = tree[key]
+
+                if isinstance(value, dict):
+                    parts.append(f"<li><strong>{escape(key)}</strong>")
+                    parts.append(render_tree(value))
+                    parts.append("</li>")
+                else:
+                    doc_id, path = value
+                    parts.append(
+                        f"<li><a href='/docs/{doc_id}'>{escape(key)}</a>"
+                        f"<br><small><code>{escape(doc_id)}</code> · "
+                        f"{escape(str(path.relative_to(DOCS_ROOT)))}</small></li>"
+                    )
+
+            parts.append("</ul>")
+            return "\n".join(parts)
+
+        tree: dict[str, object] = {}
+
+        for doc_id, path in docs.items():
+            parts = doc_id.split(".")
+            cursor = tree
+
+            for part in parts[:-1]:
+                child = cursor.setdefault(part, {})
+                if not isinstance(child, dict):
+                    raise TypeError(f"Document namespace collision at {doc_id}")
+                cursor = child
+
+            cursor[parts[-1]] = (doc_id, path)
+
+        return (
+            "<h1>dft_local docs</h1>"
+            "<p>Documentation mirrors the source/domain hierarchy. "
+            "Each <code>docs.md</code> file is exposed at its package-like path.</p>"
+            + render_tree(tree)
+        )
+
+    @staticmethod
+    def render_markdown(markdown: str) -> str:
+        lines = markdown.splitlines()
+        html: list[str] = []
+        in_code = False
+        in_list = False
+        paragraph: list[str] = []
+
+        def flush_paragraph() -> None:
+            nonlocal paragraph
+            if paragraph:
+                html.append("<p>" + " ".join(escape(line.strip()) for line in paragraph) + "</p>")
+                paragraph = []
+
+        def close_list() -> None:
+            nonlocal in_list
+            if in_list:
+                html.append("</ul>")
+                in_list = False
+
+        for line in lines:
+            stripped = line.rstrip()
+
+            if stripped.startswith("```"):
+                flush_paragraph()
+                close_list()
+
+                if in_code:
+                    html.append("</code></pre>")
+                    in_code = False
+                else:
+                    html.append("<pre><code>")
+                    in_code = True
+
+                continue
+
+            if in_code:
+                html.append(escape(stripped))
+                continue
+
+            if not stripped:
+                flush_paragraph()
+                close_list()
+                continue
+
+            heading = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+            if heading:
+                flush_paragraph()
+                close_list()
+                level = len(heading.group(1))
+                title = escape(heading.group(2).strip())
+                html.append(f"<h{level}>{title}</h{level}>")
+                continue
+
+            if stripped.startswith("- "):
+                flush_paragraph()
+                if not in_list:
+                    html.append("<ul>")
+                    in_list = True
+                html.append(f"<li>{escape(stripped[2:].strip())}</li>")
+                continue
+
+            paragraph.append(stripped)
+
+        flush_paragraph()
+        close_list()
+
+        if in_code:
+            html.append("</code></pre>")
+
+        return "\n".join(html)
 
     def diagnostic_page(self, diagnostic_id: str, raw_inputs: dict[str, str]) -> str:
         spec = self.specs[diagnostic_id]
