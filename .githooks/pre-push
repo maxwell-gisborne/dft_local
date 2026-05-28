@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+set -eu
+
+echo "pre-push: running pytest -q"
+python -m pytest -q
+
+echo "pre-push: running dft-local test --timeout 120"
+dft-local test --timeout 120
+
+echo "pre-push: tests passed"
