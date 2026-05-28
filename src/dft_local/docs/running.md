@@ -23,6 +23,7 @@ Useful diagnostics:
 
     http://127.0.0.1:8765/d/dft_local.testsuite
     http://127.0.0.1:8765/d/transport.boltzmann.calculation.overview
+    transport.boltzmann.ashcroft_comparison.overview
     http://127.0.0.1:8765/d/transport.boltzmann.calculation.conductivity
 
 ## Data root
