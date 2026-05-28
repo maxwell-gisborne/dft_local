@@ -200,3 +200,15 @@ def test_docs_page_renders_markdown_document() -> None:
     assert "<nav><a href='/'>diagnostics</a> · <a href='/docs/'>docs</a></nav>" in html
     assert "<code>transport.boltzmann.calculation</code>" in html
     assert "<h1>" in html or "<h2>" in html
+
+
+def test_docs_markdown_renderer_uses_markdown_features() -> None:
+    html = DiagnosticApp.render_markdown("# Title\n\n- one\n- two\n\n`inline`")
+
+    assert "<h1" in html
+    assert "Title" in html
+    assert "<li>" in html
+    assert "one" in html
+    assert "inline" in html
+    assert "- two" not in html
+    assert "\\n\\n" not in html

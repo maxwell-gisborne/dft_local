@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from html import escape
 import re
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
@@ -213,6 +216,22 @@ class DiagnosticApp:
 
     @staticmethod
     def render_markdown(markdown: str) -> str:
+        markdown_exe = shutil.which("markdown")
+
+        if markdown_exe is not None:
+            with tempfile.NamedTemporaryFile("w", suffix=".md", encoding="utf-8") as handle:
+                handle.write(markdown)
+                handle.flush()
+
+                result = subprocess.run(
+                    [markdown_exe, "-G", "-html5", handle.name],
+                    text=True,
+                    capture_output=True,
+                    check=True,
+                )
+
+            return result.stdout
+
         lines = markdown.splitlines()
         html: list[str] = []
         in_code = False
@@ -282,6 +301,7 @@ class DiagnosticApp:
             html.append("</code></pre>")
 
         return "\n".join(html)
+
 
     def diagnostic_page(self, diagnostic_id: str, raw_inputs: dict[str, str]) -> str:
         spec = self.specs[diagnostic_id]
