@@ -463,7 +463,7 @@ def compute_overview(ctx: Any, inputs: dict[str, object]) -> DiagnosticResult:
     docs_text = docs_path.read_text(encoding="utf-8") if docs_path.exists() else ""
 
     cards = (
-        Card("domain", "transport.boltzmann", "ok"),
+        Card("domain", "transport.boltzmann.calculation", "ok"),
         Card("docs", "present" if docs_path.exists() else "missing", "ok" if docs_path.exists() else "bad", str(docs_path)),
         Card("test metadata", "present" if tests_path.exists() else "missing", "ok" if tests_path.exists() else "warn", str(tests_path)),
     )
@@ -507,7 +507,7 @@ def compute_overview(ctx: Any, inputs: dict[str, object]) -> DiagnosticResult:
 def diagnostics() -> list[DiagnosticSpec]:
     return [
         DiagnosticSpec(
-            id="transport.boltzmann.overview",
+            id="transport.boltzmann.calculation.overview",
             group="transport",
             title="Boltzmann domain overview",
             description="Show documentation and local files for the Boltzmann conductivity domain.",
@@ -516,7 +516,7 @@ def diagnostics() -> list[DiagnosticSpec]:
             tier="instant",
         ),
         DiagnosticSpec(
-            id="transport.boltzmann.conductivity",
+            id="transport.boltzmann.calculation.conductivity",
             group="transport",
             title="Boltzmann conductivity",
             description="Compute band-diagonal AC Boltzmann conductivity.",

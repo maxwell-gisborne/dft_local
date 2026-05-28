@@ -13,7 +13,7 @@ def test_dft_local_server_renders_real_boltzmann_conductivity_page() -> None:
     app = DiagnosticApp(ctx=ctx)
 
     html = app.diagnostic_page(
-        "transport.boltzmann.conductivity",
+        "transport.boltzmann.calculation.conductivity",
         {
             "kernel": "average_star",
             "temperature": "300",

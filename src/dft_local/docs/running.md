@@ -22,8 +22,8 @@ Then open:
 Useful diagnostics:
 
     http://127.0.0.1:8765/d/dft_local.testsuite
-    http://127.0.0.1:8765/d/transport.boltzmann.overview
-    http://127.0.0.1:8765/d/transport.boltzmann.conductivity
+    http://127.0.0.1:8765/d/transport.boltzmann.calculation.overview
+    http://127.0.0.1:8765/d/transport.boltzmann.calculation.conductivity
 
 ## Data root
 

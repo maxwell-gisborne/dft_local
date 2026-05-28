@@ -39,7 +39,7 @@ def test_asgi_index_response() -> None:
 
 def test_asgi_static_overview_response() -> None:
     app = DiagnosticASGI(ctx=None)
-    messages = run_asgi_request(app, "/d/transport.boltzmann.overview")
+    messages = run_asgi_request(app, "/d/transport.boltzmann.calculation.overview")
 
     assert messages[0]["status"] == 200
     assert b"Boltzmann conductivity domain" in messages[1]["body"]

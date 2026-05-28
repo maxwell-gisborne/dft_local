@@ -7,7 +7,7 @@ def test_dft_local_server_loads_discovered_specs() -> None:
     app = DiagnosticApp()
 
     assert "dft_local.testsuite" in app.specs
-    assert "transport.boltzmann.overview" in app.specs
+    assert "transport.boltzmann.calculation.overview" in app.specs
 
 
 def test_dft_local_server_index_contains_diagnostics() -> None:
@@ -16,12 +16,12 @@ def test_dft_local_server_index_contains_diagnostics() -> None:
 
     assert "dft_local diagnostics" in html
     assert "dft_local.testsuite" in html
-    assert "transport.boltzmann.overview" in html
+    assert "transport.boltzmann.calculation.overview" in html
 
 
 def test_dft_local_server_can_render_static_boltzmann_overview() -> None:
     app = DiagnosticApp()
-    html = app.diagnostic_page("transport.boltzmann.overview", {})
+    html = app.diagnostic_page("transport.boltzmann.calculation.overview", {})
 
     assert "Boltzmann conductivity domain" in html
     assert "Domain files" in html

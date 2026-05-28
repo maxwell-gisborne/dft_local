@@ -13,8 +13,8 @@ def test_boltzmann_diagnostics_exports_specs() -> None:
 
     assert all(isinstance(spec, DiagnosticSpec) for spec in specs)
     assert ids == {
-        "transport.boltzmann.overview",
-        "transport.boltzmann.conductivity",
+        "transport.boltzmann.calculation.overview",
+        "transport.boltzmann.calculation.conductivity",
     }
 
 

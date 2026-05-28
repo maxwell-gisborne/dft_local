@@ -105,8 +105,8 @@ The diagnostics use explicit discovery through `diagnostics()` functions.
 Current diagnostics:
 
 - `dft_local.testsuite`
-- `transport.boltzmann.overview`
-- `transport.boltzmann.conductivity`
+- `transport.boltzmann.calculation.overview`
+- `transport.boltzmann.calculation.conductivity`
 - `transport.bands.overview`
 
 The server is ASGI-compatible and can be run with uvicorn reload.
