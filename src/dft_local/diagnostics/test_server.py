@@ -60,8 +60,8 @@ def test_band_path_page_renders_svg_graph() -> None:
     assert "Band path Γ-K-M-Γ" in html
     assert "<svg" in html
     assert "K-space path" in html
-    assert "k cartesian x" in html
-    assert "k cartesian y" in html
+    assert "k1" in html
+    assert "k2" in html
     assert "primitive cell" in html
     assert "hexagon" in html
     assert "Γ K M" in html
@@ -113,3 +113,54 @@ def test_band_path_page_mounts_graph_components() -> None:
     assert "<dft-kspace-plot data-source='data-kspace_path'>" in html
     assert "<dft-line-graph data-source='data-band_path'>" in html
     assert "<svg" in html
+
+
+def test_graph_json_payload_is_parseable_by_browser_component() -> None:
+    import json
+    import re
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    match = re.search(
+        r"<script type='application/json' id='data-band_path'>(.*?)</script>",
+        html,
+        re.S,
+    )
+
+    assert match is not None
+    payload = json.loads(match.group(1))
+    assert payload["id"] == "band_path"
+    assert payload["series"]
+    assert "&quot;" not in match.group(1)
+
+
+def test_band_path_tables_render_selection_controls() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    assert "class='table-step-select'" in html
+    assert "data-table-select='all'" in html
+    assert "data-table-select='none'" in html
+    assert "data-step='" in html
+    assert "data-path-x='" in html

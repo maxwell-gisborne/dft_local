@@ -212,7 +212,7 @@ def render_result(result: DiagnosticResult) -> str:
         parts.append("</tbody></table></section>")
 
     for graph in result.graphs:
-        payload = json.dumps(graph.payload())
+        payload = json.dumps(graph.payload()).replace("</", "<\\/")
         data_id = f"data-{graph.id}"
         component = "dft-kspace-plot" if "kspace" in graph.id else "dft-line-graph"
 
@@ -220,7 +220,7 @@ def render_result(result: DiagnosticResult) -> str:
         parts.append(f"<p>{escape(graph.description)}</p>")
         parts.append(
             f"<script type='application/json' id='{escape(data_id)}'>"
-            f"{escape(payload)}"
+            f"{payload}"
             "</script>"
         )
         parts.append(
@@ -231,15 +231,64 @@ def render_result(result: DiagnosticResult) -> str:
         parts.append("</section>")
 
     for table in result.tables:
+        has_step = "step" in table.headers
+        step_index = table.headers.index("step") if has_step else -1
+        x_index = table.headers.index("x") if "x" in table.headers else -1
+        energy_index = table.headers.index("energy") if "energy" in table.headers else -1
+        row_label_index = 0
+        energy_index = table.headers.index("energy") if "energy" in table.headers else -1
+        row_label_index = 0
+
         parts.append(f"<section><h2>{escape(table.title)}</h2>")
         parts.append(f"<p>{escape(table.description)}</p>")
+
+        if has_step:
+            parts.append(
+                f"<div class='table-select-controls' data-table-id='{escape(table.id)}'>"
+                "<button type='button' data-table-select='all'>Select all</button>"
+                "<button type='button' data-table-select='none'>Clear all</button>"
+                "</div>"
+            )
+
         parts.append("<table><thead><tr>")
+        if has_step:
+            parts.append("<th>select</th>")
         for header in table.headers:
             parts.append(f"<th>{escape(header)}</th>")
         parts.append("</tr></thead><tbody>")
 
         for row in table.rows:
-            parts.append("<tr>")
+            step_value = row.cells[step_index] if has_step else None
+            x_value = row.cells[x_index] if x_index >= 0 else step_value
+            energy_value = row.cells[energy_index] if energy_index >= 0 else ""
+            row_label_value = row.cells[row_label_index] if row.cells else step_value
+            energy_value = row.cells[energy_index] if energy_index >= 0 else ""
+            row_label_value = row.cells[row_label_index] if row.cells else step_value
+
+            attrs = ""
+            if has_step:
+                attrs = (
+                    f" data-step='{escape(str(step_value))}'"
+                    f" data-path-x='{escape(str(x_value))}'"
+                    f" data-energy='{escape(str(energy_value))}'"
+                    f" data-label='{escape(str(row_label_value))}'"
+                    f" data-table-id='{escape(table.id)}'"
+                )
+
+            parts.append(f"<tr{attrs}>")
+
+            if has_step:
+                parts.append(
+                    "<td>"
+                    f"<input type='checkbox' class='table-step-select'"
+                    f" data-step='{escape(str(step_value))}'"
+                    f" data-path-x='{escape(str(x_value))}'"
+                    f" data-energy='{escape(str(energy_value))}'"
+                    f" data-label='{escape(str(row_label_value))}'"
+                    f" data-table-id='{escape(table.id)}'>"
+                    "</td>"
+                )
+
             for cell in row.cells:
                 parts.append(f"<td>{escape(fmt(cell))}</td>")
             parts.append("</tr>")
