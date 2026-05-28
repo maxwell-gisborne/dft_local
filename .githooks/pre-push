@@ -1,11 +1,8 @@
 #!/usr/bin/env sh
 set -eu
 
-echo "pre-push: running JavaScript syntax check"
-node --check src/dft_local/diagnostics/static/dft-local-components.js
-
-echo "pre-push: running JavaScript unit tests"
-node --test src/dft_local/diagnostics/static/dft-local-components.test.mjs
+echo "pre-push: running JavaScript checks"
+npm run js:check
 
 echo "pre-push: running pytest -q"
 python -m pytest -q

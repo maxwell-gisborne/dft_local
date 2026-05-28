@@ -1,0 +1,11 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "js:check": "node --check src/dft_local/diagnostics/static/dft-local-components.js && node --test src/dft_local/diagnostics/static/dft-local-components.test.mjs && tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^5.9.0"
+  }
+}
