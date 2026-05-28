@@ -9,10 +9,11 @@ from dft_local.transport.bands.diagnostics import (
 
 def test_bands_diagnostics_exports_overview_spec() -> None:
     specs = diagnostics()
+    by_id = {spec.id: spec for spec in specs}
 
-    assert len(specs) == 1
-    assert isinstance(specs[0], DiagnosticSpec)
-    assert specs[0].id == "transport.bands.overview"
+    assert len(specs) == 2
+    assert isinstance(by_id["transport.bands.overview"], DiagnosticSpec)
+    assert isinstance(by_id["transport.bands.path"], DiagnosticSpec)
 
 
 def test_bands_overview_mentions_public_api() -> None:
@@ -30,3 +31,30 @@ def test_bands_overview_mentions_public_api() -> None:
     assert "LocalPath" in names
     assert "match_via_energies" in names
     assert "match_via_overlap" in names
+
+
+def test_bands_diagnostics_exports_path_spec() -> None:
+    specs = diagnostics()
+    by_id = {spec.id: spec for spec in specs}
+
+    spec = by_id["transport.bands.path"]
+
+    assert spec.title == "Band path Γ-K-M-Γ"
+    assert spec.group == "transport"
+    assert spec.inputs
+
+
+def test_bands_path_spec_has_inputs() -> None:
+    specs = diagnostics()
+    by_id = {spec.id: spec for spec in specs}
+
+    spec = by_id["transport.bands.path"]
+
+    assert spec.title == "Band path Γ-K-M-Γ"
+    assert spec.group == "transport"
+    assert {inp.name for inp in spec.inputs} == {
+        "kernel",
+        "matching",
+        "path",
+        "points_per_segment",
+    }

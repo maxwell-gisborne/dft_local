@@ -93,6 +93,18 @@ class DiagnosticApp:
                 fields.append(
                     f"<label><input type='checkbox' name='{inp.name}' value='1'{checked}> {inp.label}</label>"
                 )
+            elif inp.kind == "select":
+                options = []
+                for option_value, option_label in inp.options:
+                    selected = " selected" if str(option_value) == str(value) else ""
+                    options.append(
+                        f"<option value='{option_value}'{selected}>{option_label}</option>"
+                    )
+                fields.append(
+                    f"<label>{inp.label}<br><select name='{inp.name}'>"
+                    + "".join(options)
+                    + "</select></label>"
+                )
             else:
                 fields.append(
                     f"<label>{inp.label}<br><input name='{inp.name}' value='{value}'></label>"
