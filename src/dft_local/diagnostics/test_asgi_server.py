@@ -51,3 +51,16 @@ def test_default_data_root_uses_environment(monkeypatch) -> None:
     monkeypatch.setenv("DFT_LOCAL_DATA_ROOT", "some/other/root")
 
     assert default_data_root() == "some/other/root"
+
+
+def test_static_component_js_is_served() -> None:
+    app = DiagnosticASGI()
+
+    messages = run_asgi_request(app, "/static/dft-local-components.js")
+
+    start = messages[0]
+    body = messages[1]["body"].decode("utf-8")
+
+    assert start["status"] == 200
+    assert (b"content-type", b"text/javascript; charset=utf-8") in start["headers"]
+    assert "customElements.define" in body

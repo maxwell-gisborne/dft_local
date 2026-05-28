@@ -5,6 +5,7 @@ from __future__ import annotations
 from html import escape
 from typing import Any
 import math
+import json
 
 from dft_local.diagnostics.models import DiagnosticResult, Graph2D
 
@@ -211,9 +212,22 @@ def render_result(result: DiagnosticResult) -> str:
         parts.append("</tbody></table></section>")
 
     for graph in result.graphs:
+        payload = json.dumps(graph.payload())
+        data_id = f"data-{graph.id}"
+        component = "dft-kspace-plot" if "kspace" in graph.id else "dft-line-graph"
+
         parts.append(f"<section class='graph-panel'><h2>{escape(graph.title)}</h2>")
         parts.append(f"<p>{escape(graph.description)}</p>")
-        parts.append(_render_graph_svg(graph))
+        parts.append(
+            f"<script type='application/json' id='{escape(data_id)}'>"
+            f"{escape(payload)}"
+            "</script>"
+        )
+        parts.append(
+            f"<{component} data-source='{escape(data_id)}'>"
+            f"{_render_graph_svg(graph)}"
+            f"</{component}>"
+        )
         parts.append("</section>")
 
     for table in result.tables:
@@ -270,6 +284,7 @@ def render_page(title: str, body: str) -> str:
     .axis {{ stroke: #6b7280; stroke-width: 1.2; }}
     .axis-label, .axis-title, .series-label {{ font-size: 12px; fill: #6b7280; }}
   </style>
+  <script type='module' src='/static/dft-local-components.js'></script>
 </head>
 <body>
 {body}

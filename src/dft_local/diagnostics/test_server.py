@@ -91,3 +91,25 @@ def test_select_inputs_render_as_select_controls() -> None:
     assert "Energy prediction" in html
     assert "Circle around K" in html
     assert "Full Brillouin-zone hexagon" in html
+
+
+def test_band_path_page_mounts_graph_components() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    assert "src='/static/dft-local-components.js'" in html
+    assert "<script type='application/json' id='data-kspace_path'>" in html
+    assert "<script type='application/json' id='data-band_path'>" in html
+    assert "<dft-kspace-plot data-source='data-kspace_path'>" in html
+    assert "<dft-line-graph data-source='data-band_path'>" in html
+    assert "<svg" in html

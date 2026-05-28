@@ -16,6 +16,8 @@ from dft_local.diagnostics.discovery import load_diagnostics
 from dft_local.diagnostics.models import InputParseError, parse_inputs
 from dft_local.diagnostics.render import render_page, render_result
 
+STATIC_ROOT = Path(__file__).resolve().parent / "static"
+
 
 def load_default_context(root: str | Path = "test_run/run_dir/data") -> Any:
     """Compatibility wrapper returning dft_local-local diagnostic context."""
@@ -40,8 +42,29 @@ class DiagnosticApp:
         query = parse_qs(environ.get("QUERY_STRING", ""), keep_blank_values=True)
         raw_inputs = {key: values[-1] for key, values in query.items()}
 
+        content_type = "text/html; charset=utf-8"
+
         try:
-            if path == "/":
+            if path.startswith("/static/"):
+                rel = path.removeprefix("/static/")
+                target = (STATIC_ROOT / rel).resolve()
+                static_root = STATIC_ROOT.resolve()
+
+                if not str(target).startswith(str(static_root)) or not target.is_file():
+                    body = "not found"
+                    status = "404 Not Found"
+                    content_type = "text/plain; charset=utf-8"
+                else:
+                    body = target.read_text()
+                    status = "200 OK"
+                    if target.suffix == ".js":
+                        content_type = "text/javascript; charset=utf-8"
+                    elif target.suffix == ".css":
+                        content_type = "text/css; charset=utf-8"
+                    else:
+                        content_type = "text/plain; charset=utf-8"
+
+            elif path == "/":
                 body = self.index()
                 status = "200 OK"
             elif path.startswith("/d/"):
@@ -56,7 +79,7 @@ class DiagnosticApp:
             status = "500 Internal Server Error"
 
         data = body.encode("utf-8")
-        start_response(status, [("Content-Type", "text/html; charset=utf-8"), ("Content-Length", str(len(data)))])
+        start_response(status, [("Content-Type", content_type), ("Content-Length", str(len(data)))])
         return [data]
 
     def index(self) -> str:
