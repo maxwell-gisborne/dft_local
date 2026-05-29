@@ -212,3 +212,500 @@ def test_docs_markdown_renderer_uses_markdown_features() -> None:
     assert "inline" in html
     assert "- two" not in html
     assert "\\n\\n" not in html
+
+
+def test_diagnostic_pages_link_to_matching_docs() -> None:
+    app = DiagnosticApp(ctx=None)
+
+    html = app.diagnostic_page("transport.boltzmann.ashcroft_comparison.overview", {})
+
+    assert "/docs/transport.boltzmann.ashcroft_comparison" in html
+
+
+def test_docs_pages_link_to_matching_diagnostics() -> None:
+    app = DiagnosticApp(ctx=None)
+
+    html = app.docs_page("transport.boltzmann.ashcroft_comparison")
+
+    assert "/d/transport.boltzmann.ashcroft_comparison.overview" in html
+
+
+def test_kspace_hexagon_payload_renders_regular_on_screen() -> None:
+    import json
+    import math
+    import re
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    match = re.search(
+        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        html,
+        flags=re.S,
+    )
+    assert match is not None
+
+    payloads = []
+    for _source_id, raw_json in re.findall(
+        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        html,
+        flags=re.S,
+    ):
+        payload = json.loads(raw_json)
+        if any("hex" in series["name"].lower() for series in payload.get("series", [])):
+            payloads.append(payload)
+
+    assert payloads, "expected a k-space payload containing a hexagon series"
+
+    payload = payloads[0]
+    hex_series = next(
+        series for series in payload["series"]
+        if "hex" in series["name"].lower()
+    )
+
+    raw_points = hex_series["points"]
+
+    # Drop closing point if repeated.
+    if raw_points[0]["x"] == raw_points[-1]["x"] and raw_points[0]["y"] == raw_points[-1]["y"]:
+        raw_points = raw_points[:-1]
+
+    assert len(raw_points) == 6
+
+    def k_basis_to_cartesian(k1: float, k2: float) -> tuple[float, float]:
+        return (k1 - 0.5 * k2, math.sqrt(3.0) * 0.5 * k2)
+    def raw_cartesian(k1: float, k2: float) -> tuple[float, float]:
+        return (k1, k2)
+
+    def polygon_lengths(points, transform):
+        coords = [transform(float(point["x"]), float(point["y"])) for point in points]
+        return [
+            math.hypot(
+                coords[(i + 1) % len(coords)][0] - coords[i][0],
+                coords[(i + 1) % len(coords)][1] - coords[i][1],
+            )
+            for i in range(len(coords))
+        ]
+
+    raw_lengths = polygon_lengths(raw_points, raw_cartesian)
+    basis_converted_lengths = polygon_lengths(raw_points, k_basis_to_cartesian)
+
+    # Match JS graph layout for k-space plots.
+    width = 1000
+    height = 520
+    margin = {"left": 78, "right": 150, "top": 28, "bottom": 62}
+    inner_w = width - margin["left"] - margin["right"]
+    inner_h = height - margin["top"] - margin["bottom"]
+
+    all_cartesian = []
+    for series in payload["series"]:
+        for point in series["points"]:
+            all_cartesian.append(k_basis_to_cartesian(float(point["x"]), float(point["y"])))
+
+    xmin = min(x for x, _y in all_cartesian)
+    xmax = max(x for x, _y in all_cartesian)
+    ymin = min(y for _x, y in all_cartesian)
+    ymax = max(y for _x, y in all_cartesian)
+
+    # Match JS graphBounds padding.
+    xpad = 0.06 * (xmax - xmin)
+    ypad = 0.10 * (ymax - ymin)
+    xmin -= xpad
+    xmax += xpad
+    ymin -= ypad
+    ymax += ypad
+
+    # Match JS equalPixelAspectView.
+    xmid = 0.5 * (xmin + xmax)
+    ymid = 0.5 * (ymin + ymax)
+    xspan = xmax - xmin
+    yspan = ymax - ymin
+    pixel_aspect = inner_w / inner_h
+    data_aspect = xspan / yspan
+
+    if data_aspect < pixel_aspect:
+        xspan = yspan * pixel_aspect
+        xmin = xmid - 0.5 * xspan
+        xmax = xmid + 0.5 * xspan
+    else:
+        yspan = xspan / pixel_aspect
+        ymin = ymid - 0.5 * yspan
+        ymax = ymid + 0.5 * yspan
+
+    def project(point: dict[str, float]) -> tuple[float, float]:
+        x, y = k_basis_to_cartesian(float(point["x"]), float(point["y"]))
+        sx = margin["left"] + ((x - xmin) / (xmax - xmin)) * inner_w
+        sy = margin["top"] + ((ymax - y) / (ymax - ymin)) * inner_h
+        return sx, sy
+
+    screen_points = [project(point) for point in raw_points]
+    lengths = []
+    for i, point in enumerate(screen_points):
+        next_point = screen_points[(i + 1) % len(screen_points)]
+        lengths.append(math.hypot(point[0] - next_point[0], point[1] - next_point[1]))
+
+    min_length = min(lengths)
+    max_length = max(lengths)
+
+    assert min_length > 0.0
+    assert max_length / min_length < 1.000000001, lengths
+
+
+def test_kspace_hexagon_path_points_lie_on_hexagon_perimeter() -> None:
+    import json
+    import math
+    import re
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "hexagon",
+            "points_per_segment": "8",
+        },
+    )
+
+    payload = None
+    for _source_id, raw_json in re.findall(
+        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        html,
+        flags=re.S,
+    ):
+        candidate = json.loads(raw_json)
+        names = {series["name"] for series in candidate.get("series", [])}
+        if "hexagon" in names and "selected path" in names:
+            payload = candidate
+            break
+
+    assert payload is not None, "expected k-space payload with hexagon and selected path"
+
+    series_by_name = {series["name"]: series for series in payload["series"]}
+    hex_points = series_by_name["hexagon"]["points"]
+    selected_points = series_by_name["selected path"]["points"]
+
+    if hex_points[0]["x"] == hex_points[-1]["x"] and hex_points[0]["y"] == hex_points[-1]["y"]:
+        hex_points = hex_points[:-1]
+
+    assert len(hex_points) == 6
+    assert selected_points
+
+    def k_basis_to_cartesian(point: dict[str, float]) -> tuple[float, float]:
+        k1 = float(point["x"])
+        k2 = float(point["y"])
+        return (k1 - 0.5 * k2, math.sqrt(3.0) * 0.5 * k2)
+
+    hex_cart = [k_basis_to_cartesian(point) for point in hex_points]
+    selected_cart = [k_basis_to_cartesian(point) for point in selected_points]
+
+    def distance_to_segment(
+        point: tuple[float, float],
+        a: tuple[float, float],
+        b: tuple[float, float],
+    ) -> float:
+        px, py = point
+        ax, ay = a
+        bx, by = b
+
+        vx = bx - ax
+        vy = by - ay
+        wx = px - ax
+        wy = py - ay
+
+        vv = vx * vx + vy * vy
+        if vv == 0.0:
+            return math.hypot(px - ax, py - ay)
+
+        t = max(0.0, min(1.0, (wx * vx + wy * vy) / vv))
+        qx = ax + t * vx
+        qy = ay + t * vy
+        return math.hypot(px - qx, py - qy)
+
+    edge_lengths = [
+        math.hypot(
+            hex_cart[(i + 1) % len(hex_cart)][0] - hex_cart[i][0],
+            hex_cart[(i + 1) % len(hex_cart)][1] - hex_cart[i][1],
+        )
+        for i in range(len(hex_cart))
+    ]
+
+    assert max(edge_lengths) / min(edge_lengths) < 1.000000001
+
+    scale = max(edge_lengths)
+    max_distance = max(
+        min(
+            distance_to_segment(point, hex_cart[i], hex_cart[(i + 1) % len(hex_cart)])
+            for i in range(len(hex_cart))
+        )
+        for point in selected_cart
+    )
+
+    assert max_distance / scale < 1.0e-10
+
+
+def obsolete_test_kspace_reference_m_lies_on_hexagon_boundary() -> None:
+    import json
+    import math
+    import re
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    payload = None
+    for _source_id, raw_json in re.findall(
+        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        html,
+        flags=re.S,
+    ):
+        candidate = json.loads(raw_json)
+        names = {series["name"] for series in candidate.get("series", [])}
+        if "hexagon" in names and "Γ K M" in names:
+            payload = candidate
+            break
+
+    assert payload is not None
+
+    series_by_name = {series["name"]: series for series in payload["series"]}
+    hex_points = series_by_name["hexagon"]["points"]
+    ref_points = {point["label"]: point for point in series_by_name["Γ K M"]["points"]}
+
+    if hex_points[0]["x"] == hex_points[-1]["x"] and hex_points[0]["y"] == hex_points[-1]["y"]:
+        hex_points = hex_points[:-1]
+
+    def k_basis_to_cartesian(point: dict[str, float]) -> tuple[float, float]:
+        k1 = float(point["x"])
+        k2 = float(point["y"])
+        return (k1 - 0.5 * k2, math.sqrt(3.0) * 0.5 * k2)
+
+    def distance_to_segment(
+        point: tuple[float, float],
+        a: tuple[float, float],
+        b: tuple[float, float],
+    ) -> float:
+        px, py = point
+        ax, ay = a
+        bx, by = b
+        vx = bx - ax
+        vy = by - ay
+        wx = px - ax
+        wy = py - ay
+        vv = vx * vx + vy * vy
+        if vv == 0.0:
+            return math.hypot(px - ax, py - ay)
+        t = max(0.0, min(1.0, (wx * vx + wy * vy) / vv))
+        qx = ax + t * vx
+        qy = ay + t * vy
+        return math.hypot(px - qx, py - qy)
+
+    hex_cart = [k_basis_to_cartesian(point) for point in hex_points]
+    m_cart = k_basis_to_cartesian(ref_points["M"])
+    k_cart = k_basis_to_cartesian(ref_points["K"])
+
+    edge_lengths = [
+        math.hypot(
+            hex_cart[(i + 1) % len(hex_cart)][0] - hex_cart[i][0],
+            hex_cart[(i + 1) % len(hex_cart)][1] - hex_cart[i][1],
+        )
+        for i in range(len(hex_cart))
+    ]
+    scale = max(edge_lengths)
+
+    m_distance = min(
+        distance_to_segment(m_cart, hex_cart[i], hex_cart[(i + 1) % len(hex_cart)])
+        for i in range(len(hex_cart))
+    )
+    k_distance = min(math.hypot(k_cart[0] - x, k_cart[1] - y) for x, y in hex_cart)
+
+    assert m_distance / scale < 1.0e-12
+    assert k_distance / scale < 1.0e-12
+
+
+def test_kspace_reference_markers_lie_on_selected_path() -> None:
+    import json
+    import math
+    import re
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    payload = None
+    for _source_id, raw_json in re.findall(
+        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        html,
+        flags=re.S,
+    ):
+        candidate = json.loads(raw_json)
+        names = {series["name"] for series in candidate.get("series", [])}
+        if "selected path" in names and "Γ K M" in names:
+            payload = candidate
+            break
+
+    assert payload is not None
+
+    series_by_name = {series["name"]: series for series in payload["series"]}
+    selected = series_by_name["selected path"]["points"]
+    references = series_by_name["Γ K M"]["points"]
+
+    assert {point["label"] for point in references} == {"Γ", "K", "M"}
+
+    def distance(a: dict[str, float], b: dict[str, float]) -> float:
+        return math.hypot(float(a["x"]) - float(b["x"]), float(a["y"]) - float(b["y"]))
+
+    for ref in references:
+        nearest = min(distance(ref, point) for point in selected)
+        assert nearest < 1.0e-12, ref
+
+
+def test_gamma_k_m_rendered_path_m_lies_on_hexagon_edge() -> None:
+    import json
+    import math
+    import re
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    payload = None
+    for _source_id, raw_json in re.findall(
+        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        html,
+        flags=re.S,
+    ):
+        candidate = json.loads(raw_json)
+        names = {series["name"] for series in candidate.get("series", [])}
+        if {"selected path", "hexagon", "Γ K M"} <= names:
+            payload = candidate
+            break
+
+    assert payload is not None, "expected rendered k-space payload"
+
+    series_by_name = {series["name"]: series for series in payload["series"]}
+    selected = series_by_name["selected path"]["points"]
+    hex_points = series_by_name["hexagon"]["points"]
+    references = {point["label"]: point for point in series_by_name["Γ K M"]["points"]}
+
+    assert {"Γ", "K", "M"} <= set(references)
+
+    if hex_points[0]["x"] == hex_points[-1]["x"] and hex_points[0]["y"] == hex_points[-1]["y"]:
+        hex_points = hex_points[:-1]
+
+    def to_cart(point: dict[str, float]) -> tuple[float, float]:
+        k1 = float(point["x"])
+        k2 = float(point["y"])
+        return (k1 - 0.5 * k2, math.sqrt(3.0) * 0.5 * k2)
+
+    def distance(a: tuple[float, float], b: tuple[float, float]) -> float:
+        return math.hypot(a[0] - b[0], a[1] - b[1])
+
+    def distance_to_segment(
+        point: tuple[float, float],
+        a: tuple[float, float],
+        b: tuple[float, float],
+    ) -> float:
+        px, py = point
+        ax, ay = a
+        bx, by = b
+        vx = bx - ax
+        vy = by - ay
+        wx = px - ax
+        wy = py - ay
+        vv = vx * vx + vy * vy
+        if vv == 0.0:
+            return distance(point, a)
+        t = max(0.0, min(1.0, (wx * vx + wy * vy) / vv))
+        qx = ax + t * vx
+        qy = ay + t * vy
+        return distance(point, (qx, qy))
+
+    hex_cart = [to_cart(point) for point in hex_points]
+    selected_cart = [to_cart(point) for point in selected]
+    k_cart = to_cart(references["K"])
+    m_cart = to_cart(references["M"])
+
+    edge_lengths = [
+        distance(hex_cart[i], hex_cart[(i + 1) % len(hex_cart)])
+        for i in range(len(hex_cart))
+    ]
+    scale = max(edge_lengths)
+
+    # First prove the reference marker really is a selected path sample.
+    nearest_selected_to_m = min(distance(m_cart, point) for point in selected_cart)
+    assert nearest_selected_to_m / scale < 1.0e-12
+
+    # Then prove K and M are on the BZ boundary.
+    k_boundary_distance = min(distance(k_cart, point) for point in hex_cart)
+    m_boundary_distance = min(
+        distance_to_segment(m_cart, hex_cart[i], hex_cart[(i + 1) % len(hex_cart)])
+        for i in range(len(hex_cart))
+    )
+
+    assert k_boundary_distance / scale < 1.0e-12
+    assert m_boundary_distance / scale < 1.0e-12, {
+        "M": references["M"],
+        "M_cart": m_cart,
+        "boundary_distance": m_boundary_distance,
+        "edge_scale": scale,
+        "relative_distance": m_boundary_distance / scale,
+    }
+
+    # Finally prove the selected K->M segment itself lies on one hexagon edge.
+    k_index = min(range(len(selected_cart)), key=lambda i: distance(selected_cart[i], k_cart))
+    m_index = min(range(len(selected_cart)), key=lambda i: distance(selected_cart[i], m_cart))
+    lo, hi = sorted((k_index, m_index))
+
+    max_segment_distance = max(
+        min(
+            distance_to_segment(point, hex_cart[i], hex_cart[(i + 1) % len(hex_cart)])
+            for i in range(len(hex_cart))
+        )
+        for point in selected_cart[lo : hi + 1]
+    )
+
+    assert max_segment_distance / scale < 1.0e-12, {
+        "k_index": k_index,
+        "m_index": m_index,
+        "max_segment_distance": max_segment_distance,
+        "edge_scale": scale,
+        "relative_distance": max_segment_distance / scale,
+    }

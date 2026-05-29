@@ -116,11 +116,25 @@ class Card:
 
 
 @dataclass(frozen=True, slots=True)
+class MarkdownBlock:
+    id: str
+    title: str
+    markdown: str
+
+
+@dataclass(frozen=True, slots=True)
 class TableRow:
     """One table row, optionally linked to a selectable diagnostic entity."""
 
     cells: tuple[Any, ...]
     entity_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class MarkdownBlock:
+    id: str
+    title: str
+    markdown: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +255,18 @@ class EntityDetail:
 
 
 @dataclass(frozen=True, slots=True)
+class DiagnosticSection:
+    id: str
+    title: str
+    description: str = ""
+    collapsed: bool = False
+    markdowns: tuple[MarkdownBlock, ...] = ()
+    cards: tuple[Card, ...] = ()
+    tables: tuple[Table, ...] = ()
+    sections: tuple["DiagnosticSection", ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
 class DiagnosticResult:
     """Complete output of one diagnostic run.
 
@@ -258,6 +284,8 @@ class DiagnosticResult:
     notes: tuple[str, ...] = ()
 
 
+    markdowns: tuple[MarkdownBlock, ...] = ()
+    sections: tuple[DiagnosticSection, ...] = ()
 @dataclass(frozen=True, slots=True)
 class DiagnosticSpec:
     """Registry entry for one diagnostic."""

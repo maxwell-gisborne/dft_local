@@ -1,7 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { nice, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, nearestPathPoint, selectedPathHits, nearestPointByX, makeGraphSvg, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps } from "./dft-local-components.js";
+import {
+  nice,
+  graphBounds,
+  zoomView,
+  panView,
+  equalAspectView,
+  kBasisToCartesian,
+  rotatePoint,
+  kspacePayloadToCartesian,
+  nearestPathPoint,
+  selectedPathHits,
+  nearestPointByX,
+  makeGraphSvg,
+  isSelectionFrozen,
+  emitSelectionFreeze,
+  selectedSteps,
+  emitSelectedSteps,
+  projectedKspaceHexagonSideLengths,
+} from "./dft-local-components.js";
 import { readFileSync } from "node:fs";
 
 test("nice formats ordinary numbers", () => {
@@ -362,4 +380,39 @@ test("selected table marker split policy exists", () => {
   assert.equal(source.includes("selected-row-readout"), false);
   assert.equal(source.includes("item.energy === null"), true);
   assert.equal(source.includes("} else if (Number.isFinite(item.energy)) {"), true);
+});
+
+
+test("kspace hexagon remains regular after screen projection", () => {
+  const corners = [
+    { x: 2 / 3, y: 1 / 3 },
+    { x: 1 / 3, y: 2 / 3 },
+    { x: -1 / 3, y: 1 / 3 },
+    { x: -2 / 3, y: -1 / 3 },
+    { x: -1 / 3, y: -2 / 3 },
+    { x: 1 / 3, y: -1 / 3 },
+  ];
+
+  const payload = {
+    id: "regular-hexagon-render-test",
+    title: "Regular hexagon render test",
+    x_label: "k1",
+    y_label: "k2",
+    series: [
+      {
+        name: "hexagon",
+        points: corners,
+      },
+    ],
+  };
+
+  const sideLengths = projectedKspaceHexagonSideLengths(payload, { kspace: true });
+  const minLength = Math.min(...sideLengths);
+  const maxLength = Math.max(...sideLengths);
+
+  assert.ok(minLength > 0);
+  assert.ok(
+    maxLength / minLength < 1.000000001,
+    `screen-projected hexagon side lengths are not regular: ${sideLengths.join(", ")}`
+  );
 });

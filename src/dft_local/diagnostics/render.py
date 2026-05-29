@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from html import escape
+import re
 from typing import Any
 import math
 import json
 
-from dft_local.diagnostics.models import DiagnosticResult, Graph2D
+from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, DiagnosticResult, Graph2D
 
 
 def fmt(value: Any) -> str:
@@ -174,7 +175,145 @@ def _render_graph_svg(graph: Graph2D) -> str:
     return "\n".join(parts)
 
 
+def render_markdown_block(block: MarkdownBlock) -> str:
+    return (
+        f"<section id='{escape(block.id)}'>"
+        f"<h2>{escape(block.title)}</h2>"
+        + DiagnosticApp.render_markdown(block.markdown)
+        + "</section>"
+    )
+
+
+def render_markdown_text(markdown: str) -> str:
+    lines = markdown.splitlines()
+    html: list[str] = []
+    in_list = False
+    paragraph: list[str] = []
+
+    def flush_paragraph() -> None:
+        nonlocal paragraph
+        if paragraph:
+            html.append("<p>" + " ".join(escape(line.strip()) for line in paragraph) + "</p>")
+            paragraph = []
+
+    def close_list() -> None:
+        nonlocal in_list
+        if in_list:
+            html.append("</ul>")
+            in_list = False
+
+    for line in lines:
+        stripped = line.rstrip()
+
+        if not stripped:
+            flush_paragraph()
+            close_list()
+            continue
+
+        heading = re.match(r"^(#{1,6})\s+(.*)$", stripped)
+        if heading:
+            flush_paragraph()
+            close_list()
+            level = len(heading.group(1))
+            html.append(f"<h{level}>{escape(heading.group(2).strip())}</h{level}>")
+            continue
+
+        if stripped.startswith("- "):
+            flush_paragraph()
+            if not in_list:
+                html.append("<ul>")
+                in_list = True
+            html.append(f"<li>{escape(stripped[2:].strip())}</li>")
+            continue
+
+        paragraph.append(stripped)
+
+    flush_paragraph()
+    close_list()
+    return "\n".join(html)
+
+
+def render_markdown_block(block: MarkdownBlock) -> str:
+    return (
+        f"<section id='{escape(block.id)}' class='markdown-block'>"
+        f"<h2>{escape(block.title)}</h2>"
+        + render_markdown_text(block.markdown)
+        + "</section>"
+    )
+
+
+def render_card(card) -> str:
+    title = getattr(card, "title", getattr(card, "label", ""))
+    value = getattr(card, "value", "")
+    subtitle = getattr(card, "subtitle", getattr(card, "kind", ""))
+
+    return (
+        "<div class='card'>"
+        f"<strong>{escape(str(title))}</strong>"
+        f"<div>{escape(str(value))}</div>"
+        f"<small>{escape(str(subtitle))}</small>"
+        "</div>"
+    )
+
+
+def render_table(table) -> str:
+    headers = "".join(f"<th>{escape(str(header))}</th>" for header in table.headers)
+
+    rows = []
+    for row in table.rows:
+        cells = getattr(row, "cells", row)
+        rows.append(
+            "<tr>"
+            + "".join(f"<td>{escape(str(cell))}</td>" for cell in cells)
+            + "</tr>"
+        )
+
+    description = ""
+    if getattr(table, "description", ""):
+        description = f"<p><small>{escape(str(table.description))}</small></p>"
+
+    return (
+        f"<section id='{escape(str(table.id))}'>"
+        f"<h3>{escape(str(table.title))}</h3>"
+        + description
+        + "<table><thead><tr>"
+        + headers
+        + "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></section>"
+    )
+
+
+def render_diagnostic_section(section: DiagnosticSection) -> str:
+    open_attr = "" if section.collapsed else " open"
+    body: list[str] = []
+
+    if section.description:
+        body.append(f"<p>{escape(section.description)}</p>")
+
+    for block in section.markdowns:
+        body.append(render_markdown_block(block))
+
+    for card in section.cards:
+        body.append(render_card(card))
+
+    for table in section.tables:
+        body.append(render_table(table))
+
+    for child in section.sections:
+        body.append(render_diagnostic_section(child))
+
+    return (
+        f"<details id='{escape(section.id)}' class='diagnostic-section'{open_attr}>"
+        f"<summary>{escape(section.title)}</summary>"
+        + "".join(body)
+        + "</details>"
+    )
+
+
 def render_result(result: DiagnosticResult) -> str:
+    rendered_markdowns = ''.join(render_markdown_block(block) for block in result.markdowns)
+    rendered_sections = ''.join(render_diagnostic_section(section) for section in result.sections)
     """Render a diagnostic result body as simple HTML."""
 
     parts: list[str] = []
@@ -301,38 +440,302 @@ def render_result(result: DiagnosticResult) -> str:
             parts.append(f"<p>{escape(note)}</p>")
         parts.append("</section>")
 
-    return "\n".join(parts)
+    return rendered_markdowns + rendered_sections + "\n".join(parts)
+
+
+ACADEMIC_STYLE = """
+<style>
+:root {
+  --paper: #fbfaf7;
+  --ink: #1f2933;
+  --muted: #606f7b;
+  --rule: #d7d0c4;
+  --soft-rule: #ebe4d8;
+  --accent: #284b63;
+  --accent-soft: #eef4f7;
+  --mono-bg: #f4f1eb;
+  --shadow: 0 1px 2px rgba(31, 41, 51, 0.08);
+}
+
+html {
+  background: #ece7dd;
+  color: var(--ink);
+  font-size: 16px;
+}
+
+body {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 3rem 2.25rem 5rem;
+  background: var(--paper);
+  font-family: "Latin Modern Roman", "Computer Modern Serif", "CMU Serif", Georgia, "Times New Roman", serif;
+  line-height: 1.62;
+  box-shadow: 0 0 0 1px rgba(80, 70, 55, 0.10), 0 10px 30px rgba(80, 70, 55, 0.12);
+  min-height: 100vh;
+}
+
+.diagnostic-paper h1, .diagnostic-paper h2, .diagnostic-paper h3, .diagnostic-paper h4 {
+  color: #111827;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.015em;
+}
+
+.diagnostic-paper h1 {
+  margin: 0 0 1.2rem;
+  font-size: 2.25rem;
+  text-align: center;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.8rem;
+}
+
+.diagnostic-paper h2 {
+  margin-top: 2.4rem;
+  font-size: 1.45rem;
+  border-bottom: 1px solid var(--soft-rule);
+  padding-bottom: 0.25rem;
+}
+
+.diagnostic-paper h3 {
+  margin-top: 1.8rem;
+  font-size: 1.15rem;
+}
+
+.diagnostic-paper p {
+  margin: 0.75rem 0 1rem;
+}
+
+.diagnostic-paper a {
+  color: var(--accent);
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.14em;
+}
+
+.diagnostic-paper nav {
+  margin: -1rem 0 2rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.diagnostic-paper code, .diagnostic-paper pre, .diagnostic-paper kbd {
+  font-family: "Latin Modern Mono", "Computer Modern Typewriter", "CMU Typewriter Text", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.diagnostic-paper code {
+  background: var(--mono-bg);
+  border: 1px solid var(--soft-rule);
+  border-radius: 3px;
+  padding: 0.08rem 0.25rem;
+  font-size: 0.92em;
+}
+
+.diagnostic-paper pre {
+  overflow-x: auto;
+  background: var(--mono-bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.85rem 1rem;
+}
+
+pre .diagnostic-paper code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.diagnostic-paper table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0 1.6rem;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.diagnostic-paper thead {
+  border-top: 1.5px solid #2f3640;
+  border-bottom: 1px solid #2f3640;
+}
+
+.diagnostic-paper tbody {
+  border-bottom: 1.5px solid #2f3640;
+}
+
+.diagnostic-paper th, .diagnostic-paper td {
+  padding: 0.42rem 0.55rem;
+  text-align: right;
+  vertical-align: top;
+  border: 0;
+}
+
+.diagnostic-paper th:first-child, .diagnostic-paper td:first-child {
+  text-align: left;
+}
+
+.diagnostic-paper tbody tr:nth-child(even) {
+  background: rgba(40, 75, 99, 0.035);
+}
+
+.diagnostic-paper small {
+  color: var(--muted);
+}
+
+.diagnostic-paper ul, .diagnostic-paper ol {
+  padding-left: 1.5rem;
+}
+
+.diagnostic-paper .card {
+  display: inline-block;
+  vertical-align: top;
+  min-width: 11rem;
+  max-width: 18rem;
+  margin: 0.35rem 0.45rem 0.55rem 0;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: #fffdf8;
+  box-shadow: var(--shadow);
+}
+
+.diagnostic-paper .card strong {
+  display: block;
+  font-variant: small-caps;
+  letter-spacing: 0.035em;
+}
+
+.diagnostic-paper .card div {
+  font-size: 1.05rem;
+  margin-top: 0.15rem;
+}
+
+.card .diagnostic-paper small {
+  display: block;
+  margin-top: 0.2rem;
+}
+
+.diagnostic-paper .markdown-block {
+  margin: 1.2rem 0 1.4rem;
+  padding: 0.95rem 1.15rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+.markdown-block .diagnostic-paper h2 {
+  margin-top: 0;
+  border-bottom: 0;
+  font-size: 1.18rem;
+}
+
+.diagnostic-paper details.diagnostic-section {
+  margin: 1.35rem 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #fffdf8;
+  box-shadow: var(--shadow);
+}
+
+.diagnostic-paper details.diagnostic-section > summary {
+  cursor: pointer;
+  padding: 0.75rem 0.95rem;
+  font-weight: 600;
+  color: #111827;
+  background: linear-gradient(#fffdf8, #f7f1e8);
+  border-bottom: 1px solid transparent;
+}
+
+.diagnostic-paper details.diagnostic-section[open] > summary {
+  border-bottom-color: var(--rule);
+}
+
+.diagnostic-paper details.diagnostic-section > *:not(summary) {
+  margin-left: 1rem;
+  margin-right: 1rem;
+}
+
+details.diagnostic-section .diagnostic-paper details.diagnostic-section {
+  margin-left: 0.5rem;
+  margin-right: 0.5rem;
+  background: #fbfaf7;
+}
+
+@media (max-width: 760px) {
+  body {
+    padding: 1.4rem 1rem 3rem;
+    box-shadow: none;
+  }
+
+  .diagnostic-paper h1 {
+    font-size: 1.8rem;
+  }
+
+  .diagnostic-paper table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .diagnostic-paper .card {
+    display: block;
+    max-width: none;
+  }
+}
+
+
+/* Interactive graph components own their own geometry and colour rules.
+   Keep the paper theme from leaking into their layout calculations. */
+.diagnostic-paper dft-line-graph,
+.diagnostic-paper dft-kspace-graph,
+.diagnostic-paper dft-band-graph {
+  display: block;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: normal;
+  color: #111827;
+  background: transparent;
+  box-sizing: content-box;
+  contain: layout style;
+}
+
+
+/* Graph SVG layout only: do not style internal geometry. */
+.diagnostic-paper svg.graph-svg-component {
+  max-width: 100%;
+  height: auto;
+}
+
+.diagnostic-paper svg.kspace-svg {
+  width: min(720px, 100%);
+  height: auto;
+  aspect-ratio: 1 / 1;
+}
+
+</style>
+"""
 
 
 def render_page(title: str, body: str) -> str:
-    """Render a full diagnostic HTML page."""
+    return (
+        "<!doctype html>\n"
+        "<html>\n"
+        "<head>\n"
+        "  <meta charset='utf-8'>\n"
+        f"  <title>{escape(title)}</title>\n"
+        f"{ACADEMIC_STYLE}\n"
+        "  <script type='module' src='/static/dft-local-components.js'></script>\n"
+        "</head>\n"
+        "<body>\n"
+        "<main class='diagnostic-paper'>\n"
+        f"{body}\n"
+        "</main>\n"
+        "</body>\n"
+        "</html>\n"
+    )
 
     return f"""<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
   <title>{escape(title)}</title>
-  <style>
-    body {{ font-family: system-ui, sans-serif; margin: 2rem; line-height: 1.45; background: #f6f7f9; color: #111827; }}
-    body > h1, body > p, body > section, body > form {{ max-width: 1200px; margin-left: auto; margin-right: auto; }}
-    table {{ border-collapse: collapse; width: 100%; margin: 1rem 0 2rem; background: white; }}
-    th, td {{ border: 1px solid #ddd; padding: 0.35rem 0.5rem; text-align: left; }}
-    th {{ background: #f5f5f5; }}
-    .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem; }}
-    .card, section, form {{ border: 1px solid #ddd; border-radius: 0.75rem; padding: 1rem; background: white; margin-bottom: 1rem; }}
-    .ok {{ color: #166534; }}
-    .warn {{ color: #92400e; }}
-    .bad {{ color: #991b1b; }}
-    .neutral {{ color: #374151; }}
-    nav a {{ margin-right: 1rem; }}
-    input, select, button {{ font: inherit; padding: 0.35rem 0.5rem; margin: 0.15rem; }}
-    button {{ font-weight: 700; }}
-    .graph-svg {{ display: block; width: 100%; height: 32rem; border: 1px solid #d1d5db; border-radius: 0.5rem; background: white; }}
-    .graph-bg {{ fill: white; }}
-    .grid {{ stroke: #e5e7eb; stroke-width: 1; }}
-    .axis {{ stroke: #6b7280; stroke-width: 1.2; }}
-    .axis-label, .axis-title, .series-label {{ font-size: 12px; fill: #6b7280; }}
-  </style>
   <script type='module' src='/static/dft-local-components.js'></script>
 </head>
 <body>

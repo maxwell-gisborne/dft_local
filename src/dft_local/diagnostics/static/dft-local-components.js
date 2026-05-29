@@ -227,6 +227,45 @@ function equalAspectView(view) {
 }
 
 /**
+ * Expand a data view so one data unit has the same pixel size in x and y.
+ *
+ * @param {GraphView} view
+ * @param {number} innerW
+ * @param {number} innerH
+ * @returns {GraphView}
+ */
+function equalPixelAspectView(view, innerW, innerH) {
+  const xMid = 0.5 * (view.xmin + view.xmax);
+  const yMid = 0.5 * (view.ymin + view.ymax);
+  const xSpan = view.xmax - view.xmin;
+  const ySpan = view.ymax - view.ymin;
+  const pixelAspect = innerW / innerH;
+  const dataAspect = xSpan / ySpan;
+
+  if (!Number.isFinite(pixelAspect) || !Number.isFinite(dataAspect) || pixelAspect <= 0 || dataAspect <= 0) {
+    return view;
+  }
+
+  if (dataAspect < pixelAspect) {
+    const expandedXSpan = ySpan * pixelAspect;
+    return {
+      xmin: xMid - 0.5 * expandedXSpan,
+      xmax: xMid + 0.5 * expandedXSpan,
+      ymin: view.ymin,
+      ymax: view.ymax,
+    };
+  }
+
+  const expandedYSpan = xSpan / pixelAspect;
+  return {
+    xmin: view.xmin,
+    xmax: view.xmax,
+    ymin: yMid - 0.5 * expandedYSpan,
+    ymax: yMid + 0.5 * expandedYSpan,
+  };
+}
+
+/**
  * @param {number} k1
  * @param {number} k2
  * @returns {{x:number, y:number}}
@@ -269,6 +308,65 @@ function kspacePayloadToCartesian(payload, angle = 0) {
       }),
     })),
   };
+}
+
+/**
+ * @param {{showAxes?: boolean, kspace?: boolean}} [options]
+ * @returns {{width:number, height:number, margin:{left:number, right:number, top:number, bottom:number}, innerW:number, innerH:number}}
+ */
+function graphLayout(options = {}) {
+  const showAxes = options.showAxes !== false;
+  const width = showAxes ? 1000 : 720;
+  const height = showAxes ? 520 : 720;
+  const margin = showAxes
+    ? { left: 78, right: 150, top: 28, bottom: 62 }
+    : { left: 24, right: 24, top: 24, bottom: 24 };
+  const innerW = width - margin.left - margin.right;
+  const innerH = height - margin.top - margin.bottom;
+
+  return { width, height, margin, innerW, innerH };
+}
+
+/**
+ * @param {GraphView} view
+ * @param {{left:number, right:number, top:number, bottom:number}} margin
+ * @param {number} innerW
+ * @param {number} innerH
+ * @returns {{sx:(x:number)=>number, sy:(y:number)=>number}}
+ */
+function graphProjector(view, margin, innerW, innerH) {
+  const { xmin, xmax, ymin, ymax } = view;
+
+  return {
+    sx: (x) => margin.left + ((x - xmin) / (xmax - xmin)) * innerW,
+    sy: (y) => margin.top + ((ymax - y) / (ymax - ymin)) * innerH,
+  };
+}
+
+/**
+ * Side lengths, in rendered SVG pixels, for the first six k-space points
+ * after Cartesian conversion, active-view expansion, and graph projection.
+ *
+ * @param {GraphPayload} payload
+ * @param {{showAxes?: boolean, kspace?: boolean}} [options]
+ * @returns {number[]}
+ */
+export function projectedKspaceHexagonSideLengths(payload, options = { kspace: true }) {
+  const displayPayload = kspacePayloadToCartesian(payload, 0);
+  const { margin, innerW, innerH } = graphLayout(options);
+  const bounds = graphBounds(displayPayload);
+  const activeView = options.kspace ? equalPixelAspectView(bounds, innerW, innerH) : bounds;
+  const { sx, sy } = graphProjector(activeView, margin, innerW, innerH);
+
+  const points = displayPayload.series[0].points.slice(0, 6).map((point) => ({
+    x: sx(point.x),
+    y: sy(point.y),
+  }));
+
+  return points.map((point, index) => {
+    const next = points[(index + 1) % points.length];
+    return Math.hypot(point.x - next.x, point.y - next.y);
+  });
 }
 
 /**
@@ -495,8 +593,11 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
   const innerH = height - margin.top - margin.bottom;
 
   const svg = /** @type {SVGSVGElement} */ (svgEl("svg", {
-    class: "graph-svg graph-svg-component",
+    class: options.kspace ? "graph-svg graph-svg-component kspace-svg" : "graph-svg graph-svg-component",
+    width: String(width),
+    height: String(height),
     viewBox: `0 0 ${width} ${height}`,
+    preserveAspectRatio: "xMidYMid meet",
     role: "img",
     "aria-label": payload.title || "Graph",
   }));
@@ -507,14 +608,15 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
     y: "0",
     width: String(width),
     height: String(height),
+    fill: "#fffdf8",
   }));
 
   const bounds = graphBounds(payload);
-  const activeView = view || bounds;
+  const rawView = view || bounds;
+  const activeView = options.kspace ? equalPixelAspectView(rawView, innerW, innerH) : rawView;
   const { xmin, xmax, ymin, ymax } = activeView;
 
-  const sx = (/** @type {number} */ x) => margin.left + ((x - xmin) / (xmax - xmin)) * innerW;
-  const sy = (/** @type {number} */ y) => margin.top + ((ymax - y) / (ymax - ymin)) * innerH;
+  const { sx, sy } = graphProjector(activeView, margin, innerW, innerH);
 
   const clipId = `plot-clip-${payload.id}`;
   const defs = svgEl("defs");
@@ -1375,4 +1477,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export { nice, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, plotFractionsFromPointer, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, plotFractionsFromPointer, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

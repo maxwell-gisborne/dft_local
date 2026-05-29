@@ -85,8 +85,19 @@ def _k_to_cart(k1: float, k2: float) -> tuple[float, float]:
 def _path_preset(name: str) -> list[tuple[str, float, float]]:
     p = np.pi
     gamma = ("Γ", 0.0, 0.0)
-    k = ("K", 2.0 * p / 3.0, -2.0 * p / 3.0)
-    m = ("M", p, 0.0)
+
+    hex_vertices = bz_hexagon_vertices()
+    k_vertex = hex_vertices[0]
+    next_vertex = hex_vertices[1]
+
+    # Use one BZ convention everywhere:
+    # K is a hexagon vertex, M is the midpoint of an adjacent hexagon edge.
+    k = ("K", float(k_vertex[0]), float(k_vertex[1]))
+    m = (
+        "M",
+        0.5 * (float(k_vertex[0]) + float(next_vertex[0])),
+        0.5 * (float(k_vertex[1]) + float(next_vertex[1])),
+    )
 
     if name == "gamma_k_m_gamma":
         return [gamma, k, m, gamma]
@@ -261,27 +272,35 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         ("b2", 0.0, 2.0 * np.pi),
         ("0", 0.0, 0.0),
     ]
-    primitive = [
-        (label, *_k_to_cart(k1, k2))
-        for label, k1, k2 in primitive_basis
-    ]
 
     hex_vertices = bz_hexagon_vertices()
-    hex_cart = [_k_to_cart(float(k1), float(k2)) for k1, k2 in hex_vertices]
     hex_points = [
-        GraphPoint(x, y, label=f"H{i}")
-        for i, (x, y) in enumerate(hex_cart)
+        GraphPoint(float(k1), float(k2), label=f"H{i}")
+        for i, (k1, k2) in enumerate(hex_vertices)
     ]
-    hex_points.append(GraphPoint(hex_cart[0][0], hex_cart[0][1], label="H0"))
+    hex_points.append(GraphPoint(float(hex_vertices[0][0]), float(hex_vertices[0][1]), label="H0"))
 
-    p_pi = np.pi
-    gamma_xy = _k_to_cart(0.0, 0.0)
-    k_xy = _k_to_cart(2.0 * p_pi / 3.0, -2.0 * p_pi / 3.0)
-    m_xy = _k_to_cart(p_pi, 0.0)
-    reference_points = (
-        GraphPoint(gamma_xy[0], gamma_xy[1], label="Γ"),
-        GraphPoint(k_xy[0], k_xy[1], label="K"),
-        GraphPoint(m_xy[0], m_xy[1], label="M"),
+    # Keep reference markers tied to the actual selected path samples.
+    # This avoids a second, hard-coded Γ/K/M convention drifting away from the
+    # k-path used to compute the band diagram.
+    if path_label == "Γ-K-M-Γ":
+        segment = max(1, (len(path.k1) - 1) // 3)
+        reference_indices = (
+            ("Γ", 0),
+            ("K", segment),
+            ("M", 2 * segment),
+        )
+    else:
+        reference_indices = (("Γ", 0),)
+
+    reference_points = tuple(
+        GraphPoint(
+            float(path.k1[index]),
+            float(path.k2[index]),
+            label=label,
+        )
+        for label, index in reference_indices
+        if 0 <= index < len(path.k1)
     )
 
     kspace_series = (
@@ -289,8 +308,8 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             name="selected path",
             points=tuple(
                 GraphPoint(
-                    x=_k_to_cart(float(path.k1[i]), float(path.k2[i]))[0],
-                    y=_k_to_cart(float(path.k1[i]), float(path.k2[i]))[1],
+                    x=float(path.k1[i]),
+                    y=float(path.k2[i]),
                     entity_id=f"kpoint:{i}",
                     label=f"{i}",
                     meta={"step": i, "x": float(x[i])},
@@ -301,7 +320,7 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         ),
         GraphSeries(
             name="primitive cell",
-            points=tuple(GraphPoint(float(k1), float(k2), label=label) for label, k1, k2 in primitive),
+            points=tuple(GraphPoint(float(k1), float(k2), label=label) for label, k1, k2 in primitive_basis),
             kind="line",
         ),
         GraphSeries(

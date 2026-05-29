@@ -144,10 +144,27 @@ class DiagnosticApp:
             )
 
         path = docs[doc_id]
+        matching_specs = [
+            spec for spec in sorted(self.specs.values(), key=lambda item: item.id)
+            if spec.id == doc_id or spec.id.startswith(doc_id + ".")
+        ]
+        diagnostic_links = ""
+        if matching_specs:
+            diagnostic_links = (
+                "<section><h2>Diagnostics</h2><ul>"
+                + "\n".join(
+                    f"<li><a href='/d/{spec.id}'>{escape(spec.title)}</a>"
+                    f"<br><small><code>{escape(spec.id)}</code></small></li>"
+                    for spec in matching_specs
+                )
+                + "</ul></section>"
+            )
+
         body = (
             "<nav><a href='/'>diagnostics</a> · <a href='/docs/'>docs</a></nav>"
             f"<h1><code>{escape(doc_id)}</code></h1>"
             f"<p><small>{escape(str(path.relative_to(DOCS_ROOT)))}</small></p>"
+            + diagnostic_links
             + self.render_markdown(path.read_text())
         )
         return render_page(f"docs · {doc_id}", body)
@@ -313,7 +330,9 @@ class DiagnosticApp:
 
         form = self.form(spec, inputs)
         result = spec.compute(self.ctx, inputs)
-        body = f"<nav><a href='/'>index</a></nav>{form}{render_result(result)}"
+        doc_id = ".".join(diagnostic_id.split(".")[:-1])
+        doc_link = f" · <a href='/docs/{doc_id}'>docs</a>" if doc_id in self.discover_docs() else ""
+        body = f"<nav><a href='/'>index</a>{doc_link}</nav>{form}{render_result(result)}"
         return render_page(result.title, body)
 
     @staticmethod
