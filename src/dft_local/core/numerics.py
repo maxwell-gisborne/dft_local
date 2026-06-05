@@ -15,37 +15,6 @@ IntArray = NDArray[np.int64]
 BlockArray = NDArray[np.float64] | NDArray[np.complex128]
 
 
-@dataclass(frozen=True)
-class Units:
-    E: float
-    L: float
-    e: float
-    hbar: float
-    name: str
-    comment: str = ""
-
-    def __repr__(self):
-        return f"Units({self.name})"
-
-
-AU = Units(
-    E=1,
-    L=1,
-    e=1,
-    hbar=1,
-    name="bohr",
-    comment="this is the unit on disk",
-)
-
-eVag = Units(
-    E=27.21138386,
-    L=0.52917721092,
-    e=1.602e-19,
-    hbar=6.582e-16,
-    name="angstroem",
-)
-
-
 def freeze_array(a):
     """Mark an array read-only and return it."""
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 
 from dft_local.core.kernels import GdKernelArrays
-from dft_local.core.numerics import AU, Units, eVag
+from dft_local.core.units import ATOMIC_UNITS
 from dft_local.transport.boltzmann.calculation.core import (
     K_B_HARTREE_PER_K,
     BoltzmannConductivity,
@@ -17,7 +17,7 @@ def test_dft_local_core_exports_fermi_window() -> None:
         np.array([0.0]),
         mu=0.0,
         temperature=temperature,
-        units=AU,
+        unit_context=ATOMIC_UNITS,
     )
 
     assert np.allclose(window, [0.25])

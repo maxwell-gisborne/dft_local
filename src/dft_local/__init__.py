@@ -26,13 +26,10 @@ from dft_local.core.kernels import (
 )
 from dft_local.core.local_problem import LocalProblem, SymbolPair
 from dft_local.core.numerics import (
-    AU,
     BlockArray,
     DenseMatrixDiagnostics,
     FloatArray,
     IntArray,
-    Units,
-    eVag,
     freeze_array,
     hermitian_part,
 )

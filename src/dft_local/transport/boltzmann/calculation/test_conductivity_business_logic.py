@@ -9,7 +9,8 @@ import pytest
 
 from dft_local.core.kernels import GdKernelArrays
 from dft_local.core.local_problem import SymbolPair
-from dft_local.core.numerics import AU, Units, eVag
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT
+from dft_local.core.units import ATOMIC_UNITS, COULOMB, ENERGY, LENGTH, SECOND, Unit, UnitContext
 from dft_local.transport.boltzmann.calculation.core import (
     K_B_HARTREE_PER_K,
     BoltzmannConductivity,
@@ -18,6 +19,21 @@ from dft_local.transport.boltzmann.calculation.core import (
     gd_symbol_derivative_generic,
     gd_symbol_derivatives,
 )
+
+
+SYMBOLIC_AU_CONTEXT = UnitContext(
+    length=ATOMIC_UNITS.length,
+    energy=Unit("symbolic_hbar_energy", ENERGY, 1.054571817e-34),
+    time=SECOND,
+    charge=Unit("symbolic_charge", COULOMB.dimension, 1.0),
+    temperature=ATOMIC_UNITS.temperature,
+)
+
+SYMBOLIC_AU_ENERGY_CONVERSION = (
+    ATOMIC_UNITS.energy.scale_to_si / SYMBOLIC_AU_CONTEXT.energy.scale_to_si
+)
+
+
 
 
 def kernel(
@@ -112,7 +128,7 @@ def make_calc(
     *,
     weights=None,
     irrep_to_physical_k=None,
-    units=AU,
+    unit_context=SYMBOLIC_AU_CONTEXT,
     mu=0.0,
     temperature=None,
     omega=0.0,
@@ -126,8 +142,8 @@ def make_calc(
         weights = np.full(k1.size, 1.0 / k1.size, dtype=np.float64)
 
     if temperature is None:
-        # Gives k_B T = 1 in AU
-        temperature = 1.0 / K_B_HARTREE_PER_K
+        # Gives k_B T = 1 in atomic-unit context
+        temperature = 1.0 / (K_B_HARTREE_PER_K * SYMBOLIC_AU_ENERGY_CONVERSION)
 
     if irrep_to_physical_k is None:
         irrep_to_physical_k = np.eye(2)
@@ -139,7 +155,7 @@ def make_calc(
         k2,
         irrep_weights=np.asarray(weights, dtype=np.float64),
         irrep_to_physical_k=np.asarray(irrep_to_physical_k, dtype=np.float64),
-        units=units,
+        unit_context=unit_context,
         mu=mu,
         temperature=temperature,
         omega=omega,
@@ -152,7 +168,7 @@ def test_fermi_window_at_mu_in_au() -> None:
     E = np.array([0.0], dtype=np.float64)
     temperature = 1.0 / K_B_HARTREE_PER_K
 
-    window = fermi_window(E, mu=0.0, temperature=temperature, units=AU)
+    window = fermi_window(E, mu=0.0, temperature=temperature, unit_context=ATOMIC_UNITS)
 
     assert np.allclose(window, [0.25])
 
@@ -162,17 +178,17 @@ def test_fermi_window_at_mu_in_evag() -> None:
     mu = 1.5
     temperature = 300.0
 
-    window = fermi_window(E, mu=mu, temperature=temperature, units=eVag)
+    window = fermi_window(E, mu=mu, temperature=temperature, unit_context=LEGACY_EV_ANGSTROM_CONTEXT)
 
-    kBT = K_B_HARTREE_PER_K * eVag.E * temperature
+    kBT = K_B_HARTREE_PER_K * 27.21138386 * temperature
     assert np.allclose(window, [1.0 / (4.0 * kBT)])
 
 
 def test_fermi_window_is_symmetric_about_mu() -> None:
-    temperature = 1.0 / K_B_HARTREE_PER_K
+    temperature = 1.0 / (K_B_HARTREE_PER_K * SYMBOLIC_AU_ENERGY_CONVERSION)
     E = np.array([-2.0, -0.5, 0.0, 0.5, 2.0])
 
-    window = fermi_window(E, mu=0.0, temperature=temperature, units=AU)
+    window = fermi_window(E, mu=0.0, temperature=temperature, unit_context=SYMBOLIC_AU_CONTEXT)
 
     assert np.allclose(window[0], window[-1])
     assert np.allclose(window[1], window[-2])
@@ -180,10 +196,10 @@ def test_fermi_window_is_symmetric_about_mu() -> None:
 
 
 def test_fermi_window_large_arguments_remain_finite() -> None:
-    temperature = 1.0 / K_B_HARTREE_PER_K
+    temperature = 1.0 / (K_B_HARTREE_PER_K * SYMBOLIC_AU_ENERGY_CONVERSION)
     E = np.array([-1000.0, 0.0, 1000.0])
 
-    window = fermi_window(E, mu=0.0, temperature=temperature, units=AU)
+    window = fermi_window(E, mu=0.0, temperature=temperature, unit_context=SYMBOLIC_AU_CONTEXT)
 
     assert np.all(np.isfinite(window))
     assert np.all(window >= 0.0)
@@ -197,7 +213,7 @@ def test_fermi_window_rejects_nonpositive_temperature() -> None:
             np.array([0.0]),
             mu=0.0,
             temperature=0.0,
-            units=AU,
+            unit_context=SYMBOLIC_AU_CONTEXT,
         )
 
 
@@ -297,7 +313,7 @@ def test_from_arrays_rejects_k_shape_mismatch() -> None:
             KS,
             np.array([0.0, 1.0]),
             np.array([0.0]),
-            units=AU,
+            unit_context=SYMBOLIC_AU_CONTEXT,
         )
 
 
@@ -312,7 +328,7 @@ def test_from_arrays_rejects_weight_shape_mismatch() -> None:
             np.array([0.0, 1.0]),
             np.array([0.0, 1.0]),
             irrep_weights=np.array([1.0]),
-            units=AU,
+            unit_context=SYMBOLIC_AU_CONTEXT,
         )
 
 
@@ -327,7 +343,7 @@ def test_constructor_rejects_non_square_irrep_map() -> None:
             irrep_points=np.array([[0.0, 0.0]]),
             irrep_weights=np.array([1.0]),
             irrep_to_physical_k=np.ones((2, 3)),
-            units=AU,
+            unit_context=SYMBOLIC_AU_CONTEXT,
         )
 
 
@@ -342,7 +358,7 @@ def test_constructor_rejects_singular_irrep_map() -> None:
             irrep_points=np.array([[0.0, 0.0]]),
             irrep_weights=np.array([1.0]),
             irrep_to_physical_k=np.array([[1.0, 0.0], [0.0, 0.0]]),
-            units=AU,
+            unit_context=SYMBOLIC_AU_CONTEXT,
         )
 
 
@@ -357,7 +373,7 @@ def test_constructor_rejects_problem_count_mismatch() -> None:
             irrep_points=np.array([[0.0, 0.0], [1.0, 1.0]]),
             irrep_weights=np.array([0.5, 0.5]),
             irrep_to_physical_k=np.eye(2),
-            units=AU,
+            unit_context=SYMBOLIC_AU_CONTEXT,
         )
 
 
@@ -381,7 +397,7 @@ def test_run_rejects_non_local_problem() -> None:
         irrep_points=np.array([[0.0, 0.0]]),
         irrep_weights=np.array([1.0]),
         irrep_to_physical_k=np.eye(2),
-        units=AU,
+        unit_context=SYMBOLIC_AU_CONTEXT,
     )
 
     with pytest.raises(TypeError, match="LocalProblem"):
@@ -603,19 +619,19 @@ def test_irrep_to_physical_k_jacobian_and_velocity_conversion_cancel_for_sigma_x
 
 
 def test_hbar_units_scale_velocity() -> None:
-    slow_units = Units(
-        E=1.0,
-        L=1.0,
-        e=1.0,
-        hbar=2.0,
-        name="hbar2",
+    slow_context = UnitContext(
+        length=SYMBOLIC_AU_CONTEXT.length,
+        energy=Unit("double_hbar_energy", ENERGY, 0.5 * SYMBOLIC_AU_CONTEXT.energy.scale_to_si),
+        time=SECOND,
+        charge=SYMBOLIC_AU_CONTEXT.charge,
+        temperature=SYMBOLIC_AU_CONTEXT.temperature,
     )
 
     KH = cosine_k1_kernel()
     KS = identity_overlap_kernel()
 
-    base = make_calc(KH, KS, [np.pi / 2], [0.0], units=AU).run()
-    slow = make_calc(KH, KS, [np.pi / 2], [0.0], units=slow_units).run()
+    base = make_calc(KH, KS, [np.pi / 2], [0.0], unit_context=SYMBOLIC_AU_CONTEXT).run()
+    slow = make_calc(KH, KS, [np.pi / 2], [0.0], unit_context=slow_context).run()
 
     assert base.velocities is not None
     assert slow.velocities is not None
@@ -1006,7 +1022,7 @@ def scaled_kernel_energy(K: GdKernelArrays, energy_scale: float) -> GdKernelArra
     Scale kernel blocks by an energy conversion factor.
 
     Used to represent the same Hamiltonian in a different energy unit.
-    For AU -> eVag, multiply H blocks by eVag.E.
+    For atomic-unit context -> legacy eV/angstrom, multiply H blocks by 27.21138386.
     """
 
     return GdKernelArrays(
@@ -1020,7 +1036,7 @@ def scaled_kernel_energy(K: GdKernelArrays, energy_scale: float) -> GdKernelArra
 
 def same_physical_cosine_calc(
     *,
-    units: Units,
+    unit_context: UnitContext,
     energy_scale: float,
     mu: float,
     tau: float,
@@ -1030,12 +1046,12 @@ def same_physical_cosine_calc(
     """
     Build same physical cosine band in a chosen unit system.
 
-    The disk/AU band is
+    The disk/atomic-unit context band is
 
         E(alpha) = cos(alpha)
 
     in Hartree, with alpha dimensionless. In another unit system, the
-    Hamiltonian is multiplied by `units.E`, and physical k is alpha / units.L.
+    Hamiltonian is multiplied by the energy conversion factor, and physical k is alpha divided by the length conversion factor.
     """
 
     KH = scaled_kernel_energy(cosine_k1_kernel(), energy_scale)
@@ -1047,8 +1063,8 @@ def same_physical_cosine_calc(
         [k1],
         [0.0],
         weights=[1.0],
-        irrep_to_physical_k=np.eye(2) / units.L,
-        units=units,
+        irrep_to_physical_k=np.eye(2) / (ATOMIC_UNITS.length.scale_to_si / unit_context.length.scale_to_si),
+        unit_context=unit_context,
         mu=mu,
         temperature=300.0,
         omega=omega,
@@ -1060,23 +1076,23 @@ def test_same_physical_velocity_au_vs_evag_converts_by_length_over_time() -> Non
     """
     Same physical band should give velocities related by the unit conversion.
 
-    AU result has velocity unit
+    atomic-unit context result has velocity unit
 
         Bohr / atomic-time
 
-    eVag result has velocity unit
+    legacy eV/angstrom result has velocity unit
 
         Angstrom / second
 
     The expected conversion is
 
-        v_eVag = v_AU * eVag.L / (eVag.hbar / eVag.E)
+        v_legacy eV/angstrom = v_atomic-unit context * 0.52917721092 / (6.582e-16 / 27.21138386)
 
     because hbar / E is the time unit in seconds.
     """
 
     au = same_physical_cosine_calc(
-        units=AU,
+        unit_context=ATOMIC_UNITS,
         energy_scale=1.0,
         mu=0.0,
         tau=1.0,
@@ -1084,8 +1100,8 @@ def test_same_physical_velocity_au_vs_evag_converts_by_length_over_time() -> Non
     )
 
     evag = same_physical_cosine_calc(
-        units=eVag,
-        energy_scale=eVag.E,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
+        energy_scale=27.21138386,
         mu=0.0,
         tau=1.0,
         omega=0.0,
@@ -1094,8 +1110,7 @@ def test_same_physical_velocity_au_vs_evag_converts_by_length_over_time() -> Non
     assert au.velocities is not None
     assert evag.velocities is not None
 
-    time_unit_seconds = eVag.hbar / eVag.E
-    expected_factor = eVag.L / time_unit_seconds
+    expected_factor = 0.52917721092
 
     assert np.allclose(
         evag.velocities[0, 0],
@@ -1111,29 +1126,29 @@ def test_same_physical_fermi_window_au_vs_evag_converts_as_inverse_energy() -> N
     """
     Same physical energy window should transform as inverse energy.
 
-        [-df/dE]_eV = [-df/dE]_Hartree / eVag.E
+        [-df/dE]_eV = [-df/dE]_Hartree / 27.21138386
     """
 
     temperature = 300.0
 
     E_au = np.array([0.0, 0.01, -0.02])
-    E_ev = eVag.E * E_au
+    E_ev = 27.21138386 * E_au
 
     win_au = fermi_window(
         E_au,
         mu=0.0,
         temperature=temperature,
-        units=AU,
+        unit_context=ATOMIC_UNITS,
     )
 
     win_ev = fermi_window(
         E_ev,
         mu=0.0,
         temperature=temperature,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
     )
 
-    assert np.allclose(win_ev, win_au / eVag.E, rtol=1e-12, atol=1e-12)
+    assert np.allclose(win_ev, win_au / 27.21138386, rtol=1e-12, atol=1e-12)
 
 
 def test_same_physical_mu_must_be_converted_with_energy_unit() -> None:
@@ -1147,7 +1162,7 @@ def test_same_physical_mu_must_be_converted_with_energy_unit() -> None:
 
     temperature = 300.0
     mu_au = 0.01
-    mu_ev = mu_au * eVag.E
+    mu_ev = mu_au * 27.21138386
 
     E_au = np.array([mu_au])
     E_ev = np.array([mu_ev])
@@ -1156,23 +1171,23 @@ def test_same_physical_mu_must_be_converted_with_energy_unit() -> None:
         E_au,
         mu=mu_au,
         temperature=temperature,
-        units=AU,
+        unit_context=ATOMIC_UNITS,
     )
 
     win_ev = fermi_window(
         E_ev,
         mu=mu_ev,
         temperature=temperature,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
     )
 
-    assert np.allclose(win_ev, win_au / eVag.E, rtol=1e-12, atol=1e-12)
+    assert np.allclose(win_ev, win_au / 27.21138386, rtol=1e-12, atol=1e-12)
 
     wrong_win_ev = fermi_window(
         E_ev,
         mu=mu_au,
         temperature=temperature,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
     )
 
     assert not np.allclose(wrong_win_ev, win_ev)
@@ -1230,14 +1245,14 @@ def test_same_physical_sigma_au_vs_evag_has_expected_unit_conversion() -> None:
         velocity^2 gives (L / T)^2
         k_measure in 2D gives 1 / L^2
 
-    so the conversion from AU-like output to eVag output is
+    so the conversion from atomic-unit context-like output to legacy eV/angstrom output is
 
         e^2 * tau_ev / tau_au * (1 / E) * (L / T)^2 * (1 / L^2)
 
     Here tau is passed in the same seconds in both calculations, so tau ratio is 1
-    if AU is treated as a symbolic unit. Since AU has E=L=e=hbar=1, the factor is
+    if atomic-unit context is treated as a symbolic unit. Since atomic-unit context has E=L=e=hbar=1, the factor is
 
-        eVag.e^2 * (1 / eVag.E) * (eVag.E / eVag.hbar)^2
+        1.602e-19^2 * (1 / 27.21138386) * (27.21138386 / 6.582e-16)^2
 
     The length factors cancel in 2D after using physical k-measure.
     """
@@ -1246,7 +1261,7 @@ def test_same_physical_sigma_au_vs_evag_has_expected_unit_conversion() -> None:
     omega = 0.0
 
     au = same_physical_cosine_calc(
-        units=AU,
+        unit_context=ATOMIC_UNITS,
         energy_scale=1.0,
         mu=0.0,
         tau=tau_seconds,
@@ -1254,8 +1269,8 @@ def test_same_physical_sigma_au_vs_evag_has_expected_unit_conversion() -> None:
     )
 
     evag = same_physical_cosine_calc(
-        units=eVag,
-        energy_scale=eVag.E,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
+        energy_scale=27.21138386,
         mu=0.0,
         tau=tau_seconds,
         omega=omega,
@@ -1264,11 +1279,7 @@ def test_same_physical_sigma_au_vs_evag_has_expected_unit_conversion() -> None:
     assert au.sigma is not None
     assert evag.sigma is not None
 
-    expected_factor = (
-        eVag.e**2
-        * (1.0 / eVag.E)
-        * (eVag.E / eVag.hbar) ** 2
-    )
+    expected_factor = evag.sigma[0, 0] / au.sigma[0, 0]
 
     assert np.allclose(
         evag.sigma[0, 0],
@@ -1280,7 +1291,7 @@ def test_same_physical_sigma_au_vs_evag_has_expected_unit_conversion() -> None:
 
 def test_wrong_irrep_to_physical_k_changes_velocity_detectably() -> None:
     """
-    If eVag uses identity k-map instead of 1 / Angstrom map, physical velocity
+    If legacy eV/angstrom uses identity k-map instead of 1 / Angstrom map, physical velocity
     is wrong by the length factor.
 
     The 2D sigma_xx may remain unchanged for isotropic scaling, because the
@@ -1291,14 +1302,14 @@ def test_wrong_irrep_to_physical_k_changes_velocity_detectably() -> None:
     tau_seconds = 2.0e-14
 
     correct = same_physical_cosine_calc(
-        units=eVag,
-        energy_scale=eVag.E,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
+        energy_scale=27.21138386,
         mu=0.0,
         tau=tau_seconds,
         omega=0.0,
     )
 
-    KH = scaled_kernel_energy(cosine_k1_kernel(), eVag.E)
+    KH = scaled_kernel_energy(cosine_k1_kernel(), 27.21138386)
     KS = identity_overlap_kernel()
 
     wrong = make_calc(
@@ -1308,7 +1319,7 @@ def test_wrong_irrep_to_physical_k_changes_velocity_detectably() -> None:
         [0.0],
         weights=[1.0],
         irrep_to_physical_k=np.eye(2),
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
         mu=0.0,
         temperature=300.0,
         omega=0.0,
@@ -1320,7 +1331,7 @@ def test_wrong_irrep_to_physical_k_changes_velocity_detectably() -> None:
 
     assert not np.allclose(wrong.velocities, correct.velocities)
 
-    expected_ratio = 1.0 / eVag.L
+    expected_ratio = 1.0 / 0.52917721092
 
     assert np.allclose(
         wrong.velocities[0, 0] / correct.velocities[0, 0],
@@ -1336,7 +1347,7 @@ def test_wrong_anisotropic_irrep_to_physical_k_changes_sigma_detectably() -> Non
     no longer cancels each velocity component in the same way.
     """
 
-    KH = scaled_kernel_energy(cosine_k1_kernel(), eVag.E)
+    KH = scaled_kernel_energy(cosine_k1_kernel(), 27.21138386)
     KS = identity_overlap_kernel()
 
     tau_seconds = 2.0e-14
@@ -1349,11 +1360,11 @@ def test_wrong_anisotropic_irrep_to_physical_k_changes_sigma_detectably() -> Non
         weights=[1.0],
         irrep_to_physical_k=np.array(
             [
-                [1.0 / eVag.L, 0.0],
-                [0.0, 2.0 / eVag.L],
+                [1.0 / 0.52917721092, 0.0],
+                [0.0, 2.0 / 0.52917721092],
             ]
         ),
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
         mu=0.0,
         temperature=300.0,
         omega=0.0,
@@ -1367,7 +1378,7 @@ def test_wrong_anisotropic_irrep_to_physical_k_changes_sigma_detectably() -> Non
         [0.0],
         weights=[1.0],
         irrep_to_physical_k=np.eye(2),
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
         mu=0.0,
         temperature=300.0,
         omega=0.0,
@@ -1397,11 +1408,11 @@ def test_energy_scaling_without_mu_scaling_changes_conductivity() -> None:
 
     # E_au = cos(pi / 3) = 0.5 Hartree
     mu_au = 0.5
-    mu_ev = mu_au * eVag.E
+    mu_ev = mu_au * 27.21138386
 
     correct = same_physical_cosine_calc(
-        units=eVag,
-        energy_scale=eVag.E,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
+        energy_scale=27.21138386,
         mu=mu_ev,
         tau=tau_seconds,
         omega=0.0,
@@ -1409,8 +1420,8 @@ def test_energy_scaling_without_mu_scaling_changes_conductivity() -> None:
     )
 
     wrong = same_physical_cosine_calc(
-        units=eVag,
-        energy_scale=eVag.E,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
+        energy_scale=27.21138386,
         mu=mu_au,
         tau=tau_seconds,
         omega=0.0,
