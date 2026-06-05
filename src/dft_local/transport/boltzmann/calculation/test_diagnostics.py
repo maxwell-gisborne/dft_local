@@ -84,7 +84,7 @@ def test_boltzmann_conductivity_units_table_uses_display_quantity() -> None:
 
 
 def test_boltzmann_conductivity_exposes_unit_context_bridge() -> None:
-    from dft_local.core.units import EV_ANGSTROM_FS
+    from dft_local.core.dataset import unit_context_from_legacy_units
     from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
     assert BoltzmannConductivity.__dataclass_fields__["units"].default == BoltzmannConductivity(
@@ -101,7 +101,7 @@ def test_boltzmann_conductivity_exposes_unit_context_bridge() -> None:
         irrep_to_physical_k=__import__("numpy").eye(1),
     )
 
-    assert calc.unit_context == EV_ANGSTROM_FS
+    assert calc.unit_context == unit_context_from_legacy_units(calc.units)
 
 
 
@@ -357,3 +357,20 @@ def test_boltzmann_conductivity_can_use_dataset_unit_context_override() -> None:
     )
 
     assert calc.unit_context == SI_UNITS
+
+
+
+def test_boltzmann_legacy_unit_context_uses_shared_dataset_bridge() -> None:
+    import numpy as np
+
+    from dft_local.core.dataset import unit_context_from_legacy_units
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 1)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(1),
+    )
+
+    assert calc.unit_context == unit_context_from_legacy_units(calc.units)

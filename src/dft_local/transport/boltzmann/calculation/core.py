@@ -12,6 +12,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.linalg import eigh
 
+from dft_local.core.dataset import unit_context_from_legacy_units
 from dft_local.core.local_problem import LocalProblem, SymbolPair
 from dft_local.core.numerics import (
     FloatArray,
@@ -28,8 +29,6 @@ from dft_local.core.units import (
     KSPACE_AREA,
     VELOCITY,
     WAVEVECTOR,
-    EV_ANGSTROM_FS,
-    SI_UNITS,
     UnitContext,
     qarray,
 )
@@ -344,15 +343,12 @@ class BoltzmannConductivity:
 
     @property
     def unit_context(self) -> UnitContext:
-        """Best-effort bridge from legacy numerics.Units to core UnitContext."""
+        """Unit context used by this calculation state."""
 
         if self.unit_context_override is not None:
             return self.unit_context_override
 
-        if self.units == eVag or getattr(self.units, "name", "") == "angstroem":
-            return EV_ANGSTROM_FS
-
-        return SI_UNITS
+        return unit_context_from_legacy_units(self.units)
 
     energies: EnergyBands | None = field(default=None, init=False)
     vectors: ComplexArray | None = field(default=None, init=False)
