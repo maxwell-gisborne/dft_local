@@ -6,7 +6,7 @@ generalized eigenproblems.
 """
 
 from dataclasses import dataclass, field
-from typing import Self
+from typing import Annotated, Self
 
 import numpy as np
 from numpy.typing import NDArray
@@ -21,9 +21,28 @@ from dft_local.core.numerics import (
 )
 
 from dft_local.core.kernels import GdKernelArrays
+from dft_local.core.units import (
+    CONDUCTIVITY,
+    DIMENSIONLESS,
+    ENERGY,
+    KSPACE_AREA,
+    VELOCITY,
+    WAVEVECTOR,
+    qarray,
+)
 
 
 ComplexArray = NDArray[np.complex128]
+
+EnergyBands = Annotated[FloatArray, qarray(ENERGY, ("band",), role="band energies")]
+Eigenvectors = Annotated[ComplexArray, qarray(DIMENSIONLESS, ("basis", "band"), role="generalized eigenvectors", dtype=np.complexfloating)]
+BandVelocities = Annotated[FloatArray, qarray(VELOCITY, ("cartesian", "band"), role="band velocities")]
+ConductivityTensor = Annotated[ComplexArray, qarray(CONDUCTIVITY, ("cartesian", "cartesian"), role="conductivity tensor", dtype=np.complexfloating)]
+
+IrrepPoints = Annotated[FloatArray, qarray(DIMENSIONLESS, ("sample", "irrep_coordinate"), role="raw irrep sample coordinates")]
+IrrepWeights = Annotated[FloatArray, qarray(DIMENSIONLESS, ("sample",), role="raw irrep integration weights")]
+IrrepToPhysicalK = Annotated[FloatArray, qarray(WAVEVECTOR, ("cartesian", "irrep_coordinate"), role="map from raw irrep coordinates to physical k")]
+KResolvedConductivity = Annotated[ComplexArray, qarray(CONDUCTIVITY * KSPACE_AREA.inverse(), ("sample", "cartesian", "cartesian"), role="k-resolved conductivity contribution", dtype=np.complexfloating)]
 
 K_B_HARTREE_PER_K = 3.166811563e-6
 
@@ -228,11 +247,11 @@ class BoltzmannSampleResult:
     `sigma` has shape `(dimension, dimension)`.
     """
 
-    energies: FloatArray
-    vectors: ComplexArray
-    velocities: FloatArray
+    energies: EnergyBands
+    vectors: Eigenvectors
+    velocities: BandVelocities
     ac_weights: ComplexArray
-    sigma: ComplexArray
+    sigma: ConductivityTensor
 
 
 @dataclass(frozen=True, slots=True)
@@ -302,9 +321,9 @@ class BoltzmannConductivity:
     """
 
     problems: NDArray[np.object_]
-    irrep_points: FloatArray
-    irrep_weights: FloatArray
-    irrep_to_physical_k: FloatArray
+    irrep_points: IrrepPoints
+    irrep_weights: IrrepWeights
+    irrep_to_physical_k: IrrepToPhysicalK
 
     units: Units = eVag
     mu: float = 0.0
@@ -319,12 +338,12 @@ class BoltzmannConductivity:
 
     name: str = ""
 
-    energies: FloatArray | None = field(default=None, init=False)
+    energies: EnergyBands | None = field(default=None, init=False)
     vectors: ComplexArray | None = field(default=None, init=False)
     velocities: FloatArray | None = field(default=None, init=False)
     ac_weights: ComplexArray | None = field(default=None, init=False)
-    sigma_k: ComplexArray | None = field(default=None, init=False)
-    sigma: ComplexArray | None = field(default=None, init=False)
+    sigma_k: KResolvedConductivity | None = field(default=None, init=False)
+    sigma: ConductivityTensor | None = field(default=None, init=False)
 
     def __post_init__(self) -> None:
         problems = np.asarray(self.problems, dtype=object).reshape(-1)

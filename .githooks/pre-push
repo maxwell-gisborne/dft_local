@@ -5,9 +5,9 @@ echo "pre-push: running JavaScript checks"
 npm run js:check
 
 echo "pre-push: running pytest -q"
-python -m pytest -q
+PYTHONPATH=src python -m pytest -q
 
 echo "pre-push: running dft-local test --timeout 120"
-dft-local test --timeout 120
+PYTHONPATH=src python -m dft_local test --timeout 120
 
 echo "pre-push: tests passed"

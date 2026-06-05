@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from types import UnionType
 
 import numpy as np
 from scipy import constants as scipy_constants
@@ -213,6 +214,30 @@ def qarray(
     )
 
 
+def _quantity_array_spec_from_hint(hint: Any) -> QuantityArray | None:
+    """Extract QuantityArray metadata from an annotation.
+
+    Handles both direct Annotated fields and optional fields such as
+    ``Annotated[np.ndarray, qarray(...)] | None``.
+    """
+
+    if get_origin(hint) is Annotated:
+        _base, *metadata = get_args(hint)
+        for item in metadata:
+            if isinstance(item, QuantityArray):
+                return item
+        return None
+
+    origin = get_origin(hint)
+    if origin is UnionType or origin is getattr(__import__("typing"), "Union"):
+        for arg in get_args(hint):
+            spec = _quantity_array_spec_from_hint(arg)
+            if spec is not None:
+                return spec
+
+    return None
+
+
 def quantity_array_specs(cls: type) -> dict[str, QuantityArray]:
     """Return QuantityArray metadata attached with typing.Annotated."""
 
@@ -220,14 +245,9 @@ def quantity_array_specs(cls: type) -> dict[str, QuantityArray]:
     specs: dict[str, QuantityArray] = {}
 
     for name, hint in hints.items():
-        if get_origin(hint) is not Annotated:
-            continue
-
-        _base, *metadata = get_args(hint)
-        for item in metadata:
-            if isinstance(item, QuantityArray):
-                specs[name] = item
-                break
+        spec = _quantity_array_spec_from_hint(hint)
+        if spec is not None:
+            specs[name] = spec
 
     return specs
 
