@@ -102,3 +102,33 @@ def test_boltzmann_conductivity_exposes_unit_context_bridge() -> None:
     )
 
     assert calc.unit_context == EV_ANGSTROM_FS
+
+
+
+def test_boltzmann_units_table_marks_basic_inputs_as_display_quantities() -> None:
+    import numpy as np
+
+    from dft_local.core.units import DisplayQuantity, ENERGY, TEMPERATURE, TIME
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+    from dft_local.transport.boltzmann.calculation.diagnostics import unit_rows
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 1)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(1),
+        mu=0.25,
+        temperature=310.0,
+        omega=2.0,
+    )
+
+    row_map = {row[0]: row[1] for row in unit_rows(calc)}
+
+    assert isinstance(row_map["mu"], DisplayQuantity)
+    assert row_map["mu"].dimension == ENERGY
+
+    assert isinstance(row_map["temperature"], DisplayQuantity)
+    assert row_map["temperature"].dimension == TEMPERATURE
+
+    assert isinstance(row_map["omega"], DisplayQuantity)
+    assert row_map["omega"].dimension == TIME.inverse()

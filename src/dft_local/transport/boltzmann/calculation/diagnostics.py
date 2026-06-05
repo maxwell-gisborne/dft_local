@@ -25,7 +25,7 @@ from dft_local.diagnostics.models import (
     Table,
     TableRow,
 )
-from dft_local.core.units import DisplayQuantity, ELECTRON_VOLT, ENERGY, HARTREE, Unit
+from dft_local.core.units import DisplayQuantity, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, Unit
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
 
@@ -146,8 +146,24 @@ def unit_rows(calc: BoltzmannConductivity) -> list[list[object]]:
         ["units.L", calc.units.L],
         ["units.e", calc.units.e],
         ["units.hbar", calc.units.hbar],
-        ["mu", calc.mu],
-        ["temperature / K", calc.temperature],
+        [
+            "mu",
+            DisplayQuantity(
+                value=calc.mu,
+                dimension=ENERGY,
+                unit=calc.unit_context.unit_for_dimension(ENERGY),
+                name="mu",
+            ),
+        ],
+        [
+            "temperature",
+            DisplayQuantity(
+                value=calc.temperature,
+                dimension=TEMPERATURE,
+                unit=calc.unit_context.unit_for_dimension(TEMPERATURE),
+                name="temperature",
+            ),
+        ],
         [
             "k_B T",
             DisplayQuantity(
@@ -157,7 +173,15 @@ def unit_rows(calc: BoltzmannConductivity) -> list[list[object]]:
                 name="k_B T",
             ),
         ],
-        ["omega", calc.omega],
+        [
+            "omega",
+            DisplayQuantity(
+                value=calc.omega,
+                dimension=TIME.inverse(),
+                unit=calc.unit_context.unit_for_dimension(TIME.inverse()),
+                name="omega",
+            ),
+        ],
         ["sum raw irrep weights", float(np.sum(calc.irrep_weights))],
         ["sum physical k weights", float(np.sum(calc.physical_k_weights))],
         ["irrep to physical k", calc.irrep_to_physical_k.tolist()],
