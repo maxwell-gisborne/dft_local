@@ -25,7 +25,7 @@ from dft_local.diagnostics.models import (
     Table,
     TableRow,
 )
-from dft_local.core.units import DisplayQuantity, CONDUCTIVITY, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, VELOCITY, WAVEVECTOR, Unit
+from dft_local.core.units import DisplayQuantity, CONDUCTIVITY, ELECTRON_VOLT, ENERGY, HARTREE, KSPACE_AREA, TEMPERATURE, TIME, VELOCITY, WAVEVECTOR, Unit
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
 
@@ -106,6 +106,12 @@ def _wavevector_display_unit(calc: BoltzmannConductivity) -> Unit:
     """Return the wavevector unit represented by the calculation state."""
 
     return calc.unit_context.unit_for_dimension(WAVEVECTOR)
+
+
+def _kspace_area_display_unit(calc: BoltzmannConductivity) -> Unit:
+    """Return the k-space area unit represented by the calculation state."""
+
+    return calc.unit_context.unit_for_dimension(KSPACE_AREA)
 
 
 def sigma_matrix(calc: BoltzmannConductivity) -> Matrix:
@@ -234,19 +240,24 @@ def worst_sample_rows(calc: BoltzmannConductivity, *, n: int) -> list[list[objec
 
     order = np.argsort(-sigma_abs)[:n]
 
+    energy_unit = _energy_display_unit(calc)
+    velocity_unit = _velocity_display_unit(calc)
+    wavevector_unit = _wavevector_display_unit(calc)
+    kspace_area_unit = _kspace_area_display_unit(calc)
+
     return [
         [
             int(s),
             float(raw_k[s, 0]),
             float(raw_k[s, 1]),
-            float(physical_k[s, 0]),
-            float(physical_k[s, 1]),
-            float(np.min(calc.energies[s])),
-            float(np.max(calc.energies[s])),
-            float(vmax[s]),
+            DisplayQuantity(float(physical_k[s, 0]), WAVEVECTOR, wavevector_unit, name="kx"),
+            DisplayQuantity(float(physical_k[s, 1]), WAVEVECTOR, wavevector_unit, name="ky"),
+            DisplayQuantity(float(np.min(calc.energies[s])), ENERGY, energy_unit, name="E min"),
+            DisplayQuantity(float(np.max(calc.energies[s])), ENERGY, energy_unit, name="E max"),
+            DisplayQuantity(float(vmax[s]), VELOCITY, velocity_unit, name="max |v|"),
             float(wmax[s]),
             float(sigma_abs[s]),
-            float(calc.physical_k_weights[s]),
+            DisplayQuantity(float(calc.physical_k_weights[s]), KSPACE_AREA, kspace_area_unit, name="physical k weight"),
         ]
         for s in order
     ]
