@@ -336,7 +336,7 @@ def test_boltzmann_diagnostic_physical_values_render_as_quantities() -> None:
     assert "display-quantity" in html
     assert "data-unit='eV'" in html
     assert "data-unit='K'" in html
-    assert "data-unit='angstrom fs^-1'" in html
+    assert "data-unit='angstrom s^-1'" in html
     assert "data-unit='angstrom^-1'" in html
     assert "data-unit='angstrom^-2'" in html
 
