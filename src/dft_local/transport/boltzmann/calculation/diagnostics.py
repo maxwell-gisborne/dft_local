@@ -299,6 +299,29 @@ def quantile_rows_by_band(values: np.ndarray) -> list[list[object]]:
     return rows
 
 
+def energy_quantile_rows(calc: BoltzmannConductivity) -> list[list[object]]:
+    calc.require_solved()
+    assert calc.energies is not None
+
+    rows: list[list[object]] = []
+    unit = _energy_display_unit(calc)
+
+    for band in range(calc.energies.shape[1]):
+        x = calc.energies[:, band]
+        rows.append(
+            [
+                band,
+                DisplayQuantity(float(np.min(x)), ENERGY, unit, name=f"E{band} min"),
+                DisplayQuantity(float(np.quantile(x, 0.25)), ENERGY, unit, name=f"E{band} q25"),
+                DisplayQuantity(float(np.median(x)), ENERGY, unit, name=f"E{band} median"),
+                DisplayQuantity(float(np.quantile(x, 0.75)), ENERGY, unit, name=f"E{band} q75"),
+                DisplayQuantity(float(np.max(x)), ENERGY, unit, name=f"E{band} max"),
+            ]
+        )
+
+    return rows
+
+
 def velocity_quantile_rows(calc: BoltzmannConductivity) -> list[list[object]]:
     calc.require_solved()
     assert calc.velocities is not None
@@ -480,7 +503,7 @@ def compute_conductivity(ctx: Any, inputs: dict[str, object]) -> DiagnosticResul
             title="Energy quantiles by sorted band",
             description="Energy distribution over sampled k points",
             headers=("band", "min", "q25", "median", "q75", "max"),
-            rows=quantile_rows_by_band(calc.energies),
+            rows=energy_quantile_rows(calc),
             numeric={0, 1, 2, 3, 4, 5},
         ),
         _rows_table(

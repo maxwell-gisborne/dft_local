@@ -192,3 +192,31 @@ def test_velocity_quantile_rows_carry_velocity_units() -> None:
     assert isinstance(rows[0][1], DisplayQuantity)
     assert rows[0][1].dimension == VELOCITY
     assert rows[0][5].dimension == VELOCITY
+
+
+
+def test_energy_quantile_rows_carry_energy_units() -> None:
+    import numpy as np
+
+    from dft_local.core.units import DisplayQuantity, ENERGY
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+    from dft_local.transport.boltzmann.calculation.diagnostics import energy_quantile_rows
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 1)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(1),
+    )
+    object.__setattr__(calc, "energies", np.array([[1.0, 2.0], [3.0, 4.0]]))
+    object.__setattr__(calc, "vectors", np.zeros((2, 1, 2), dtype=np.complex128))
+    object.__setattr__(calc, "velocities", np.zeros((2, 1, 2)))
+    object.__setattr__(calc, "ac_weights", np.zeros((2, 2), dtype=np.complex128))
+    object.__setattr__(calc, "sigma_k", np.zeros((2, 1, 1), dtype=np.complex128))
+    object.__setattr__(calc, "sigma", np.zeros((1, 1), dtype=np.complex128))
+
+    rows = energy_quantile_rows(calc)
+
+    assert isinstance(rows[0][1], DisplayQuantity)
+    assert rows[0][1].dimension == ENERGY
+    assert rows[0][5].dimension == ENERGY
