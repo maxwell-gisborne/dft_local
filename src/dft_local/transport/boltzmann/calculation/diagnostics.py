@@ -442,10 +442,12 @@ def compute_conductivity(ctx: Any, inputs: dict[str, object]) -> DiagnosticResul
             "Band-diagonal AC Boltzmann conductivity from generalized symbols. "
             "Each k sample is solved independently; no band continuation is used."
         ),
-        cards=cards,
-        tables=tables,
-        graphs=(sigma_graph(calc),),
-        matrices=(sigma_matrix(calc),),
+        body=(
+            *cards,
+            sigma_matrix(calc),
+            sigma_graph(calc),
+            *tables,
+        ),
         notes=(
             "This is the semiclassical band-diagonal Boltzmann expression.",
             "The calculation differentiates symbols with respect to physical k, using k_scale to convert raw irrep coordinates.",
@@ -495,8 +497,10 @@ def compute_overview(ctx: Any, inputs: dict[str, object]) -> DiagnosticResult:
     return DiagnosticResult(
         title="Boltzmann conductivity domain",
         summary="Overview of the domain-local Boltzmann conductivity module.",
-        cards=cards,
-        tables=tables,
+        body=(
+            *cards,
+            *tables,
+        ),
         notes=(
             "This diagnostic is discovered explicitly through diagnostics(), not by import-time registration.",
             "The domain owns its documentation, diagnostics, and test metadata locally.",

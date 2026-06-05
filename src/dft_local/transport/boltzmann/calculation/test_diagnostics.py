@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dft_local.diagnostics.models import DiagnosticSpec
+from dft_local.diagnostics.models import Card, DiagnosticSpec, Table
 from dft_local.transport.boltzmann.calculation.diagnostics import (
     compute_overview,
     diagnostics,
@@ -22,15 +22,15 @@ def test_boltzmann_overview_mentions_domain_files() -> None:
     result = compute_overview(None, {})
 
     assert result.title == "Boltzmann conductivity domain"
-    assert result.cards
-    assert result.tables
+    assert any(isinstance(block, Card) for block in result.body)
 
-    table_ids = {table.id for table in result.tables}
+    tables = tuple(block for block in result.body if isinstance(block, Table))
+    table_ids = {table.id for table in (*result.tables, *tables)}
 
     assert "boltzmann_files" in table_ids
     assert "boltzmann_docs_preview" in table_ids
 
-    file_table = next(table for table in result.tables if table.id == "boltzmann_files")
+    file_table = next(table for table in (*result.tables, *tables) if table.id == "boltzmann_files")
     roles = {row.cells[0] for row in file_table.rows}
 
     assert "core" in roles
