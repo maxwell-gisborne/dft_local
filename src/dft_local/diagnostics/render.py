@@ -8,7 +8,7 @@ from typing import Any
 import math
 import json
 
-from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, DiagnosticResult, Graph2D, TypstMathBlock
+from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, DiagnosticResult, Graph2D, TypstMathBlock, Card, Table
 from dft_local.diagnostics.typst import TypstRenderError, render_typst_error, render_typst_math_to_svg
 from dft_local.diagnostics.user_strings import RichText, TypstMath, rich
 
@@ -212,27 +212,6 @@ def _render_graph_svg(graph: Graph2D) -> str:
     return "\n".join(parts)
 
 
-def render_typst_math_block(block: TypstMathBlock) -> str:
-    math = block.math
-    if not math.display:
-        math = TypstMath(math.source, display=True, name=math.name)
-
-    return (
-        f"<div id='{escape(block.id)}' class='typst-math-block'>"
-        + render_user_string(math)
-        + "</div>"
-    )
-
-
-def render_markdown_block(block: MarkdownBlock) -> str:
-    return (
-        f"<section id='{escape(block.id)}'>"
-        f"<h2>{render_user_string(block.title)}</h2>"
-        + DiagnosticApp.render_markdown(block.markdown)
-        + "</section>"
-    )
-
-
 def render_markdown_text(markdown: Any) -> str:
     """Render lightweight prose content.
 
@@ -363,6 +342,38 @@ def render_table(table) -> str:
     )
 
 
+def render_document_block(block: Any) -> str:
+    """Render one ordered diagnostic document block."""
+
+    if isinstance(block, TypstMathBlock):
+        return render_typst_math_block(block)
+
+    if isinstance(block, MarkdownBlock):
+        return "<div class='markdown-math-group'>" + render_markdown_block(block) + "</div>"
+
+    if isinstance(block, Card):
+        return render_card(block)
+
+    if isinstance(block, Table):
+        return render_table(block)
+
+    if isinstance(block, Graph2D):
+        return render_graph(block)
+
+    if isinstance(block, DiagnosticSection):
+        return render_diagnostic_section(block)
+
+    # Late imports avoided; isinstance on optional classes by name keeps this
+    # renderer tolerant while the model is still migrating.
+    if block.__class__.__name__ == "Matrix":
+        return render_matrix(block)
+
+    if block.__class__.__name__ == "WebGLView":
+        return render_webgl_view(block)
+
+    raise TypeError(f"Unsupported diagnostic document block: {type(block)!r}")
+
+
 def render_diagnostic_section(section: DiagnosticSection) -> str:
     open_attr = "" if section.collapsed else " open"
     body: list[str] = []
@@ -370,44 +381,48 @@ def render_diagnostic_section(section: DiagnosticSection) -> str:
     if section.description:
         body.append(f"<p>{render_user_string(section.description)}</p>")
 
-    blocks = tuple(section.markdowns)
-    i = 0
-    while i < len(blocks):
-        block = blocks[i]
+    if getattr(section, "body", ()):
+        for block in section.body:
+            body.append(render_document_block(block))
+    else:
+        blocks = tuple(section.markdowns)
+        i = 0
+        while i < len(blocks):
+            block = blocks[i]
 
-        if isinstance(block, MarkdownBlock):
-            attached_math: list[TypstMathBlock] = []
-            j = i + 1
-            while j < len(blocks) and isinstance(blocks[j], TypstMathBlock):
-                attached_math.append(blocks[j])
-                j += 1
+            if isinstance(block, MarkdownBlock):
+                attached_math: list[TypstMathBlock] = []
+                j = i + 1
+                while j < len(blocks) and isinstance(blocks[j], TypstMathBlock):
+                    attached_math.append(blocks[j])
+                    j += 1
 
-            group = ["<div class='markdown-math-group'>", render_markdown_block(block)]
-            group.extend(render_typst_math_block(math_block) for math_block in attached_math)
-            group.append("</div>")
-            body.append("".join(group))
-            i = j
-            continue
+                group = ["<div class='markdown-math-group'>", render_markdown_block(block)]
+                group.extend(render_typst_math_block(math_block) for math_block in attached_math)
+                group.append("</div>")
+                body.append("".join(group))
+                i = j
+                continue
 
-        if isinstance(block, TypstMathBlock):
-            body.append(render_typst_math_block(block))
+            if isinstance(block, TypstMathBlock):
+                body.append(render_typst_math_block(block))
+                i += 1
+                continue
+
+            body.append(render_markdown_block(block))
             i += 1
-            continue
 
-        body.append(render_markdown_block(block))
-        i += 1
+        for block in getattr(section, "math_blocks", ()):
+            body.append(render_typst_math_block(block))
 
-    for block in getattr(section, "math_blocks", ()):
-        body.append(render_typst_math_block(block))
+        for card in section.cards:
+            body.append(render_card(card))
 
-    for card in section.cards:
-        body.append(render_card(card))
+        for table in section.tables:
+            body.append(render_table(table))
 
-    for table in section.tables:
-        body.append(render_table(table))
-
-    for child in section.sections:
-        body.append(render_diagnostic_section(child))
+        for subsection in section.sections:
+            body.append(render_diagnostic_section(subsection))
 
     return (
         f"<details id='{escape(section.id)}' class='diagnostic-section'{open_attr}>"

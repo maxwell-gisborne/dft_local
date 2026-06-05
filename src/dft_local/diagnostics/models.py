@@ -9,7 +9,7 @@ that diagnostics are easy to test and easy to render in multiple ways.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from typing import Any, Callable, Literal, Mapping
+from typing import Any, Callable, Literal, Mapping, TypeAlias
 import json
 
 from dft_local.diagnostics.user_strings import UserString
@@ -133,15 +133,15 @@ class TableRow:
 
 
 @dataclass(frozen=True, slots=True)
-class MarkdownBlock:
+class ProseBlock:
     id: str
     title: UserString
     markdown: UserString
 
 
 @dataclass(frozen=True, slots=True)
-class TypstMathBlock:
-    """A display-style Typst equation used as document content.
+class EquationBlock:
+    """A display-style equation used as document content.
 
     This is not a section, card, or foldable diagnostic unit. It is just a
     centered block equation in the surrounding prose.
@@ -149,6 +149,13 @@ class TypstMathBlock:
 
     id: str
     math: TypstMath
+
+
+# Backwards-compatible names while diagnostics migrate to the document model.
+MarkdownBlock = ProseBlock
+TypstMathBlock = EquationBlock
+ParagraphBlock = ProseBlock
+DocumentBlock: TypeAlias = Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -274,6 +281,7 @@ class DiagnosticSection:
     title: UserString
     description: UserString = ""
     collapsed: bool = False
+    body: tuple[DocumentBlock, ...] = ()
     markdowns: tuple[MarkdownBlock, ...] = ()
     math_blocks: tuple[TypstMathBlock, ...] = ()
     cards: tuple[Card, ...] = ()

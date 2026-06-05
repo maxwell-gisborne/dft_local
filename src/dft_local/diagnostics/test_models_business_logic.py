@@ -194,3 +194,50 @@ def test_rich_user_string_helpers_collect_typst_math() -> None:
 
     assert len(snippets) == 1
     assert snippets[0].name == "energy_label"
+
+
+def test_diagnostic_section_body_renders_ordered_document_blocks() -> None:
+    from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, Table, TableRow, TypstMathBlock
+    from dft_local.diagnostics.render import render_diagnostic_section
+    from dft_local.diagnostics.user_strings import TypstMath
+
+    section = DiagnosticSection(
+        id="ordered_body",
+        title="Ordered body",
+        body=(
+            MarkdownBlock(
+                id="intro",
+                title="Intro",
+                markdown="Before equation.",
+            ),
+            TypstMathBlock(
+                id="equation",
+                math=TypstMath("$ x = 1 $", display=True, name="ordered_body_equation"),
+            ),
+            MarkdownBlock(
+                id="after",
+                title="After",
+                markdown="After equation.",
+            ),
+            Table(
+                id="table",
+                title="Table",
+                description="",
+                headers=("name", "value"),
+                rows=(TableRow(("a", "b")),),
+            ),
+        ),
+    )
+
+    html = render_diagnostic_section(section)
+
+    points = [
+        html.find("Before equation."),
+        html.find("id='equation'"),
+        html.find("After equation."),
+        html.find("id='table'"),
+    ]
+
+    assert all(point >= 0 for point in points)
+    assert points == sorted(points)
+    assert "typst-error" not in html
