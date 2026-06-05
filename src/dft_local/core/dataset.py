@@ -11,7 +11,7 @@ from numpy.typing import NDArray
 from scipy.io import mmread
 from scipy.sparse import bsr_matrix
 
-from dft_local.core.numerics import FloatArray, IntArray, Units, eVag, freeze_array
+from dft_local.core.numerics import FloatArray, IntArray, freeze_array
 from dft_local.core.sparse import block_row_raw
 from dft_local.core.units import ATOMIC_UNITS, COULOMB, DIMENSIONLESS, ENERGY, JOULE, KELVIN, LENGTH, SECOND, SI_UNITS, Unit, UnitContext, qarray
 
@@ -32,72 +32,21 @@ EnergySparseMatrix = Annotated[bsr_matrix, qarray(ENERGY, ("basis", "basis"), ro
 DimensionlessSparseMatrix = Annotated[bsr_matrix, qarray(DIMENSIONLESS, ("basis", "basis"), role="overlap matrix")]
 
 
-@dataclass(frozen=True)
-class Units:
-    E: float
-    L: float
-    e: float
-    hbar: float
-    name: str
-    comment: str = ""
-
-    def __repr__(self):
-        return f'Units({self.name})'
-
-
-AU = Units(E = 1,
-           L = 1,
-           e = 1,
-           hbar = 1,
-           name = 'bohr',
-           comment = "this is the unit on disk")
-
-eVag = Units(
-        E = 27.21138386,  # Hatrees in eV
-        L = 0.52917721092,  # Bohr radius in to Angstrom
-        e = 1.602e-19,      # charge on electron in Colombs
-        hbar = 6.582e-16,  # hbar in eV•s
-        name = 'angstroem',
-        )
-
-
 LEGACY_EV_ANGSTROM_CONTEXT = UnitContext(
     length=Unit(
         "angstrom",
         LENGTH,
-        ATOMIC_UNITS.length.scale_to_si / eVag.L,
+        ATOMIC_UNITS.length.scale_to_si / 0.52917721092,
     ),
     energy=Unit(
         "eV",
         ENERGY,
-        ATOMIC_UNITS.energy.scale_to_si / eVag.E,
+        ATOMIC_UNITS.energy.scale_to_si / 27.21138386,
     ),
     time=SECOND,
     charge=COULOMB,
     temperature=KELVIN,
 )
-
-
-def unit_context_from_legacy_units(units: Units) -> UnitContext:
-    """Bridge from legacy Units to core UnitContext.
-
-    The bridge preserves the exact rounded scale factors used by the legacy
-    loader so this refactor does not silently change loaded numerical values.
-    """
-
-    if units == AU or getattr(units, "name", "") == "bohr":
-        return ATOMIC_UNITS
-
-    if units == eVag or getattr(units, "name", "") == "angstroem":
-        return LEGACY_EV_ANGSTROM_CONTEXT
-
-    return UnitContext(
-        length=Unit("legacy_length", LENGTH, ATOMIC_UNITS.length.scale_to_si / units.L),
-        energy=Unit("legacy_energy", ENERGY, ATOMIC_UNITS.energy.scale_to_si / units.E),
-        time=SECOND,
-        charge=COULOMB,
-        temperature=KELVIN,
-    )
 
 
 def require_file(path: Path) -> Path:

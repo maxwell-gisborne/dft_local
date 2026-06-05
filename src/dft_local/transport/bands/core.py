@@ -507,7 +507,7 @@ class LocalPath:
         KS: GdKernelArrays,
         k1: np.ndarray,
         k2: np.ndarray,
-        units: Units,
+        unit_context: UnitContext,
         x: np.ndarray | None = None,
         labels: tuple[tuple[int, str], ...] = (),
         name: str = "",

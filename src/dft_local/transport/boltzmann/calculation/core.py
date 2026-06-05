@@ -12,17 +12,16 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.linalg import eigh
 
-from dft_local.core.dataset import unit_context_from_legacy_units
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT
 from dft_local.core.local_problem import LocalProblem, SymbolPair
 from dft_local.core.numerics import (
     FloatArray,
-    Units,
-    eVag,
     hermitian_part,
 )
 
 from dft_local.core.kernels import GdKernelArrays
 from dft_local.core.units import (
+    ATOMIC_UNITS,
     CONDUCTIVITY,
     DIMENSIONLESS,
     ENERGY,
@@ -68,7 +67,7 @@ def fermi_window(
     *,
     mu: float,
     temperature: float,
-    units: Units,
+    unit_context: UnitContext,
 ) -> FloatArray:
     """
     Return the positive Fermi-window factor
@@ -77,20 +76,20 @@ def fermi_window(
 
     in the same energy units as `E`.
 
-    The Hamiltonian is assumed to already have been converted from disk units
-    using `units.E`. Since `units.E` is the conversion from Hartree to the
-    current energy unit, k_B T is
-
-        K_B_HARTREE_PER_K * units.E * temperature
-
-    For `eVag`, this gives k_B in eV / K.
+    The Hamiltonian is assumed to already be expressed in the calculation
+    energy unit.  Since ``K_B_HARTREE_PER_K`` is k_B in Hartree/K, k_B T is
+    converted into the current energy unit by the Hartree-to-working-energy
+    factor.
     """
 
     if temperature <= 0:
         raise ValueError("temperature must be positive")
 
     E = np.asarray(E, dtype=np.float64)
-    kBT = K_B_HARTREE_PER_K * units.E * temperature
+    energy_conversion_disk_to_working = (
+        ATOMIC_UNITS.energy.scale_to_si / unit_context.energy.scale_to_si
+    )
+    kBT = K_B_HARTREE_PER_K * energy_conversion_disk_to_working * temperature
 
     x = (E - float(mu)) / kBT
     out = np.empty_like(x, dtype=np.float64)
@@ -305,7 +304,7 @@ class BoltzmannConductivity:
         Integration weights in raw irrep-coordinate measure.
     irrep_to_physical_k:
         Matrix mapping raw irrep coordinates to physical k coordinates.
-        If `units=eVag`, this should usually map into inverse Angstrom.
+        For the default working context, this should usually map into inverse Angstrom.
     units:
         Unit system used by the symbols.
     mu:
@@ -327,8 +326,7 @@ class BoltzmannConductivity:
     irrep_weights: IrrepWeights
     irrep_to_physical_k: IrrepToPhysicalK
 
-    units: Units = eVag
-    unit_context_override: UnitContext | None = None
+    unit_context: UnitContext = LEGACY_EV_ANGSTROM_CONTEXT
     mu: float = 0.0
     temperature: float = 300.0
     omega: float = 0.0
@@ -342,13 +340,22 @@ class BoltzmannConductivity:
     name: str = ""
 
     @property
-    def unit_context(self) -> UnitContext:
-        """Unit context used by this calculation state."""
+    def energy_conversion_disk_to_working(self) -> float:
+        """Scale converting disk Hartree energies to working energies."""
 
-        if self.unit_context_override is not None:
-            return self.unit_context_override
+        return ATOMIC_UNITS.energy.scale_to_si / self.unit_context.energy.scale_to_si
 
-        return unit_context_from_legacy_units(self.units)
+    @property
+    def length_conversion_disk_to_working(self) -> float:
+        """Scale converting disk bohr lengths to working lengths."""
+
+        return ATOMIC_UNITS.length.scale_to_si / self.unit_context.length.scale_to_si
+
+    @property
+    def hbar_working(self) -> float:
+        """Reduced Planck constant in working energy times seconds."""
+
+        return 1.054571817e-34 / self.unit_context.energy.scale_to_si
 
     energies: EnergyBands | None = field(default=None, init=False)
     vectors: ComplexArray | None = field(default=None, init=False)
@@ -410,8 +417,7 @@ class BoltzmannConductivity:
         *,
         irrep_weights: FloatArray | None = None,
         irrep_to_physical_k: FloatArray | None = None,
-        units: Units = eVag,
-        unit_context_override: UnitContext | None = None,
+        unit_context: UnitContext = LEGACY_EV_ANGSTROM_CONTEXT,
         mu: float = 0.0,
         temperature: float = 300.0,
         omega: float = 0.0,
@@ -469,8 +475,7 @@ class BoltzmannConductivity:
             irrep_points=irrep_points,
             irrep_weights=irrep_weights,
             irrep_to_physical_k=irrep_to_physical_k,
-            units=units,
-            unit_context_override=unit_context_override,
+            unit_context=unit_context,
             mu=mu,
             temperature=temperature,
             omega=omega,
@@ -499,7 +504,7 @@ class BoltzmannConductivity:
     @property
     def charge_value(self) -> float:
         if self.charge is None:
-            return -float(self.units.e)
+            return -float(self.unit_context.charge.scale_to_si)
         return float(self.charge)
 
     def tau_for_sample(self, sample_index: int, nbands: int) -> FloatArray:
@@ -597,7 +602,7 @@ class BoltzmannConductivity:
             for n in range(nbands):
                 u = U[:, n]
                 numerator = np.vdot(u, (dH[i] - E[n] * dS[i]) @ u)
-                velocities[i, n] = float(np.real(numerator)) / float(self.units.hbar)
+                velocities[i, n] = float(np.real(numerator)) / float(self.hbar_working)
 
         return velocities
 
@@ -624,7 +629,7 @@ class BoltzmannConductivity:
         E_left = E[:, None]
         E_right = E[None, :]
 
-        return (M - 0.5 * (E_left + E_right) * N) / float(self.units.hbar)
+        return (M - 0.5 * (E_left + E_right) * N) / float(self.hbar_working)
 
     def ac_weight(
         self,
@@ -648,7 +653,7 @@ class BoltzmannConductivity:
             E,
             mu=self.mu,
             temperature=self.temperature,
-            units=self.units,
+            unit_context=self.unit_context,
         )
 
         q = self.charge_value
@@ -784,7 +789,7 @@ class BoltzmannConductivity:
             "name": self.name,
             "nk": self.nk,
             "dimension": self.dimension,
-            "units": repr(self.units),
+            "unit_context": repr(self.unit_context),
             "mu": float(self.mu),
             "temperature": float(self.temperature),
             "omega": float(self.omega),

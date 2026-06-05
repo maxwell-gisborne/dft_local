@@ -22,7 +22,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from dft_local.core.numerics import eVag
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT
 from dft_local.transport.bands import core as bands
 
 
@@ -92,7 +92,7 @@ def make_path(H, k1, k2=None, *, strategy="energy_predict") -> bands.LocalPath:
         IdentityOverlapKernel(),
         k1,
         k2,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
         matching_strategy=strategy,
     )
 
@@ -342,7 +342,7 @@ def test_local_region_from_parallelogram_shapes_and_strategy(fake_S: IdentityOve
         edge_v=(0.0, 2.0),
         nu=4,
         nv=5,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
         matching_strategy="energy_predict",
     )
 
@@ -361,7 +361,7 @@ def test_local_region_energy_predict_passes_strategy_to_seed_and_v_paths(fake_S:
         edge_v=(0.0, 2.0),
         nu=4,
         nv=5,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
         matching_strategy="energy_predict",
     )
 
@@ -381,7 +381,7 @@ def test_local_region_energy_predict_tracks_crossing_sheets_along_v(fake_S: Iden
         edge_v=(0.0, 2.0),
         nu=3,
         nv=5,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
         matching_strategy="energy_predict",
     )
 
@@ -410,7 +410,7 @@ def test_local_region_v_path_bounds_check(fake_S: IdentityOverlapKernel) -> None
         edge_v=(0.0, 2.0),
         nu=3,
         nv=5,
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
     )
 
     with pytest.raises(IndexError):

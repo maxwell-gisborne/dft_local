@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from scipy.linalg import eigvalsh
 
-from dft_local.core.dataset import SparseDataset
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT, SparseDataset
 from dft_local.core.geometry import (
     EdgeDirections,
     EdgeGroupLabels,
@@ -16,7 +16,6 @@ from dft_local.core.kernels import GdKernelArrays, gd_inverse_label
 from dft_local.core.local_problem import SymbolPair
 from dft_local.core.numerics import (
     DenseMatrixDiagnostics,
-    eVag,
     hermitian_part,
 )
 from dft_local.core.sparse import block_row_raw
@@ -278,7 +277,7 @@ def sample_path(KH_avg_star, KS_avg_star):
         points,
         points_per_segment=8,
         name="test path",
-        units=eVag,
+        unit_context=LEGACY_EV_ANGSTROM_CONTEXT,
     ).solve_continuation()
 
 

@@ -177,14 +177,14 @@ def unit_rows(
     calc: BoltzmannConductivity,
     provenance_rows: list[list[object]] | None = None,
 ) -> list[list[object]]:
-    kBT = 3.166811563e-6 * calc.units.E * calc.temperature
+    kBT = 3.166811563e-6 * calc.energy_conversion_disk_to_working * calc.temperature
 
     rows: list[list[object]] = [
-        ["units", repr(calc.units)],
-        ["units.E", calc.units.E],
-        ["units.L", calc.units.L],
-        ["units.e", calc.units.e],
-        ["units.hbar", calc.units.hbar],
+        ["unit context", repr(calc.unit_context)],
+        ["energy disk-to-working factor", calc.energy_conversion_disk_to_working],
+        ["length disk-to-working factor", calc.length_conversion_disk_to_working],
+        ["charge unit", calc.unit_context.charge.symbol],
+        ["hbar", calc.hbar_working],
         [
             "mu",
             DisplayQuantity(
@@ -450,8 +450,7 @@ def compute_conductivity(ctx: Any, inputs: dict[str, object]) -> DiagnosticResul
         k2,
         irrep_weights=weights,
         irrep_to_physical_k=k_scale * np.eye(2),
-        units=state.units,
-        unit_context_override=state.data.working_unit_context,
+        unit_context=state.data.working_unit_context,
         mu=mu,
         temperature=temperature,
         omega=omega,
@@ -576,7 +575,7 @@ def compute_conductivity(ctx: Any, inputs: dict[str, object]) -> DiagnosticResul
         notes=(
             "This is the semiclassical band-diagonal Boltzmann expression.",
             "The calculation differentiates symbols with respect to physical k, using k_scale to convert raw irrep coordinates.",
-            "Use k_scale=0 for the automatic default 1 / units.L.",
+            "Use k_scale=0 for the automatic default inverse working length conversion.",
         ),
     )
 
