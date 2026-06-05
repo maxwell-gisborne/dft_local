@@ -1,4 +1,8 @@
+// @ts-check
+
+// @ts-ignore node builtin import is provided by Node at runtime
 import test from "node:test";
+// @ts-ignore node builtin import is provided by Node at runtime
 import assert from "node:assert/strict";
 
 import {
@@ -20,7 +24,22 @@ import {
   emitSelectedSteps,
   projectedKspaceHexagonSideLengths,
 } from "./dft-local-components.js";
+// @ts-ignore node builtin import is provided by Node at runtime
 import { readFileSync } from "node:fs";
+
+/**
+ * @template T
+ * @param {T | null | undefined} value
+ * @param {string} message
+ * @returns {T}
+ */
+function requireValue(value, message) {
+  if (value == null) {
+    throw new Error(message);
+  }
+  return value;
+}
+
 
 test("nice formats ordinary numbers", () => {
   assert.equal(nice(0), "0");
@@ -47,7 +66,7 @@ test("graphBounds returns padded bounds", () => {
     series: [
       {
         name: "s",
-        kind: "line",
+        kind: /** @type {"line"} */ ("line"),
         points: [
           { x: 0, y: 0 },
           { x: 10, y: 20 },
@@ -104,11 +123,10 @@ test("nearestPointByX finds closest x point", () => {
     ],
   };
 
-  const hit = nearestPointByX(payload, { xmin: 0, xmax: 10, ymin: 0, ymax: 50 }, 0.48);
-
-  if (hit === null) {
-    assert.fail("expected nearest point hit");
-  }
+  const hit = requireValue(
+    nearestPointByX(payload, { xmin: 0, xmax: 10, ymin: 0, ymax: 50 }, 0.48),
+    "expected nearest point hit",
+  );
 
   assert.equal(hit.series, "band 0");
   assert.equal(hit.x, 4.8);
@@ -143,11 +161,10 @@ test("nearestPointByX interpolates line y and chooses nearest curve", () => {
     ],
   };
 
-  const hit = nearestPointByX(payload, { xmin: 0, xmax: 10, ymin: 0, ymax: 120 }, 0.5, 0.1);
-
-  if (hit === null) {
-    assert.fail("expected nearest point hit");
-  }
+  const hit = requireValue(
+    nearestPointByX(payload, { xmin: 0, xmax: 10, ymin: 0, ymax: 120 }, 0.5, 0.1),
+    "expected nearest interpolated hit",
+  );
 
   assert.equal(hit.series, "high");
   assert.equal(hit.x, 5);
@@ -264,11 +281,10 @@ test("nearestPathPoint finds selected path point and step", () => {
     ],
   };
 
-  const hit = nearestPathPoint(payload, { xmin: 0, xmax: 10, ymin: -5, ymax: 5 }, 0.9, 0.5);
-
-  if (hit === null) {
-    assert.fail("expected nearest path hit");
-  }
+  const hit = requireValue(
+    nearestPathPoint(payload, { xmin: 0, xmax: 10, ymin: -5, ymax: 5 }, 0.9, 0.5),
+    "expected nearest path hit",
+  );
 
   assert.equal(hit.step, 1);
   assert.equal(hit.pathX, 42);
@@ -401,6 +417,7 @@ test("kspace hexagon remains regular after screen projection", () => {
     series: [
       {
         name: "hexagon",
+        kind: /** @type {"line"} */ ("line"),
         points: corners,
       },
     ],
