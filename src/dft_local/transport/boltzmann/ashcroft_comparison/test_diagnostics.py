@@ -1,8 +1,16 @@
 from __future__ import annotations
 
 
+def _sections(result):
+    from dft_local.diagnostics.models import DiagnosticSection
+
+    return tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+
+
 def _section_by_id(result, section_id: str):
-    return next(section for section in result.sections if section.id == section_id)
+    return next(section for section in _sections(result) if section.id == section_id)
 
 
 def _all_section_tables(result):
@@ -612,7 +620,7 @@ def test_ashcroft_streamlined_panel_structure() -> None:
     assert result.cards == ()
     assert result.tables == ()
 
-    assert [section.id for section in result.sections] == [
+    assert [section.id for section in _sections(result)] == [
         "ashcroft_local_calculation_check",
         "ashcroft_velocity_comparison",
         "ashcroft_conductivity_comparison",

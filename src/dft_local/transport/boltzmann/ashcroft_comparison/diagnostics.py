@@ -159,7 +159,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             "up to simplex-choice ambiguity at grid vertices; and the conductivity agrees "
             "once the reciprocal-space measure convention is matched."
         ),
-        sections=(
+        body=(
             DiagnosticSection(
                 id="ashcroft_local_calculation_check",
                 title="Local calculation check",
