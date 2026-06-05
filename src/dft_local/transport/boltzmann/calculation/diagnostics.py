@@ -25,6 +25,7 @@ from dft_local.diagnostics.models import (
     Table,
     TableRow,
 )
+from dft_local.core.units import DisplayQuantity, ELECTRON_VOLT, ENERGY, HARTREE, Unit
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
 
@@ -81,6 +82,14 @@ def _rows_table(
         rows=tuple(TableRow(tuple(row)) for row in rows),
         numeric=frozenset(numeric or set()),
     )
+
+
+def _legacy_energy_display_unit(units) -> Unit:
+    """Return the energy unit represented by the legacy numerics.Units object."""
+
+    scale_to_si = HARTREE.scale_to_si / units.E
+    symbol = "eV" if abs(scale_to_si / ELECTRON_VOLT.scale_to_si - 1.0) < 1.0e-6 else "energy"
+    return Unit(symbol, ENERGY, scale_to_si)
 
 
 def sigma_matrix(calc: BoltzmannConductivity) -> Matrix:
@@ -141,7 +150,15 @@ def unit_rows(calc: BoltzmannConductivity) -> list[list[object]]:
         ["units.hbar", calc.units.hbar],
         ["mu", calc.mu],
         ["temperature / K", calc.temperature],
-        ["k_B T in energy units", kBT],
+        [
+            "k_B T",
+            DisplayQuantity(
+                value=kBT,
+                dimension=ENERGY,
+                unit=_legacy_energy_display_unit(calc.units),
+                name="k_B T",
+            ),
+        ],
         ["omega", calc.omega],
         ["sum raw irrep weights", float(np.sum(calc.irrep_weights))],
         ["sum physical k weights", float(np.sum(calc.physical_k_weights))],

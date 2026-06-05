@@ -57,3 +57,26 @@ def test_boltzmann_conductivity_array_fields_have_quantity_schema() -> None:
     assert calc_specs["irrep_to_physical_k"].dimension == WAVEVECTOR
     assert calc_specs["irrep_to_physical_k"].axes == ("cartesian", "irrep_coordinate")
     assert calc_specs["sigma"].dimension == CONDUCTIVITY
+
+
+
+def test_boltzmann_conductivity_units_table_uses_display_quantity() -> None:
+    from dft_local.core.units import DisplayQuantity, ENERGY
+    from dft_local.transport.boltzmann.calculation.diagnostics import unit_rows
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+
+    class FakeCalc:
+        temperature = 300.0
+        mu = 0.0
+        omega = 0.0
+        irrep_weights = __import__("numpy").array([1.0])
+        physical_k_weights = __import__("numpy").array([2.0])
+        irrep_to_physical_k = __import__("numpy").eye(1)
+        units = BoltzmannConductivity.__dataclass_fields__["units"].default
+
+    rows = unit_rows(FakeCalc())
+    row_map = {row[0]: row[1] for row in rows}
+
+    assert isinstance(row_map["k_B T"], DisplayQuantity)
+    assert row_map["k_B T"].dimension == ENERGY
+    assert row_map["k_B T"].unit.symbol == "eV"
