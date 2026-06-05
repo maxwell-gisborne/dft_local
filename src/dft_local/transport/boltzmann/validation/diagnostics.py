@@ -84,7 +84,7 @@ The purpose is to build a chain of checks that are independent of Vincent, Ashcr
                 title="Production symbol and derivative checks",
                 description="Checks the same GdKernelArrays symbol and derivative path used for H(k) and S(k).",
                 collapsed=False,
-                markdowns=(
+                body=(
                     MarkdownBlock(
                         id="boltzmann_validation_production_symbol_checks_commentary",
                         title="What this checks",
@@ -108,8 +108,6 @@ and is represented as a `GdKernelArrays` object. The diagnostic then checks:
 This is the validation layer closest to the actual `H(k)` and `S(k)` path.
 """,
                     ),
-                ),
-                tables=(
                     Table(
                         id="boltzmann_validation_production_symbol_errors",
                         title="Production symbol error summary",
@@ -139,7 +137,7 @@ This is the validation layer closest to the actual `H(k)` and `S(k)` path.
                 title="Symbol and derivative checks",
                 description="Checks that the finite-group symbol reproduces known operators and known energy-surface derivatives.",
                 collapsed=False,
-                markdowns=(
+                body=(
                     MarkdownBlock(
                         id="boltzmann_validation_symbol_checks_commentary",
                         title="What this checks",
@@ -156,8 +154,6 @@ They test:
 This is the start of validating the operator approach independently of any external comparison data.
 """,
                     ),
-                ),
-                tables=(
                     Table(
                         id="boltzmann_validation_symbol_errors",
                         title="Symbol and derivative error summary",
@@ -179,7 +175,7 @@ This is the start of validating the operator approach independently of any exter
                 title="Weighted outer-product smoke test",
                 description="Minimal algebraic check of the conductivity tensor structure.",
                 collapsed=True,
-                markdowns=(
+                body=(
                     MarkdownBlock(
                         id="boltzmann_validation_outer_product_commentary",
                         title="What this checks",
@@ -188,8 +184,6 @@ This is the start of validating the operator approach independently of any exter
 A tensor of the form `sum_k w_k v(k) v(k)^T` with non-negative weights must be symmetric and positive semidefinite. This smoke test gives the new validation domain a concrete first invariant while more complete analytic operator tests are added.
 """,
                     ),
-                ),
-                tables=(
                     Table(
                         id="boltzmann_validation_outer_product_tensor",
                         title="Smoke-test tensor",

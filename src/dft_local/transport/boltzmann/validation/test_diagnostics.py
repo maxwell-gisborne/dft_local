@@ -203,7 +203,11 @@ def test_symbol_validation_probe_is_visible_in_diagnostic() -> None:
         section for section in result.sections
         if section.id == "boltzmann_validation_symbol_checks"
     )
-    table_ids = {table.id for table in symbol_section.tables}
+    from dft_local.diagnostics.models import Table
+
+    table_ids = {table.id for table in symbol_section.tables} | {
+        block.id for block in symbol_section.body if isinstance(block, Table)
+    }
 
     assert "boltzmann_validation_symbol_errors" in table_ids
 
@@ -297,6 +301,10 @@ def test_production_gd_symbol_probe_is_visible_in_diagnostic() -> None:
         section for section in result.sections
         if section.id == "boltzmann_validation_production_symbol_checks"
     )
-    table_ids = {table.id for table in section.tables}
+    from dft_local.diagnostics.models import Table
+
+    table_ids = {table.id for table in section.tables} | {
+        block.id for block in section.body if isinstance(block, Table)
+    }
 
     assert "boltzmann_validation_production_symbol_errors" in table_ids
