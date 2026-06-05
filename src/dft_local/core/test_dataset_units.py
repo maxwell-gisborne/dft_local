@@ -49,3 +49,13 @@ def test_sparse_dataset_matrices_have_quantity_schema() -> None:
     assert specs["H"].axes == ("basis", "basis")
     assert specs["S"].dimension == DIMENSIONLESS
     assert specs["S"].axes == ("basis", "basis")
+
+
+
+def test_sparse_dataset_exposes_disk_to_working_conversion_factors() -> None:
+    dataset = SparseDataset.load("test_run/run_dir/data")
+
+    assert dataset.energy_conversion_disk_to_working == dataset.disk_unit_context.energy.scale_to_si / dataset.working_unit_context.energy.scale_to_si
+    assert dataset.length_conversion_disk_to_working == dataset.disk_unit_context.length.scale_to_si / dataset.working_unit_context.length.scale_to_si
+    assert dataset.energy_conversion_disk_to_working > 1.0
+    assert dataset.length_conversion_disk_to_working < 1.0

@@ -249,6 +249,18 @@ class SparseDataset:
     H: EnergySparseMatrix
     S: DimensionlessSparseMatrix
 
+    @property
+    def energy_conversion_disk_to_working(self) -> float:
+        """Scale converting disk Hartree energies to loaded working energies."""
+
+        return self.disk_unit_context.energy.scale_to_si / self.working_unit_context.energy.scale_to_si
+
+    @property
+    def length_conversion_disk_to_working(self) -> float:
+        """Scale converting disk bohr lengths to loaded working lengths."""
+
+        return self.disk_unit_context.length.scale_to_si / self.working_unit_context.length.scale_to_si
+
     @classmethod
     def load(cls, root: Path, units: Units = eVag) -> Self:
         root = Path(root)
