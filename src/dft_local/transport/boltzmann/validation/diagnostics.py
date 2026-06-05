@@ -48,7 +48,7 @@ def compute_overview(ctx, inputs) -> DiagnosticResult:
                 title="Validation scope",
                 description="Purpose and planned checks for the operator-validation domain.",
                 collapsed=False,
-                markdowns=(
+                body=(
                     MarkdownBlock(
                         id="boltzmann_validation_scope_commentary",
                         title="Why this domain exists",
@@ -57,8 +57,6 @@ def compute_overview(ctx, inputs) -> DiagnosticResult:
 The purpose is to build a chain of checks that are independent of Vincent, Ashcroft-specific data, or any particular printed intermediate value. Once these checks pass, external comparisons can be interpreted as convention matching problems rather than basic implementation validation.
 """,
                     ),
-                ),
-                tables=(
                     Table(
                         id="boltzmann_validation_current_scope",
                         title="Current scope",

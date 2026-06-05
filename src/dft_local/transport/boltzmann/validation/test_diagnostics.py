@@ -73,10 +73,17 @@ def test_validation_diagnostic_renders_scope_and_smoke_test() -> None:
     assert "boltzmann_validation_scope" in section_ids
     assert "boltzmann_validation_outer_product_smoke_test" in section_ids
 
+    from dft_local.diagnostics.models import Table
+
     table_ids = {
         table.id
         for section in result.sections
         for table in section.tables
+    } | {
+        block.id
+        for section in result.sections
+        for block in section.body
+        if isinstance(block, Table)
     }
     assert "boltzmann_validation_current_scope" in table_ids
     assert "boltzmann_validation_planned_checks" in table_ids
