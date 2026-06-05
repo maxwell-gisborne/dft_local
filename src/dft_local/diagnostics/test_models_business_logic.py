@@ -285,3 +285,40 @@ def test_document_helpers_construct_ordered_blocks() -> None:
 
     assert html.find("Before.") < html.find("id='eq'") < html.find("After.")
     assert "typst-error" not in html
+
+
+
+def test_diagnostic_result_body_renders_ordered_document_blocks() -> None:
+    from dft_local.diagnostics.document import equation, prose
+    from dft_local.diagnostics.models import DiagnosticResult, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    result = DiagnosticResult(
+        title="Ordered result",
+        summary="Summary",
+        body=(
+            prose("intro", "Intro", "Before table."),
+            Table(
+                id="result_table",
+                title="Result table",
+                description="A table in result body.",
+                headers=("name", "value"),
+                rows=(TableRow(("a", "b")),),
+            ),
+            equation("result_equation", "$ q = 4 $"),
+            prose("after", "After", "After equation."),
+        ),
+    )
+
+    html = render_result(result)
+
+    points = [
+        html.find("Before table."),
+        html.find("id='result_table'"),
+        html.find("id='result_equation'"),
+        html.find("After equation."),
+    ]
+
+    assert all(point >= 0 for point in points)
+    assert points == sorted(points)
+    assert "typst-error" not in html

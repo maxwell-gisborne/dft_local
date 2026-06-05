@@ -298,6 +298,7 @@ class DiagnosticResult:
 
     title: UserString
     summary: UserString
+    body: tuple[DocumentBlock, ...] = ()
     cards: tuple[Card, ...] = ()
     tables: tuple[Table, ...] = ()
     graphs: tuple[Graph2D, ...] = ()

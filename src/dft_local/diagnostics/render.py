@@ -314,31 +314,86 @@ def render_card(card) -> str:
 
 
 def render_table(table) -> str:
-    headers = "".join(f"<th>{render_user_string(header)}</th>" for header in table.headers)
+    has_step = "step" in table.headers
+    step_index = table.headers.index("step") if has_step else -1
+    x_index = table.headers.index("x") if "x" in table.headers else -1
+    energy_index = table.headers.index("energy") if "energy" in table.headers else -1
+    row_label_index = 0
 
-    rows = []
-    for row in table.rows:
-        cells = getattr(row, "cells", row)
-        rows.append(
-            "<tr>"
-            + "".join(f"<td>{render_display_value(cell)}</td>" for cell in cells)
-            + "</tr>"
+    parts: list[str] = []
+    parts.append(
+        f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'>"
+        f"<h2>{render_user_string(table.title)}</h2>"
+    )
+    parts.append(f"<p>{render_user_string(table.description)}</p>")
+
+    if has_step:
+        parts.append(
+            f"<div class='table-select-controls' data-table-id='{escape(table.id)}'>"
+            "<button type='button' data-table-select='all'>Select all</button>"
+            "<button type='button' data-table-select='none'>Clear all</button>"
+            "</div>"
         )
 
-    description = ""
-    if getattr(table, "description", ""):
-        description = f"<p><small>{render_user_string(table.description)}</small></p>"
+    parts.append("<div class='table-breakout' tabindex='0'><table><thead><tr>")
+    if has_step:
+        parts.append("<th>select</th>")
+
+    for header in table.headers:
+        parts.append(f"<th>{render_user_string(header)}</th>")
+    parts.append("</tr></thead><tbody>")
+
+    for row in table.rows:
+        step_value = row.cells[step_index] if has_step else None
+        x_value = row.cells[x_index] if x_index >= 0 else step_value
+        energy_value = row.cells[energy_index] if energy_index >= 0 else ""
+        row_label_value = row.cells[row_label_index] if row.cells else step_value
+
+        attrs = ""
+        if has_step:
+            attrs = (
+                f" data-step='{escape(str(step_value))}'"
+                f" data-path-x='{escape(str(x_value))}'"
+                f" data-energy='{escape(str(energy_value))}'"
+                f" data-label='{escape(str(row_label_value))}'"
+                f" data-table-id='{escape(table.id)}'"
+            )
+
+        parts.append(f"<tr{attrs}>")
+
+        if has_step:
+            parts.append(
+                "<td>"
+                f"<input type='checkbox' class='table-step-select'"
+                f" data-step='{escape(str(step_value))}'"
+                f" data-path-x='{escape(str(x_value))}'"
+                f" data-energy='{escape(str(energy_value))}'"
+                f" data-label='{escape(str(row_label_value))}'"
+                f" data-table-id='{escape(table.id)}'>"
+                "</td>"
+            )
+
+        for cell in row.cells:
+            parts.append(f"<td>{render_display_value(cell)}</td>")
+        parts.append("</tr>")
+
+    parts.append("</tbody></table></div></section>")
+    return "".join(parts)
+
+
+def render_graph(graph: Graph2D) -> str:
+    payload = json.dumps(graph.payload()).replace("</", "<\\/")
+    data_id = f"data-{graph.id}"
+    component = "dft-kspace-plot" if "kspace" in graph.id else "dft-line-graph"
 
     return (
-        f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'>"
-        f"<h3>{render_user_string(table.title)}</h3>"
-        + description
-        + "<div class='table-breakout' tabindex='0'>"
-        + "<table><thead><tr>"
-        + headers
-        + "</tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table></div></section>"
+        f"<section class='graph-panel'><h2>{render_user_string(graph.title)}</h2>"
+        f"<p>{render_user_string(graph.description)}</p>"
+        f"<script type='application/json' id='{escape(data_id)}'>{payload}</script>"
+        f"<{component} data-source='{escape(data_id)}'>"
+        f"{_render_graph_svg(graph)}"
+        f"</{component}>"
+        "</section>"
     )
 
 
@@ -433,7 +488,6 @@ def render_diagnostic_section(section: DiagnosticSection) -> str:
 
 
 def render_result(result: DiagnosticResult) -> str:
-    rendered_markdowns = ''.join(render_markdown_block(block) for block in result.markdowns)
     """Render a diagnostic result body as simple HTML."""
 
     parts: list[str] = []
@@ -441,16 +495,17 @@ def render_result(result: DiagnosticResult) -> str:
     parts.append(f"<h1>{render_user_string(result.title)}</h1>")
     parts.append(f"<p>{render_user_string(result.summary)}</p>")
 
+    if getattr(result, "body", ()):
+        for block in result.body:
+            parts.append(render_document_block(block))
+        return "\n".join(parts)
+
+    rendered_markdowns = ''.join(render_markdown_block(block) for block in result.markdowns)
+
     if result.cards:
         parts.append("<section class='cards'>")
         for card in result.cards:
-            parts.append(
-                "<article class='card'>"
-                f"<h3>{render_user_string(card.label)}</h3>"
-                f"<p class='{escape(card.status)}'>{escape(fmt(card.value))}</p>"
-                f"<small>{render_user_string(card.help)}</small>"
-                "</article>"
-            )
+            parts.append(render_card(card))
         parts.append("</section>")
 
     for section in result.sections:
@@ -474,88 +529,10 @@ def render_result(result: DiagnosticResult) -> str:
         parts.append("</tbody></table></section>")
 
     for graph in result.graphs:
-        payload = json.dumps(graph.payload()).replace("</", "<\\/")
-        data_id = f"data-{graph.id}"
-        component = "dft-kspace-plot" if "kspace" in graph.id else "dft-line-graph"
-
-        parts.append(f"<section class='graph-panel'><h2>{render_user_string(graph.title)}</h2>")
-        parts.append(f"<p>{render_user_string(graph.description)}</p>")
-        parts.append(
-            f"<script type='application/json' id='{escape(data_id)}'>"
-            f"{payload}"
-            "</script>"
-        )
-        parts.append(
-            f"<{component} data-source='{escape(data_id)}'>"
-            f"{_render_graph_svg(graph)}"
-            f"</{component}>"
-        )
-        parts.append("</section>")
+        parts.append(render_graph(graph))
 
     for table in result.tables:
-        has_step = "step" in table.headers
-        step_index = table.headers.index("step") if has_step else -1
-        x_index = table.headers.index("x") if "x" in table.headers else -1
-        energy_index = table.headers.index("energy") if "energy" in table.headers else -1
-        row_label_index = 0
-        energy_index = table.headers.index("energy") if "energy" in table.headers else -1
-        row_label_index = 0
-
-        parts.append(f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'><h2>{render_user_string(table.title)}</h2>")
-        parts.append(f"<p>{render_user_string(table.description)}</p>")
-
-        if has_step:
-            parts.append(
-                f"<div class='table-select-controls' data-table-id='{escape(table.id)}'>"
-                "<button type='button' data-table-select='all'>Select all</button>"
-                "<button type='button' data-table-select='none'>Clear all</button>"
-                "</div>"
-            )
-
-        parts.append("<div class='table-breakout' tabindex='0'><table><thead><tr>")
-        if has_step:
-            parts.append("<th>select</th>")
-        for header in table.headers:
-            parts.append(f"<th>{render_user_string(header)}</th>")
-        parts.append("</tr></thead><tbody>")
-
-        for row in table.rows:
-            step_value = row.cells[step_index] if has_step else None
-            x_value = row.cells[x_index] if x_index >= 0 else step_value
-            energy_value = row.cells[energy_index] if energy_index >= 0 else ""
-            row_label_value = row.cells[row_label_index] if row.cells else step_value
-            energy_value = row.cells[energy_index] if energy_index >= 0 else ""
-            row_label_value = row.cells[row_label_index] if row.cells else step_value
-
-            attrs = ""
-            if has_step:
-                attrs = (
-                    f" data-step='{escape(str(step_value))}'"
-                    f" data-path-x='{escape(str(x_value))}'"
-                    f" data-energy='{escape(str(energy_value))}'"
-                    f" data-label='{escape(str(row_label_value))}'"
-                    f" data-table-id='{escape(table.id)}'"
-                )
-
-            parts.append(f"<tr{attrs}>")
-
-            if has_step:
-                parts.append(
-                    "<td>"
-                    f"<input type='checkbox' class='table-step-select'"
-                    f" data-step='{escape(str(step_value))}'"
-                    f" data-path-x='{escape(str(x_value))}'"
-                    f" data-energy='{escape(str(energy_value))}'"
-                    f" data-label='{escape(str(row_label_value))}'"
-                    f" data-table-id='{escape(table.id)}'>"
-                    "</td>"
-                )
-
-            for cell in row.cells:
-                parts.append(f"<td>{render_display_value(cell)}</td>")
-            parts.append("</tr>")
-
-        parts.append("</tbody></table></div></section>")
+        parts.append(render_table(table))
 
     if result.notes:
         parts.append("<section><h2>Notes</h2>")
@@ -564,6 +541,7 @@ def render_result(result: DiagnosticResult) -> str:
         parts.append("</section>")
 
     return rendered_markdowns + "\n".join(parts)
+
 
 
 ACADEMIC_STYLE = """
