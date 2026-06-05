@@ -13,7 +13,7 @@ from scipy.sparse import bsr_matrix
 
 from dft_local.core.numerics import FloatArray, IntArray, Units, eVag, freeze_array
 from dft_local.core.sparse import block_row_raw
-from dft_local.core.units import ATOMIC_UNITS, DIMENSIONLESS, ENERGY, EV_ANGSTROM_FS, LENGTH, SI_UNITS, UnitContext, qarray
+from dft_local.core.units import ATOMIC_UNITS, COULOMB, DIMENSIONLESS, ENERGY, JOULE, KELVIN, LENGTH, SECOND, SI_UNITS, Unit, UnitContext, qarray
 
 
 def freeze_bsr(M):
@@ -62,15 +62,39 @@ eVag = Units(
 
 
 def unit_context_from_legacy_units(units: Units) -> UnitContext:
-    """Best-effort bridge from the legacy Units object to core UnitContext."""
+    """Bridge from legacy Units to core UnitContext.
 
-    if units == eVag or getattr(units, "name", "") == "angstroem":
-        return EV_ANGSTROM_FS
+    The bridge preserves the exact rounded scale factors used by the legacy
+    loader so this refactor does not silently change loaded numerical values.
+    """
 
     if units == AU or getattr(units, "name", "") == "bohr":
         return ATOMIC_UNITS
 
-    return SI_UNITS
+    if units == eVag or getattr(units, "name", "") == "angstroem":
+        return UnitContext(
+            length=Unit(
+                "angstrom",
+                LENGTH,
+                ATOMIC_UNITS.length.scale_to_si / units.L,
+            ),
+            energy=Unit(
+                "eV",
+                ENERGY,
+                ATOMIC_UNITS.energy.scale_to_si / units.E,
+            ),
+            time=SECOND,
+            charge=COULOMB,
+            temperature=KELVIN,
+        )
+
+    return UnitContext(
+        length=Unit("legacy_length", LENGTH, ATOMIC_UNITS.length.scale_to_si / units.L),
+        energy=Unit("legacy_energy", ENERGY, ATOMIC_UNITS.energy.scale_to_si / units.E),
+        time=SECOND,
+        charge=COULOMB,
+        temperature=KELVIN,
+    )
 
 
 def require_file(path: Path) -> Path:
@@ -113,9 +137,22 @@ class SparseMetadata:
         return int(counts[0])
 
     @classmethod
-    def load(cls, path: Path, units: Units) -> Self:
+    def load(
+        cls,
+        path: Path,
+        units: Units,
+        working_unit_context: UnitContext | None = None,
+    ) -> Self:
         path = Path(path)
         require_file(path)
+
+        if working_unit_context is None:
+            working_unit_context = unit_context_from_legacy_units(units)
+
+        length_conversion_disk_to_working = (
+            ATOMIC_UNITS.length.scale_to_si
+            / working_unit_context.length.scale_to_si
+        )
 
         positions: list[list[float]] = []
         symbols: list[str] = []
@@ -150,8 +187,8 @@ class SparseMetadata:
                 channel_of_basis.append(channel)
 
         return cls(
-            working_unit_context=unit_context_from_legacy_units(units),
-            positions=np.asarray(positions, dtype=np.float64) * units.L,
+            working_unit_context=working_unit_context,
+            positions=np.asarray(positions, dtype=np.float64) * length_conversion_disk_to_working,
             symbols=np.asarray(symbols),
             atom_of_basis=np.asarray(atom_of_basis, dtype=np.int64),
             channel_of_basis=np.asarray(channel_of_basis, dtype=np.int64),
@@ -266,10 +303,21 @@ class SparseDataset:
         root = Path(root)
         root = require_dir(root)
 
-        metadata = SparseMetadata.load(root / "sparsematrix_metadata.dat", units=units)
+        working_unit_context = unit_context_from_legacy_units(units)
+
+        metadata = SparseMetadata.load(
+            root / "sparsematrix_metadata.dat",
+            units=units,
+            working_unit_context=working_unit_context,
+        )
         basis = BasisMap.from_metadata(metadata)
 
-        H = atom_ordered_bsr(mmread(require_file(root / "hamiltonian_sparse.mtx")).tocsr() * units.E, basis)
+        energy_conversion_disk_to_working = (
+            ATOMIC_UNITS.energy.scale_to_si
+            / working_unit_context.energy.scale_to_si
+        )
+
+        H = atom_ordered_bsr(mmread(require_file(root / "hamiltonian_sparse.mtx")).tocsr() * energy_conversion_disk_to_working, basis)
         S = atom_ordered_bsr(mmread(require_file(root / "overlap_sparse.mtx")).tocsr(), basis)
 
 
