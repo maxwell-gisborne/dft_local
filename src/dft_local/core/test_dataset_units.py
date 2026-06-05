@@ -22,3 +22,18 @@ def test_sparse_metadata_exposes_working_unit_context_for_positions() -> None:
 
     assert dataset.metadata.working_unit_context == dataset.working_unit_context
     assert dataset.metadata.working_unit_context == EV_ANGSTROM_FS
+
+
+
+def test_sparse_metadata_positions_have_quantity_schema() -> None:
+    from dft_local.core.units import LENGTH, display_quantity, quantity_array_specs
+
+    dataset = SparseDataset.load("test_run/run_dir/data")
+
+    specs = quantity_array_specs(type(dataset.metadata))
+    assert specs["positions"].dimension == LENGTH
+    assert specs["positions"].axes == ("atom", "cartesian")
+
+    quantity = display_quantity(dataset.metadata, "positions", dataset.metadata.positions[0, 0])
+    assert quantity.dimension == LENGTH
+    assert quantity.unit == dataset.metadata.working_unit_context.length

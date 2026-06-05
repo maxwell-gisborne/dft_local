@@ -285,9 +285,15 @@ def display_quantity(obj: object, field_name: str, value: Any) -> DisplayQuantit
     if field_name not in specs:
         raise KeyError(f"{type(obj).__name__}.{field_name} has no QuantityArray spec")
 
-    units = getattr(obj, "units")
+    units = getattr(obj, "units", None)
+    if units is None:
+        units = getattr(obj, "working_unit_context", None)
+
     if not isinstance(units, UnitContext):
-        raise TypeError(f"{type(obj).__name__} must expose a UnitContext as .units")
+        raise TypeError(
+            f"{type(obj).__name__} must expose a UnitContext as "
+            ".units or .working_unit_context"
+        )
 
     spec = specs[field_name]
     return DisplayQuantity(

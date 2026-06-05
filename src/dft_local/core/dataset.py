@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Self
+from typing import Annotated, Literal, Self
 
 import numpy as np
 from numpy.typing import NDArray
@@ -13,7 +13,7 @@ from scipy.sparse import bsr_matrix
 
 from dft_local.core.numerics import FloatArray, IntArray, Units, eVag, freeze_array
 from dft_local.core.sparse import block_row_raw
-from dft_local.core.units import ATOMIC_UNITS, EV_ANGSTROM_FS, SI_UNITS, UnitContext
+from dft_local.core.units import ATOMIC_UNITS, EV_ANGSTROM_FS, LENGTH, SI_UNITS, UnitContext, qarray
 
 
 def freeze_bsr(M):
@@ -26,6 +26,8 @@ FloatArray = NDArray[np.float64]
 IntArray = NDArray[np.int64]
 BlockArray = NDArray[np.float64] | NDArray[np.complex128]
 MatchingStrategy = Literal["state_overlap", "energy_predict"]
+
+AtomPositions = Annotated[FloatArray, qarray(LENGTH, ("atom", "cartesian"), role="atom positions")]
 
 
 @dataclass(frozen=True)
@@ -87,7 +89,7 @@ def require_dir(path: Path) -> Path:
 @dataclass(frozen=True)
 class SparseMetadata:
     working_unit_context: UnitContext
-    positions: FloatArray              # atom -> cartesian position
+    positions: AtomPositions          # atom -> cartesian position
     symbols: NDArray[np.str_]          # atom -> symbol
     atom_of_basis: IntArray            # alpha -> atom
     channel_of_basis: IntArray         # alpha -> local channel
