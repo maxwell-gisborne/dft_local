@@ -11,6 +11,7 @@ import json
 from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, DiagnosticResult, Graph2D, TypstMathBlock, Card, Table
 from dft_local.diagnostics.typst import TypstRenderError, render_typst_error, render_typst_math_to_svg
 from dft_local.diagnostics.user_strings import RichText, TypstMath, rich
+from dft_local.core.units import DisplayQuantity
 
 
 
@@ -43,8 +44,17 @@ def render_user_string(value: Any) -> str:
 def render_display_value(value: Any) -> str:
     """Render a value that appears in a table cell or compact value slot."""
 
+    if isinstance(value, DisplayQuantity):
+        return (
+            f"<span class='display-quantity' data-unit='{escape(value.unit.symbol)}'>"
+            f"{escape(fmt(value.value))} "
+            f"<span class='display-unit'>{escape(value.unit.symbol)}</span>"
+            "</span>"
+        )
+
     if isinstance(value, (RichText, TypstMath)):
         return render_user_string(value)
+
     return escape(fmt(value))
 
 

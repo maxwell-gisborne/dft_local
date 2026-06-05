@@ -322,3 +322,41 @@ def test_diagnostic_result_body_renders_ordered_document_blocks() -> None:
     assert all(point >= 0 for point in points)
     assert points == sorted(points)
     assert "typst-error" not in html
+
+
+
+def test_render_display_quantity_in_table_cell() -> None:
+    from dft_local.core.units import DisplayQuantity, ENERGY, JOULE
+    from dft_local.diagnostics.models import DiagnosticResult, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    result = DiagnosticResult(
+        title="Quantity display",
+        summary="Summary",
+        body=(
+            Table(
+                id="quantity_table",
+                title="Quantity table",
+                description="Shows units.",
+                headers=("name", "value"),
+                rows=(
+                    TableRow((
+                        "energy",
+                        DisplayQuantity(
+                            value=1.25,
+                            dimension=ENERGY,
+                            unit=JOULE,
+                            name="energy",
+                        ),
+                    )),
+                ),
+            ),
+        ),
+    )
+
+    html = render_result(result)
+
+    assert "1.25" in html
+    assert "display-quantity" in html
+    assert "data-unit='J'" in html
+    assert "display-unit" in html
