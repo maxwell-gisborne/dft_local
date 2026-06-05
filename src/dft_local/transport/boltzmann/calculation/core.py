@@ -329,6 +329,7 @@ class BoltzmannConductivity:
     irrep_to_physical_k: IrrepToPhysicalK
 
     units: Units = eVag
+    unit_context_override: UnitContext | None = None
     mu: float = 0.0
     temperature: float = 300.0
     omega: float = 0.0
@@ -344,6 +345,9 @@ class BoltzmannConductivity:
     @property
     def unit_context(self) -> UnitContext:
         """Best-effort bridge from legacy numerics.Units to core UnitContext."""
+
+        if self.unit_context_override is not None:
+            return self.unit_context_override
 
         if self.units == eVag or getattr(self.units, "name", "") == "angstroem":
             return EV_ANGSTROM_FS
@@ -411,6 +415,7 @@ class BoltzmannConductivity:
         irrep_weights: FloatArray | None = None,
         irrep_to_physical_k: FloatArray | None = None,
         units: Units = eVag,
+        unit_context_override: UnitContext | None = None,
         mu: float = 0.0,
         temperature: float = 300.0,
         omega: float = 0.0,
@@ -469,6 +474,7 @@ class BoltzmannConductivity:
             irrep_weights=irrep_weights,
             irrep_to_physical_k=irrep_to_physical_k,
             units=units,
+            unit_context_override=unit_context_override,
             mu=mu,
             temperature=temperature,
             omega=omega,

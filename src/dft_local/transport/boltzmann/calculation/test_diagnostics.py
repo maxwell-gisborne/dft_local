@@ -339,3 +339,21 @@ def test_boltzmann_diagnostic_physical_values_render_as_quantities() -> None:
     assert "data-unit='angstrom fs^-1'" in html
     assert "data-unit='angstrom^-1'" in html
     assert "data-unit='angstrom^-2'" in html
+
+
+
+def test_boltzmann_conductivity_can_use_dataset_unit_context_override() -> None:
+    import numpy as np
+
+    from dft_local.core.units import SI_UNITS
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 1)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(1),
+        unit_context_override=SI_UNITS,
+    )
+
+    assert calc.unit_context == SI_UNITS

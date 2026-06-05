@@ -443,6 +443,7 @@ def compute_conductivity(ctx: Any, inputs: dict[str, object]) -> DiagnosticResul
         irrep_weights=weights,
         irrep_to_physical_k=k_scale * np.eye(2),
         units=state.units,
+        unit_context_override=state.data.working_unit_context,
         mu=mu,
         temperature=temperature,
         omega=omega,
