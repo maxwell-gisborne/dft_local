@@ -14,3 +14,11 @@ def test_sparse_dataset_exposes_disk_and_working_unit_contexts() -> None:
 
     assert dataset.disk_unit_context == ATOMIC_UNITS
     assert dataset.working_unit_context == EV_ANGSTROM_FS
+
+
+
+def test_sparse_metadata_exposes_working_unit_context_for_positions() -> None:
+    dataset = SparseDataset.load("test_run/run_dir/data")
+
+    assert dataset.metadata.working_unit_context == dataset.working_unit_context
+    assert dataset.metadata.working_unit_context == EV_ANGSTROM_FS

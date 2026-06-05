@@ -86,6 +86,7 @@ def require_dir(path: Path) -> Path:
 
 @dataclass(frozen=True)
 class SparseMetadata:
+    working_unit_context: UnitContext
     positions: FloatArray              # atom -> cartesian position
     symbols: NDArray[np.str_]          # atom -> symbol
     atom_of_basis: IntArray            # alpha -> atom
@@ -145,6 +146,7 @@ class SparseMetadata:
                 channel_of_basis.append(channel)
 
         return cls(
+            working_unit_context=unit_context_from_legacy_units(units),
             positions=np.asarray(positions, dtype=np.float64) * units.L,
             symbols=np.asarray(symbols),
             atom_of_basis=np.asarray(atom_of_basis, dtype=np.int64),
