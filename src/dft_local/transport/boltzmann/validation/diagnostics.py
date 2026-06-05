@@ -42,7 +42,7 @@ def compute_overview(ctx, inputs) -> DiagnosticResult:
     return DiagnosticResult(
         title="Boltzmann operator validation",
         summary=summary.purpose,
-        sections=(
+        body=(
             DiagnosticSection(
                 id="boltzmann_validation_scope",
                 title="Validation scope",

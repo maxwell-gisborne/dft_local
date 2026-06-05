@@ -69,7 +69,12 @@ def test_validation_diagnostic_renders_scope_and_smoke_test() -> None:
 
     assert result.title == "Boltzmann operator validation"
 
-    section_ids = {section.id for section in result.sections}
+    from dft_local.diagnostics.models import DiagnosticSection
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section_ids = {section.id for section in sections}
     assert "boltzmann_validation_scope" in section_ids
     assert "boltzmann_validation_outer_product_smoke_test" in section_ids
 
@@ -77,11 +82,11 @@ def test_validation_diagnostic_renders_scope_and_smoke_test() -> None:
 
     table_ids = {
         table.id
-        for section in result.sections
+        for section in sections
         for table in section.tables
     } | {
         block.id
-        for section in result.sections
+        for section in sections
         for block in section.body
         if isinstance(block, Table)
     }
@@ -196,11 +201,16 @@ def test_symbol_validation_probe_is_visible_in_diagnostic() -> None:
     specs = {spec.id: spec for spec in diagnostics()}
     result = specs["transport.boltzmann.validation.overview"].compute(None, {})
 
-    section_ids = {section.id for section in result.sections}
+    from dft_local.diagnostics.models import DiagnosticSection
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section_ids = {section.id for section in sections}
     assert "boltzmann_validation_symbol_checks" in section_ids
 
     symbol_section = next(
-        section for section in result.sections
+        section for section in sections
         if section.id == "boltzmann_validation_symbol_checks"
     )
     from dft_local.diagnostics.models import Table
@@ -294,11 +304,16 @@ def test_production_gd_symbol_probe_is_visible_in_diagnostic() -> None:
     specs = {spec.id: spec for spec in diagnostics()}
     result = specs["transport.boltzmann.validation.overview"].compute(None, {})
 
-    section_ids = {section.id for section in result.sections}
+    from dft_local.diagnostics.models import DiagnosticSection
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section_ids = {section.id for section in sections}
     assert "boltzmann_validation_production_symbol_checks" in section_ids
 
     section = next(
-        section for section in result.sections
+        section for section in sections
         if section.id == "boltzmann_validation_production_symbol_checks"
     )
     from dft_local.diagnostics.models import Table
