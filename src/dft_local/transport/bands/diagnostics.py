@@ -336,7 +336,7 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     return DiagnosticResult(
         title=f"Band path {path_label}",
         summary="Solved band continuation along the selected path. Energies are plotted against cumulative path distance.",
-        cards=(
+        body=(
             Card("path", path_label, "ok"),
             Card("kernel", kernel_choice, "ok"),
             Card("matching", matching_strategy, "ok"),
@@ -346,8 +346,6 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             Card("energy max", float(np.max(energies)), "neutral", f"units: {path.units.name}"),
             Card("band events", len(path.band_events), "warn" if path.band_events else "ok"),
             Card("degenerate groups", len(path.degenerate_group_events), "warn" if path.degenerate_group_events else "ok"),
-        ),
-        graphs=(
             Graph2D(
                 id="kspace_path",
                 title=f"K-space path: {path_label}",
@@ -366,8 +364,6 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 series=series,
                 interaction_channel="band_path",
             ),
-        ),
-        tables=(
             Table(
                 id="path_labels",
                 title="High-symmetry path labels",
