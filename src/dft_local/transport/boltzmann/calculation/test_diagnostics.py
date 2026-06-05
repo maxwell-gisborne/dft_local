@@ -306,3 +306,36 @@ def test_unit_rows_physical_k_weight_sum_carries_kspace_area_units() -> None:
 
     assert isinstance(row_map["sum physical k weights"], DisplayQuantity)
     assert row_map["sum physical k weights"].dimension == KSPACE_AREA
+
+
+
+def test_boltzmann_diagnostic_physical_values_render_as_quantities() -> None:
+    from dft_local.diagnostics.render import render_result
+    from dft_local.diagnostics.server import load_default_context
+    from dft_local.transport.boltzmann.calculation.diagnostics import compute_conductivity
+
+    result = compute_conductivity(
+        load_default_context("test_run/run_dir/data"),
+        {
+            "kernel": "average_star",
+            "temperature": "300",
+            "mu": "0",
+            "tau": "1",
+            "omega": "0",
+            "nu": "3",
+            "nv": "3",
+            "central_bz": "0",
+            "run": "1",
+            "rows": "5",
+            "k_scale": "0",
+        },
+    )
+
+    html = render_result(result)
+
+    assert "display-quantity" in html
+    assert "data-unit='eV'" in html
+    assert "data-unit='K'" in html
+    assert "data-unit='angstrom fs^-1'" in html
+    assert "data-unit='angstrom^-1'" in html
+    assert "data-unit='angstrom^-2'" in html

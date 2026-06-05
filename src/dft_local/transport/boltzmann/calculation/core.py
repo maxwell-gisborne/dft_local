@@ -345,7 +345,7 @@ class BoltzmannConductivity:
     def unit_context(self) -> UnitContext:
         """Best-effort bridge from legacy numerics.Units to core UnitContext."""
 
-        if self.units == eVag:
+        if self.units == eVag or getattr(self.units, "name", "") == "angstroem":
             return EV_ANGSTROM_FS
 
         return SI_UNITS
