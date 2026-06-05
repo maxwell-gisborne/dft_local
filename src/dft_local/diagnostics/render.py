@@ -381,6 +381,28 @@ def render_table(table) -> str:
     return "".join(parts)
 
 
+def render_matrix(matrix) -> str:
+    parts: list[str] = []
+
+    parts.append(f"<section><h2>{render_user_string(matrix.title)}</h2>")
+    parts.append(f"<p>{render_user_string(matrix.description)}</p>")
+    parts.append("<table><thead><tr><th></th>")
+
+    for label in matrix.col_labels:
+        parts.append(f"<th>{render_user_string(label)}</th>")
+    parts.append("</tr></thead><tbody>")
+
+    cells = {(cell.i, cell.j): cell.value for cell in matrix.cells}
+    for i, row_label in enumerate(matrix.row_labels):
+        parts.append(f"<tr><th>{render_user_string(row_label)}</th>")
+        for j, _col_label in enumerate(matrix.col_labels):
+            parts.append(f"<td>{render_display_value(cells.get((i, j)))}</td>")
+        parts.append("</tr>")
+
+    parts.append("</tbody></table></section>")
+    return "".join(parts)
+
+
 def render_graph(graph: Graph2D) -> str:
     payload = json.dumps(graph.payload()).replace("</", "<\\/")
     data_id = f"data-{graph.id}"
