@@ -374,3 +374,30 @@ def test_boltzmann_legacy_unit_context_uses_shared_dataset_bridge() -> None:
     )
 
     assert calc.unit_context == unit_context_from_legacy_units(calc.units)
+
+
+
+def test_boltzmann_unit_rows_include_dataset_provenance_when_provided() -> None:
+    import numpy as np
+
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+    from dft_local.transport.boltzmann.calculation.diagnostics import unit_rows
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 1)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(1),
+    )
+
+    rows = unit_rows(
+        calc,
+        provenance_rows=[
+            ["disk energy unit", "hartree"],
+            ["working energy unit", "eV"],
+        ],
+    )
+    row_map = {row[0]: row[1] for row in rows}
+
+    assert row_map["disk energy unit"] == "hartree"
+    assert row_map["working energy unit"] == "eV"

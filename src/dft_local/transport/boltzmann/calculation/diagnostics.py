@@ -173,10 +173,13 @@ def sigma_rows(calc: BoltzmannConductivity) -> list[list[object]]:
     return rows
 
 
-def unit_rows(calc: BoltzmannConductivity) -> list[list[object]]:
+def unit_rows(
+    calc: BoltzmannConductivity,
+    provenance_rows: list[list[object]] | None = None,
+) -> list[list[object]]:
     kBT = 3.166811563e-6 * calc.units.E * calc.temperature
 
-    return [
+    rows: list[list[object]] = [
         ["units", repr(calc.units)],
         ["units.E", calc.units.E],
         ["units.L", calc.units.L],
@@ -230,6 +233,11 @@ def unit_rows(calc: BoltzmannConductivity) -> list[list[object]]:
         ],
         ["irrep to physical k", calc.irrep_to_physical_k.tolist()],
     ]
+
+    if provenance_rows is not None:
+        rows.extend(provenance_rows)
+
+    return rows
 
 
 def worst_sample_rows(calc: BoltzmannConductivity, *, n: int) -> list[list[object]]:
@@ -484,7 +492,7 @@ def compute_conductivity(ctx: Any, inputs: dict[str, object]) -> DiagnosticResul
             title="Units and integration measure",
             description="Unit and k-space measure values used by the calculation",
             headers=("quantity", "value"),
-            rows=unit_rows(calc),
+            rows=unit_rows(calc, provenance_rows=state.unit_provenance_rows()),
             numeric={1},
         ),
         _rows_table(
