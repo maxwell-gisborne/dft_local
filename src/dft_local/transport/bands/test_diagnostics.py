@@ -21,11 +21,19 @@ def test_bands_overview_mentions_public_api() -> None:
 
     assert result.title == "Band/path continuation domain"
 
-    table_ids = {table.id for table in result.tables}
+    from dft_local.diagnostics.models import Table
+
+    table_ids = {table.id for table in result.tables} | {
+        block.id for block in result.body if isinstance(block, Table)
+    }
     assert "bands_files" in table_ids
     assert "bands_api" in table_ids
 
-    api_table = next(table for table in result.tables if table.id == "bands_api")
+    api_table = next(
+        table
+        for table in (*result.tables, *result.body)
+        if isinstance(table, Table) and table.id == "bands_api"
+    )
     names = {row.cells[0] for row in api_table.rows}
 
     assert "LocalPath" in names

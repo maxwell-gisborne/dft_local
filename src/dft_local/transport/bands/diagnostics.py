@@ -151,12 +151,10 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     return DiagnosticResult(
         title="Band/path continuation domain",
         summary="Overview of the band continuation module.",
-        cards=(
+        body=(
             Card("domain", "transport.bands", "ok"),
             Card("business tests", "present", "ok"),
             Card("implementation", "local", "ok", "Core owns band/path/region continuation implementation"),
-        ),
-        tables=(
             Table(
                 id="bands_files",
                 title="Domain files",
