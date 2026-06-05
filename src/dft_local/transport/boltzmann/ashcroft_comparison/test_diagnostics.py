@@ -908,3 +908,25 @@ def test_ashcroft_inline_math_fragments_render_inside_prose() -> None:
         assert name in html
 
     assert "typst-error" not in html
+
+
+
+def test_ashcroft_overview_renders_dataset_unit_provenance_when_context_available() -> None:
+    from dft_local.diagnostics.models import Table
+    from dft_local.diagnostics.server import load_default_context
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    result = compute_overview(load_default_context("test_run/run_dir/data"), {})
+
+    tables = tuple(block for block in result.body if isinstance(block, Table))
+    table_ids = {table.id for table in tables}
+
+    assert "ashcroft_dataset_unit_provenance" in table_ids
+
+    table = next(table for table in tables if table.id == "ashcroft_dataset_unit_provenance")
+    rows = {row.cells[0]: row.cells[1] for row in table.rows}
+
+    assert rows["disk energy unit"] == "hartree"
+    assert rows["working energy unit"] == "eV"
+    assert rows["disk length unit"] == "bohr"
+    assert rows["working length unit"] == "angstrom"

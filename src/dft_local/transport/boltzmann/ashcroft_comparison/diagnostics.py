@@ -150,6 +150,12 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     velocity_for_sigma = local_conductivity.velocity_m_per_s
     fermi_weight = local_conductivity.fermi_weight
 
+    unit_provenance_rows = (
+        tuple(TableRow(tuple(row)) for row in ctx.state.unit_provenance_rows())
+        if ctx is not None and getattr(ctx, "state", None) is not None
+        else ()
+    )
+
     return DiagnosticResult(
         title="Ashcroft comparison",
         summary=(
@@ -160,6 +166,13 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             "once the reciprocal-space measure convention is matched."
         ),
         body=(
+            Table(
+                id="ashcroft_dataset_unit_provenance",
+                title="Dataset unit provenance",
+                description="Disk and working unit context for the loaded dataset.",
+                headers=("quantity", "value"),
+                rows=unit_provenance_rows,
+            ),
             DiagnosticSection(
                 id="ashcroft_local_calculation_check",
                 title="Local calculation check",
