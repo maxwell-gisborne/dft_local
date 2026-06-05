@@ -285,3 +285,24 @@ def test_worst_sample_rows_carry_units_for_physical_columns() -> None:
     assert row[6].dimension == ENERGY
     assert row[7].dimension == VELOCITY
     assert row[10].dimension == KSPACE_AREA
+
+
+
+def test_unit_rows_physical_k_weight_sum_carries_kspace_area_units() -> None:
+    import numpy as np
+
+    from dft_local.core.units import DisplayQuantity, KSPACE_AREA
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+    from dft_local.transport.boltzmann.calculation.diagnostics import unit_rows
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 2)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(2),
+    )
+
+    row_map = {row[0]: row[1] for row in unit_rows(calc)}
+
+    assert isinstance(row_map["sum physical k weights"], DisplayQuantity)
+    assert row_map["sum physical k weights"].dimension == KSPACE_AREA

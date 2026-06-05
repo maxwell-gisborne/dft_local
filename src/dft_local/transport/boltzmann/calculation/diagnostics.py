@@ -219,7 +219,15 @@ def unit_rows(calc: BoltzmannConductivity) -> list[list[object]]:
             ),
         ],
         ["sum raw irrep weights", float(np.sum(calc.irrep_weights))],
-        ["sum physical k weights", float(np.sum(calc.physical_k_weights))],
+        [
+            "sum physical k weights",
+            DisplayQuantity(
+                value=float(np.sum(calc.physical_k_weights)),
+                dimension=KSPACE_AREA,
+                unit=_kspace_area_display_unit(calc),
+                name="sum physical k weights",
+            ),
+        ],
         ["irrep to physical k", calc.irrep_to_physical_k.tolist()],
     ]
 
