@@ -37,3 +37,15 @@ def test_sparse_metadata_positions_have_quantity_schema() -> None:
     quantity = display_quantity(dataset.metadata, "positions", dataset.metadata.positions[0, 0])
     assert quantity.dimension == LENGTH
     assert quantity.unit == dataset.metadata.working_unit_context.length
+
+
+
+def test_sparse_dataset_matrices_have_quantity_schema() -> None:
+    from dft_local.core.units import DIMENSIONLESS, ENERGY, quantity_array_specs
+
+    specs = quantity_array_specs(SparseDataset)
+
+    assert specs["H"].dimension == ENERGY
+    assert specs["H"].axes == ("basis", "basis")
+    assert specs["S"].dimension == DIMENSIONLESS
+    assert specs["S"].axes == ("basis", "basis")

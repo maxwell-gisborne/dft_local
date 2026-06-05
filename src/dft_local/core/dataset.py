@@ -13,7 +13,7 @@ from scipy.sparse import bsr_matrix
 
 from dft_local.core.numerics import FloatArray, IntArray, Units, eVag, freeze_array
 from dft_local.core.sparse import block_row_raw
-from dft_local.core.units import ATOMIC_UNITS, EV_ANGSTROM_FS, LENGTH, SI_UNITS, UnitContext, qarray
+from dft_local.core.units import ATOMIC_UNITS, DIMENSIONLESS, ENERGY, EV_ANGSTROM_FS, LENGTH, SI_UNITS, UnitContext, qarray
 
 
 def freeze_bsr(M):
@@ -28,6 +28,8 @@ BlockArray = NDArray[np.float64] | NDArray[np.complex128]
 MatchingStrategy = Literal["state_overlap", "energy_predict"]
 
 AtomPositions = Annotated[FloatArray, qarray(LENGTH, ("atom", "cartesian"), role="atom positions")]
+EnergySparseMatrix = Annotated[bsr_matrix, qarray(ENERGY, ("basis", "basis"), role="Hamiltonian")]
+DimensionlessSparseMatrix = Annotated[bsr_matrix, qarray(DIMENSIONLESS, ("basis", "basis"), role="overlap matrix")]
 
 
 @dataclass(frozen=True)
@@ -244,8 +246,8 @@ class SparseDataset:
     working_unit_context: UnitContext
     metadata: SparseMetadata
     basis: BasisMap
-    H: bsr_matrix
-    S: bsr_matrix
+    H: EnergySparseMatrix
+    S: DimensionlessSparseMatrix
 
     @classmethod
     def load(cls, root: Path, units: Units = eVag) -> Self:
