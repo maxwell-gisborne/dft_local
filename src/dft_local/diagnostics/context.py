@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 import json
 
-from dft_local.core.dataset import SparseDataset
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT, SparseDataset
 from dft_local.core.geometry import (
     EdgeDirections,
     EdgeGroupLabels,
@@ -17,6 +17,21 @@ from dft_local.core.kernels import GdKernelArrays
 
 
 KernelChoice = Literal["anchored", "average", "average_star", "anchored_star"]
+
+
+@dataclass(frozen=True)
+class _DeprecatedLegacyUnitsView:
+    """Temporary compatibility view for modules not yet migrated to UnitContext."""
+
+    E: float
+    L: float
+    e: float
+    hbar: float
+    name: str = "unit_context_compat"
+    comment: str = "temporary compatibility shim"
+
+    def __repr__(self) -> str:
+        return "DeprecatedLegacyUnitsView(unit_context_compat)"
 
 
 @dataclass
@@ -100,9 +115,14 @@ class DiagnosticsState:
 
     @property
     def units(self):
-        """Return dataset units."""
+        """Temporary compatibility view for diagnostics not yet migrated."""
 
-        return self.data.units
+        return _DeprecatedLegacyUnitsView(
+            E=self.data.energy_conversion_disk_to_working,
+            L=self.data.length_conversion_disk_to_working,
+            e=1.602e-19,
+            hbar=6.582e-16,
+        )
 
     def unit_provenance_rows(self) -> list[list[object]]:
         """Rows describing disk-to-working unit provenance for the loaded dataset."""

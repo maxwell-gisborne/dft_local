@@ -61,6 +61,23 @@ eVag = Units(
         )
 
 
+LEGACY_EV_ANGSTROM_CONTEXT = UnitContext(
+    length=Unit(
+        "angstrom",
+        LENGTH,
+        ATOMIC_UNITS.length.scale_to_si / eVag.L,
+    ),
+    energy=Unit(
+        "eV",
+        ENERGY,
+        ATOMIC_UNITS.energy.scale_to_si / eVag.E,
+    ),
+    time=SECOND,
+    charge=COULOMB,
+    temperature=KELVIN,
+)
+
+
 def unit_context_from_legacy_units(units: Units) -> UnitContext:
     """Bridge from legacy Units to core UnitContext.
 
@@ -72,21 +89,7 @@ def unit_context_from_legacy_units(units: Units) -> UnitContext:
         return ATOMIC_UNITS
 
     if units == eVag or getattr(units, "name", "") == "angstroem":
-        return UnitContext(
-            length=Unit(
-                "angstrom",
-                LENGTH,
-                ATOMIC_UNITS.length.scale_to_si / units.L,
-            ),
-            energy=Unit(
-                "eV",
-                ENERGY,
-                ATOMIC_UNITS.energy.scale_to_si / units.E,
-            ),
-            time=SECOND,
-            charge=COULOMB,
-            temperature=KELVIN,
-        )
+        return LEGACY_EV_ANGSTROM_CONTEXT
 
     return UnitContext(
         length=Unit("legacy_length", LENGTH, ATOMIC_UNITS.length.scale_to_si / units.L),
@@ -140,14 +143,10 @@ class SparseMetadata:
     def load(
         cls,
         path: Path,
-        units: Units,
-        working_unit_context: UnitContext | None = None,
+        working_unit_context: UnitContext,
     ) -> Self:
         path = Path(path)
         require_file(path)
-
-        if working_unit_context is None:
-            working_unit_context = unit_context_from_legacy_units(units)
 
         length_conversion_disk_to_working = (
             ATOMIC_UNITS.length.scale_to_si
@@ -278,7 +277,6 @@ def atom_ordered_bsr(M, basis):
 @dataclass(frozen=True)
 class SparseDataset:
     root: Path
-    units: Units
     disk_unit_context: UnitContext
     working_unit_context: UnitContext
     metadata: SparseMetadata
@@ -299,15 +297,16 @@ class SparseDataset:
         return self.disk_unit_context.length.scale_to_si / self.working_unit_context.length.scale_to_si
 
     @classmethod
-    def load(cls, root: Path, units: Units = eVag) -> Self:
+    def load(
+        cls,
+        root: Path,
+        working_unit_context: UnitContext = LEGACY_EV_ANGSTROM_CONTEXT,
+    ) -> Self:
         root = Path(root)
         root = require_dir(root)
 
-        working_unit_context = unit_context_from_legacy_units(units)
-
         metadata = SparseMetadata.load(
             root / "sparsematrix_metadata.dat",
-            units=units,
             working_unit_context=working_unit_context,
         )
         basis = BasisMap.from_metadata(metadata)
@@ -331,9 +330,8 @@ class SparseDataset:
 
         return cls(
             root=root,
-            units=units,
             disk_unit_context=ATOMIC_UNITS,
-            working_unit_context=unit_context_from_legacy_units(units),
+            working_unit_context=working_unit_context,
             metadata=metadata,
             basis=basis,
             H=H,

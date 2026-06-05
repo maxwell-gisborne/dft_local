@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from dft_local.core.dataset import AU, SparseDataset, eVag, unit_context_from_legacy_units
-from dft_local.core.units import ATOMIC_UNITS, EV_ANGSTROM_FS
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT, SparseDataset
+from dft_local.core.units import ATOMIC_UNITS
 
 
-def test_legacy_unit_context_bridge_maps_known_units() -> None:
-    eVag_context = unit_context_from_legacy_units(eVag)
+def test_legacy_ev_angstrom_context_preserves_existing_disk_conversions() -> None:
+    context = LEGACY_EV_ANGSTROM_CONTEXT
 
-    assert eVag_context.length.symbol == "angstrom"
-    assert eVag_context.energy.symbol == "eV"
-    assert ATOMIC_UNITS.energy.scale_to_si / eVag_context.energy.scale_to_si == eVag.E
-    assert ATOMIC_UNITS.length.scale_to_si / eVag_context.length.scale_to_si == eVag.L
-    assert unit_context_from_legacy_units(AU) == ATOMIC_UNITS
+    assert context.length.symbol == "angstrom"
+    assert context.energy.symbol == "eV"
+    assert ATOMIC_UNITS.energy.scale_to_si / context.energy.scale_to_si == 27.21138386
+    assert ATOMIC_UNITS.length.scale_to_si / context.length.scale_to_si == 0.52917721092
 
 
 def test_sparse_dataset_exposes_disk_and_working_unit_contexts() -> None:
@@ -72,5 +71,5 @@ def test_sparse_dataset_exposes_disk_to_working_conversion_factors() -> None:
 def test_sparse_dataset_load_matches_legacy_conversion_factors() -> None:
     dataset = SparseDataset.load("test_run/run_dir/data")
 
-    assert dataset.energy_conversion_disk_to_working == dataset.units.E
-    assert dataset.length_conversion_disk_to_working == dataset.units.L
+    assert dataset.energy_conversion_disk_to_working == 27.21138386
+    assert dataset.length_conversion_disk_to_working == 0.52917721092

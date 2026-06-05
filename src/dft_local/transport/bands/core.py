@@ -9,6 +9,8 @@ objects live in dft_local.core.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, replace
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT
+from dft_local.core.units import UnitContext
 from typing import Literal, Self
 import numpy as np
 from numpy.typing import NDArray
@@ -21,8 +23,6 @@ from dft_local.core.local_problem import LocalProblem, SymbolPair
 from dft_local.core.numerics import (
     FloatArray,
     IntArray,
-    Units,
-    eVag,
     freeze_array,
 )
 
@@ -425,7 +425,7 @@ class LocalPath:
     KS: GdKernelArrays
     k1: np.ndarray
     k2: np.ndarray
-    units: Units
+    unit_context: UnitContext
     x: np.ndarray | None = None
     labels: tuple[tuple[int, str], ...] = ()
     degenerate_group_events: tuple[DegenerateGroupEvent, ...] = ()
@@ -453,7 +453,7 @@ class LocalPath:
         KH: GdKernelArrays,
         KS: GdKernelArrays,
         points: list[tuple[str, float, float]],
-        units: Units,
+        unit_context: UnitContext,
         points_per_segment: int = 80,
         matching_strategy="energy_predict",
         name: str = "",
@@ -496,7 +496,7 @@ class LocalPath:
             x=np.concatenate(x_parts),
             labels=tuple(labels),
             name=name,
-            units=units,
+            unit_context=unit_context,
             matching_strategy=matching_strategy,
         )
 
@@ -533,7 +533,7 @@ class LocalPath:
             x=freeze_array(x),
             labels=labels,
             name=name,
-            units=units,
+            unit_context=unit_context,
             matching_strategy=matching_strategy,
         )
 
@@ -1036,7 +1036,7 @@ class LocalRegion:
     v: FloatArray           # shape (nv,)
 
     name: str = ""
-    units: Units = eVag
+    unit_context: UnitContext = LEGACY_EV_ANGSTROM_CONTEXT
     matching_strategy: MatchingStrategy = "energy_predict"
 
     energies: FloatArray | None = None      # shape (nu, nv, nbands)
@@ -1079,7 +1079,7 @@ class LocalRegion:
         nu: int,
         nv: int,
         name: str = "",
-        units: Units = eVag,
+        unit_context: UnitContext = LEGACY_EV_ANGSTROM_CONTEXT,
         matching_strategy: MatchingStrategy = "energy_predict",
     ) -> Self:
         if nu < 2 or nv < 2:
@@ -1107,7 +1107,7 @@ class LocalRegion:
             u=freeze_array(u),
             v=freeze_array(v),
             name=name,
-            units=units,
+            unit_context=unit_context,
             matching_strategy=matching_strategy,
         )
 
@@ -1121,7 +1121,7 @@ class LocalRegion:
             x=self.u,
             labels=((0, "u=0"), (self.nu - 1, "u=1")),
             name=self.name + " seed edge",
-            units=self.units,
+            unit_context=self.unit_context,
             matching_strategy=self.matching_strategy if matching_strategy is None else matching_strategy,
         )
 
@@ -1161,7 +1161,7 @@ class LocalRegion:
             x=self.v,
             labels=((0, f"u={i}, v=0"), (self.nv - 1, f"u={i}, v=1")),
             name=f"{self.name} v-path {i}",
-            units=self.units,
+            unit_context=self.unit_context,
             matching_strategy=self.matching_strategy if matching_strategy is None else matching_strategy,
         )
 

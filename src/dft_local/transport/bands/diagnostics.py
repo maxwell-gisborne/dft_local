@@ -195,14 +195,14 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         KH,
         KS,
         points,
-        units=ctx.state.units,
+        unit_context=ctx.state.data.working_unit_context,
         points_per_segment=points_per_segment,
         matching_strategy=matching_strategy,
         name=f"{path_label} ({kernel_choice})",
     ).solve_continuation()
 
     x = np.asarray(path.x, dtype=float)
-    energies = np.asarray(path.energies, dtype=float) * path.units.E
+    energies = np.asarray(path.energies, dtype=float) * ctx.state.data.energy_conversion_disk_to_working
 
     series = tuple(
         GraphSeries(
@@ -240,8 +240,8 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 event.band_a,
                 event.band_b,
                 event.x,
-                event.energy * path.units.E,
-                event.gap * path.units.E,
+                event.energy * ctx.state.data.energy_conversion_disk_to_working,
+                event.gap * ctx.state.data.energy_conversion_disk_to_working,
                 event.comment,
             )
         )
@@ -253,9 +253,9 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             (
                 event.step,
                 ", ".join(str(b) for b in event.bands),
-                event.energy_min * path.units.E,
-                event.energy_max * path.units.E,
-                event.gap * path.units.E,
+                event.energy_min * ctx.state.data.energy_conversion_disk_to_working,
+                event.energy_max * ctx.state.data.energy_conversion_disk_to_working,
+                event.gap * ctx.state.data.energy_conversion_disk_to_working,
                 event.subspace_score,
                 event.min_singular_value,
             )
@@ -342,8 +342,8 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             Card("matching", matching_strategy, "ok"),
             Card("k-points", len(x), "ok"),
             Card("bands", energies.shape[1], "ok"),
-            Card("energy min", float(np.min(energies)), "neutral", f"units: {path.units.name}"),
-            Card("energy max", float(np.max(energies)), "neutral", f"units: {path.units.name}"),
+            Card("energy min", float(np.min(energies)), "neutral", f"units: {path.unit_context.energy.symbol}"),
+            Card("energy max", float(np.max(energies)), "neutral", f"units: {path.unit_context.energy.symbol}"),
             Card("band events", len(path.band_events), "warn" if path.band_events else "ok"),
             Card("degenerate groups", len(path.degenerate_group_events), "warn" if path.degenerate_group_events else "ok"),
             Graph2D(
@@ -360,7 +360,7 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 title=f"Band energies along {path_label}",
                 description="Each line is one continued band label.",
                 x_label="path coordinate",
-                y_label=f"energy / {path.units.name}",
+                y_label=f"energy / {path.unit_context.energy.symbol}",
                 series=series,
                 interaction_channel="band_path",
             ),

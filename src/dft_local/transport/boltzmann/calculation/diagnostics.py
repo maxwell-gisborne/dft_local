@@ -433,7 +433,7 @@ def compute_conductivity(ctx: Any, inputs: dict[str, object]) -> DiagnosticResul
     kernel_choice = str(inputs["kernel"])
 
     k_scale_input = float(inputs["k_scale"])
-    k_scale = (1.0 / state.units.L) if k_scale_input == 0.0 else k_scale_input
+    k_scale = (1.0 / state.data.length_conversion_disk_to_working) if k_scale_input == 0.0 else k_scale_input
 
     KH, KS = ctx.kernels(kernel_choice)
 
@@ -662,7 +662,7 @@ def diagnostics() -> list[DiagnosticSpec]:
                 InputSpec("temperature", "temperature / K", "float", 300.0, min_value=1e-12),
                 InputSpec("tau", "tau", "float", 1.0, min_value=0.0),
                 InputSpec("omega", "omega", "float", 0.0),
-                InputSpec("k_scale", "k scale", "float", 0.0, help="0 means automatic 1 / units.L"),
+                InputSpec("k_scale", "k scale", "float", 0.0, help="0 means automatic inverse working length conversion"),
                 InputSpec("central_bz", "central BZ", "bool", True),
                 InputSpec("rows", "rows shown", "int", 40, min_value=1, max_value=500),
             ),
