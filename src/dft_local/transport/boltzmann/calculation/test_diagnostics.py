@@ -65,18 +65,40 @@ def test_boltzmann_conductivity_units_table_uses_display_quantity() -> None:
     from dft_local.transport.boltzmann.calculation.diagnostics import unit_rows
     from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
-    class FakeCalc:
-        temperature = 300.0
-        mu = 0.0
-        omega = 0.0
-        irrep_weights = __import__("numpy").array([1.0])
-        physical_k_weights = __import__("numpy").array([2.0])
-        irrep_to_physical_k = __import__("numpy").eye(1)
-        units = BoltzmannConductivity.__dataclass_fields__["units"].default
+    np = __import__("numpy")
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 1)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(1),
+        temperature=300.0,
+    )
 
-    rows = unit_rows(FakeCalc())
+    rows = unit_rows(calc)
     row_map = {row[0]: row[1] for row in rows}
 
     assert isinstance(row_map["k_B T"], DisplayQuantity)
     assert row_map["k_B T"].dimension == ENERGY
     assert row_map["k_B T"].unit.symbol == "eV"
+
+
+
+def test_boltzmann_conductivity_exposes_unit_context_bridge() -> None:
+    from dft_local.core.units import EV_ANGSTROM_FS
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+
+    assert BoltzmannConductivity.__dataclass_fields__["units"].default == BoltzmannConductivity(
+        problems=[],
+        irrep_points=__import__("numpy").zeros((0, 1)),
+        irrep_weights=__import__("numpy").zeros((0,)),
+        irrep_to_physical_k=__import__("numpy").eye(1),
+    ).units
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=__import__("numpy").zeros((0, 1)),
+        irrep_weights=__import__("numpy").zeros((0,)),
+        irrep_to_physical_k=__import__("numpy").eye(1),
+    )
+
+    assert calc.unit_context == EV_ANGSTROM_FS

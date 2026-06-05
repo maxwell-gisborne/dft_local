@@ -28,6 +28,9 @@ from dft_local.core.units import (
     KSPACE_AREA,
     VELOCITY,
     WAVEVECTOR,
+    EV_ANGSTROM_FS,
+    SI_UNITS,
+    UnitContext,
     qarray,
 )
 
@@ -337,6 +340,15 @@ class BoltzmannConductivity:
     overlap_tol: float = 1e-10
 
     name: str = ""
+
+    @property
+    def unit_context(self) -> UnitContext:
+        """Best-effort bridge from legacy numerics.Units to core UnitContext."""
+
+        if self.units == eVag:
+            return EV_ANGSTROM_FS
+
+        return SI_UNITS
 
     energies: EnergyBands | None = field(default=None, init=False)
     vectors: ComplexArray | None = field(default=None, init=False)

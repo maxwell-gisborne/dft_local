@@ -84,12 +84,10 @@ def _rows_table(
     )
 
 
-def _legacy_energy_display_unit(units) -> Unit:
-    """Return the energy unit represented by the legacy numerics.Units object."""
+def _energy_display_unit(calc: BoltzmannConductivity) -> Unit:
+    """Return the energy unit represented by the calculation state."""
 
-    scale_to_si = HARTREE.scale_to_si / units.E
-    symbol = "eV" if abs(scale_to_si / ELECTRON_VOLT.scale_to_si - 1.0) < 1.0e-6 else "energy"
-    return Unit(symbol, ENERGY, scale_to_si)
+    return calc.unit_context.unit_for_dimension(ENERGY)
 
 
 def sigma_matrix(calc: BoltzmannConductivity) -> Matrix:
@@ -155,7 +153,7 @@ def unit_rows(calc: BoltzmannConductivity) -> list[list[object]]:
             DisplayQuantity(
                 value=kBT,
                 dimension=ENERGY,
-                unit=_legacy_energy_display_unit(calc.units),
+                unit=_energy_display_unit(calc),
                 name="k_B T",
             ),
         ],
