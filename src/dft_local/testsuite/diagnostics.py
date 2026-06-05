@@ -106,8 +106,7 @@ def compute(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     return DiagnosticResult(
         title="Test suite",
         summary="Discovered pytest targets for the domain package package.",
-        cards=tuple(cards),
-        tables=tuple(tables),
+        body=(*cards, *tables),
         notes=tuple(notes),
     )
 
