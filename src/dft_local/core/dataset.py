@@ -13,6 +13,7 @@ from scipy.sparse import bsr_matrix
 
 from dft_local.core.numerics import FloatArray, IntArray, Units, eVag, freeze_array
 from dft_local.core.sparse import block_row_raw
+from dft_local.core.units import ATOMIC_UNITS, EV_ANGSTROM_FS, SI_UNITS, UnitContext
 
 
 def freeze_bsr(M):
@@ -54,6 +55,18 @@ eVag = Units(
         hbar = 6.582e-16,  # hbar in eV•s
         name = 'angstroem',
         )
+
+
+def unit_context_from_legacy_units(units: Units) -> UnitContext:
+    """Best-effort bridge from the legacy Units object to core UnitContext."""
+
+    if units == eVag or getattr(units, "name", "") == "angstroem":
+        return EV_ANGSTROM_FS
+
+    if units == AU or getattr(units, "name", "") == "bohr":
+        return ATOMIC_UNITS
+
+    return SI_UNITS
 
 
 def require_file(path: Path) -> Path:
@@ -223,6 +236,8 @@ def atom_ordered_bsr(M, basis):
 class SparseDataset:
     root: Path
     units: Units
+    disk_unit_context: UnitContext
+    working_unit_context: UnitContext
     metadata: SparseMetadata
     basis: BasisMap
     H: bsr_matrix
@@ -248,7 +263,16 @@ class SparseDataset:
         freeze_array(metadata.channel_of_basis)
         freeze_array(metadata.symbols)
 
-        return cls(root=root, units=units, metadata=metadata, basis=basis, H=H, S=S).validate()
+        return cls(
+            root=root,
+            units=units,
+            disk_unit_context=ATOMIC_UNITS,
+            working_unit_context=unit_context_from_legacy_units(units),
+            metadata=metadata,
+            basis=basis,
+            H=H,
+            S=S,
+        ).validate()
 
 
     def validate(self) -> Self:
