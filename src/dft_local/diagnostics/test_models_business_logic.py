@@ -241,3 +241,47 @@ def test_diagnostic_section_body_renders_ordered_document_blocks() -> None:
     assert all(point >= 0 for point in points)
     assert points == sorted(points)
     assert "typst-error" not in html
+
+
+def test_diagnostic_section_body_takes_prebuilt_block_tuple() -> None:
+    from dft_local.diagnostics.models import DiagnosticSection, ProseBlock, EquationBlock
+    from dft_local.diagnostics.render import render_diagnostic_section
+    from dft_local.diagnostics.user_strings import TypstMath
+
+    body = (
+        ProseBlock(id="p", title="Prose", markdown="A prose block."),
+        EquationBlock(id="e", math=TypstMath("$ y = 2 $", display=True, name="body_tuple_equation")),
+    )
+
+    section = DiagnosticSection(
+        id="prebuilt_body",
+        title="Prebuilt body",
+        body=body,
+    )
+
+    html = render_diagnostic_section(section)
+
+    assert html.find("A prose block.") < html.find("id='e'")
+    assert "body_tuple_equation" in html
+    assert "typst-error" not in html
+
+
+def test_document_helpers_construct_ordered_blocks() -> None:
+    from dft_local.diagnostics.document import equation, prose
+    from dft_local.diagnostics.models import DiagnosticSection
+    from dft_local.diagnostics.render import render_diagnostic_section
+
+    section = DiagnosticSection(
+        id="helper_body",
+        title="Helper body",
+        body=(
+            prose("intro", "Intro", "Before."),
+            equation("eq", "$ z = 3 $"),
+            prose("after", "After", "After."),
+        ),
+    )
+
+    html = render_diagnostic_section(section)
+
+    assert html.find("Before.") < html.find("id='eq'") < html.find("After.")
+    assert "typst-error" not in html
