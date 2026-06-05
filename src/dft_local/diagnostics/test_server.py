@@ -709,3 +709,66 @@ def test_gamma_k_m_rendered_path_m_lies_on_hexagon_edge() -> None:
         "edge_scale": scale,
         "relative_distance": max_segment_distance / scale,
     }
+
+
+def test_tables_render_in_breakout_scroll_container() -> None:
+    from dft_local.diagnostics.models import DiagnosticResult, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    result = DiagnosticResult(
+        title="Wide table",
+        summary="Table overflow check",
+        tables=(
+            Table(
+                id="wide_table",
+                title="Wide table",
+                description="A deliberately wide diagnostic table.",
+                headers=("first", "second", "third", "fourth"),
+                rows=(TableRow(("a", "b", "c", "d")),),
+            ),
+        ),
+    )
+
+    html = render_result(result)
+
+    assert "class='diagnostic-table-section'" in html
+    assert "class='table-breakout'" in html
+    assert "tabindex='0'" in html
+    assert "<table>" in html
+
+
+def test_table_breakout_has_paper_background_without_table_row_override() -> None:
+    from pathlib import Path
+
+    css_source = Path("src/dft_local/diagnostics/render.py").read_text()
+
+    assert ".diagnostic-paper .table-breakout {" in css_source
+    breakout_rule = css_source.split(".diagnostic-paper .table-breakout {", 1)[1].split("}", 1)[0]
+    assert "background: var(--paper);" in breakout_rule
+
+    table_rule = css_source.split(".diagnostic-paper .table-breakout table {", 1)[1].split("}", 1)[0]
+    assert "background: transparent;" in table_rule
+
+    # Alternating table rows should remain separate from the breakout background.
+    assert "tbody tr:nth-child(even)" in css_source
+
+
+def test_diagnostic_title_renders_before_sections() -> None:
+    from dft_local.diagnostics.models import DiagnosticResult, DiagnosticSection
+    from dft_local.diagnostics.render import render_result
+
+    html = render_result(
+        DiagnosticResult(
+            title="Ordered title",
+            summary="Summary first.",
+            sections=(
+                DiagnosticSection(
+                    id="example_section",
+                    title="Example section",
+                    description="Section body.",
+                ),
+            ),
+        )
+    )
+
+    assert html.index("<h1>Ordered title</h1>") < html.index("id='example_section'")

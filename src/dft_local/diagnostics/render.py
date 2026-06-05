@@ -273,14 +273,15 @@ def render_table(table) -> str:
         description = f"<p><small>{escape(str(table.description))}</small></p>"
 
     return (
-        f"<section id='{escape(str(table.id))}'>"
+        f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'>"
         f"<h3>{escape(str(table.title))}</h3>"
         + description
+        + "<div class='table-breakout' tabindex='0'>"
         + "<table><thead><tr>"
         + headers
         + "</tr></thead><tbody>"
         + "".join(rows)
-        + "</tbody></table></section>"
+        + "</tbody></table></div></section>"
     )
 
 
@@ -313,7 +314,6 @@ def render_diagnostic_section(section: DiagnosticSection) -> str:
 
 def render_result(result: DiagnosticResult) -> str:
     rendered_markdowns = ''.join(render_markdown_block(block) for block in result.markdowns)
-    rendered_sections = ''.join(render_diagnostic_section(section) for section in result.sections)
     """Render a diagnostic result body as simple HTML."""
 
     parts: list[str] = []
@@ -332,6 +332,9 @@ def render_result(result: DiagnosticResult) -> str:
                 "</article>"
             )
         parts.append("</section>")
+
+    for section in result.sections:
+        parts.append(render_diagnostic_section(section))
 
     for matrix in result.matrices:
         parts.append(f"<section><h2>{escape(matrix.title)}</h2>")
@@ -378,7 +381,7 @@ def render_result(result: DiagnosticResult) -> str:
         energy_index = table.headers.index("energy") if "energy" in table.headers else -1
         row_label_index = 0
 
-        parts.append(f"<section><h2>{escape(table.title)}</h2>")
+        parts.append(f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'><h2>{escape(table.title)}</h2>")
         parts.append(f"<p>{escape(table.description)}</p>")
 
         if has_step:
@@ -389,7 +392,7 @@ def render_result(result: DiagnosticResult) -> str:
                 "</div>"
             )
 
-        parts.append("<table><thead><tr>")
+        parts.append("<div class='table-breakout' tabindex='0'><table><thead><tr>")
         if has_step:
             parts.append("<th>select</th>")
         for header in table.headers:
@@ -432,7 +435,7 @@ def render_result(result: DiagnosticResult) -> str:
                 parts.append(f"<td>{escape(fmt(cell))}</td>")
             parts.append("</tr>")
 
-        parts.append("</tbody></table></section>")
+        parts.append("</tbody></table></div></section>")
 
     if result.notes:
         parts.append("<section><h2>Notes</h2>")
@@ -440,7 +443,7 @@ def render_result(result: DiagnosticResult) -> str:
             parts.append(f"<p>{escape(note)}</p>")
         parts.append("</section>")
 
-    return rendered_markdowns + rendered_sections + "\n".join(parts)
+    return rendered_markdowns + "\n".join(parts)
 
 
 ACADEMIC_STYLE = """
@@ -707,6 +710,52 @@ details.diagnostic-section .diagnostic-paper details.diagnostic-section {
   width: min(720px, 100%);
   height: auto;
   aspect-ratio: 1 / 1;
+}
+
+
+/* Reusable horizontal overflow treatment for wide diagnostic tables. */
+.diagnostic-paper .diagnostic-table-section {
+  min-width: 0;
+}
+
+.diagnostic-paper .table-breakout {
+  max-width: min(96vw, 1200px);
+  width: max-content;
+  min-width: 100%;
+  margin-left: 50%;
+  transform: translateX(-50%);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.2rem 0.75rem 0.45rem;
+  scrollbar-width: thin;
+  background: var(--paper);
+  border-radius: 3px;
+}
+
+.diagnostic-paper .table-breakout:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.diagnostic-paper .table-breakout table {
+  width: max-content;
+  min-width: 100%;
+  margin: 1rem 0 1.2rem;
+  background: transparent;
+}
+
+.diagnostic-paper details.diagnostic-section .table-breakout {
+  max-width: min(94vw, 1200px);
+}
+
+@media (max-width: 760px) {
+  .diagnostic-paper .table-breakout {
+    max-width: 100vw;
+    margin-left: 50%;
+    transform: translateX(-50%);
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
 }
 
 </style>
