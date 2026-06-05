@@ -164,3 +164,31 @@ def test_boltzmann_sigma_display_values_carry_conductivity_units() -> None:
     matrix = sigma_matrix(calc)
     assert isinstance(matrix.cells[0].value, DisplayQuantity)
     assert matrix.cells[0].value.dimension == CONDUCTIVITY
+
+
+
+def test_velocity_quantile_rows_carry_velocity_units() -> None:
+    import numpy as np
+
+    from dft_local.core.units import DisplayQuantity, VELOCITY
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+    from dft_local.transport.boltzmann.calculation.diagnostics import velocity_quantile_rows
+
+    calc = BoltzmannConductivity(
+        problems=[],
+        irrep_points=np.zeros((0, 2)),
+        irrep_weights=np.zeros((0,)),
+        irrep_to_physical_k=np.eye(2),
+    )
+    object.__setattr__(calc, "energies", np.zeros((2, 1)))
+    object.__setattr__(calc, "vectors", np.zeros((2, 1, 1), dtype=np.complex128))
+    object.__setattr__(calc, "velocities", np.array([[[1.0], [2.0]], [[3.0], [4.0]]]))
+    object.__setattr__(calc, "ac_weights", np.zeros((2, 1), dtype=np.complex128))
+    object.__setattr__(calc, "sigma_k", np.zeros((2, 2, 2), dtype=np.complex128))
+    object.__setattr__(calc, "sigma", np.zeros((2, 2), dtype=np.complex128))
+
+    rows = velocity_quantile_rows(calc)
+
+    assert isinstance(rows[0][1], DisplayQuantity)
+    assert rows[0][1].dimension == VELOCITY
+    assert rows[0][5].dimension == VELOCITY

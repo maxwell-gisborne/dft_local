@@ -25,7 +25,7 @@ from dft_local.diagnostics.models import (
     Table,
     TableRow,
 )
-from dft_local.core.units import DisplayQuantity, CONDUCTIVITY, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, Unit
+from dft_local.core.units import DisplayQuantity, CONDUCTIVITY, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, VELOCITY, Unit
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
 
@@ -94,6 +94,12 @@ def _conductivity_display_unit(calc: BoltzmannConductivity) -> Unit:
     """Return the conductivity unit represented by the calculation state."""
 
     return calc.unit_context.unit_for_dimension(CONDUCTIVITY)
+
+
+def _velocity_display_unit(calc: BoltzmannConductivity) -> Unit:
+    """Return the velocity unit represented by the calculation state."""
+
+    return calc.unit_context.unit_for_dimension(VELOCITY)
 
 
 def sigma_matrix(calc: BoltzmannConductivity) -> Matrix:
@@ -299,16 +305,18 @@ def velocity_quantile_rows(calc: BoltzmannConductivity) -> list[list[object]]:
 
     rows: list[list[object]] = []
 
+    unit = _velocity_display_unit(calc)
+
     for direction in range(calc.dimension):
         x = np.abs(calc.velocities[:, direction, :]).reshape(-1)
         rows.append(
             [
                 direction,
-                float(np.min(x)),
-                float(np.quantile(x, 0.25)),
-                float(np.median(x)),
-                float(np.quantile(x, 0.75)),
-                float(np.max(x)),
+                DisplayQuantity(float(np.min(x)), VELOCITY, unit, name=f"v{direction} min"),
+                DisplayQuantity(float(np.quantile(x, 0.25)), VELOCITY, unit, name=f"v{direction} q25"),
+                DisplayQuantity(float(np.median(x)), VELOCITY, unit, name=f"v{direction} median"),
+                DisplayQuantity(float(np.quantile(x, 0.75)), VELOCITY, unit, name=f"v{direction} q75"),
+                DisplayQuantity(float(np.max(x)), VELOCITY, unit, name=f"v{direction} max"),
             ]
         )
 
