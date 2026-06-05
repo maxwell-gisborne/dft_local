@@ -25,7 +25,7 @@ from dft_local.diagnostics.models import (
     Table,
     TableRow,
 )
-from dft_local.core.units import DisplayQuantity, CONDUCTIVITY, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, VELOCITY, Unit
+from dft_local.core.units import DisplayQuantity, CONDUCTIVITY, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, VELOCITY, WAVEVECTOR, Unit
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
 
@@ -100,6 +100,12 @@ def _velocity_display_unit(calc: BoltzmannConductivity) -> Unit:
     """Return the velocity unit represented by the calculation state."""
 
     return calc.unit_context.unit_for_dimension(VELOCITY)
+
+
+def _wavevector_display_unit(calc: BoltzmannConductivity) -> Unit:
+    """Return the wavevector unit represented by the calculation state."""
+
+    return calc.unit_context.unit_for_dimension(WAVEVECTOR)
 
 
 def sigma_matrix(calc: BoltzmannConductivity) -> Matrix:
@@ -256,6 +262,9 @@ def near_fermi_rows(calc: BoltzmannConductivity, *, n: int) -> list[list[object]
     physical_k = calc.physical_k_points
 
     rows: list[list[object]] = []
+    energy_unit = _energy_display_unit(calc)
+    velocity_unit = _velocity_display_unit(calc)
+    wavevector_unit = _wavevector_display_unit(calc)
 
     for sample in range(calc.nk):
         for band in range(calc.energies.shape[1]):
@@ -266,17 +275,17 @@ def near_fermi_rows(calc: BoltzmannConductivity, *, n: int) -> list[list[object]
                     int(band),
                     float(raw_k[sample, 0]),
                     float(raw_k[sample, 1]),
-                    float(physical_k[sample, 0]),
-                    float(physical_k[sample, 1]),
-                    E,
-                    abs(E - float(calc.mu)),
-                    float(calc.velocities[sample, 0, band]),
-                    float(calc.velocities[sample, 1, band]),
+                    DisplayQuantity(float(physical_k[sample, 0]), WAVEVECTOR, wavevector_unit, name="kx"),
+                    DisplayQuantity(float(physical_k[sample, 1]), WAVEVECTOR, wavevector_unit, name="ky"),
+                    DisplayQuantity(E, ENERGY, energy_unit, name="E"),
+                    DisplayQuantity(abs(E - float(calc.mu)), ENERGY, energy_unit, name="|E - mu|"),
+                    DisplayQuantity(float(calc.velocities[sample, 0, band]), VELOCITY, velocity_unit, name="vx"),
+                    DisplayQuantity(float(calc.velocities[sample, 1, band]), VELOCITY, velocity_unit, name="vy"),
                     float(abs(calc.ac_weights[sample, band])),
                 ]
             )
 
-    rows.sort(key=lambda row: row[7])
+    rows.sort(key=lambda row: row[7].value if isinstance(row[7], DisplayQuantity) else row[7])
     return rows[:n]
 
 

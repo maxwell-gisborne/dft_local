@@ -220,3 +220,36 @@ def test_energy_quantile_rows_carry_energy_units() -> None:
     assert isinstance(rows[0][1], DisplayQuantity)
     assert rows[0][1].dimension == ENERGY
     assert rows[0][5].dimension == ENERGY
+
+
+
+def test_near_fermi_rows_carry_units_for_physical_columns() -> None:
+    import numpy as np
+
+    from dft_local.core.units import DisplayQuantity, ENERGY, VELOCITY, WAVEVECTOR
+    from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+    from dft_local.transport.boltzmann.calculation.diagnostics import near_fermi_rows
+
+    calc = BoltzmannConductivity(
+        problems=[object()],
+        irrep_points=np.array([[0.0, 0.0]]),
+        irrep_weights=np.array([1.0]),
+        irrep_to_physical_k=np.eye(2),
+        mu=1.5,
+    )
+    object.__setattr__(calc, "energies", np.array([[1.0]]))
+    object.__setattr__(calc, "vectors", np.zeros((1, 1, 1), dtype=np.complex128))
+    object.__setattr__(calc, "velocities", np.array([[[2.0], [3.0]]]))
+    object.__setattr__(calc, "ac_weights", np.ones((1, 1), dtype=np.complex128))
+    object.__setattr__(calc, "sigma_k", np.zeros((1, 2, 2), dtype=np.complex128))
+    object.__setattr__(calc, "sigma", np.zeros((2, 2), dtype=np.complex128))
+
+    row = near_fermi_rows(calc, n=1)[0]
+
+    assert isinstance(row[4], DisplayQuantity)
+    assert row[4].dimension == WAVEVECTOR
+    assert row[5].dimension == WAVEVECTOR
+    assert row[6].dimension == ENERGY
+    assert row[7].dimension == ENERGY
+    assert row[8].dimension == VELOCITY
+    assert row[9].dimension == VELOCITY
