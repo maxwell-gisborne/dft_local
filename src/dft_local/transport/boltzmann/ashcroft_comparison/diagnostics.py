@@ -165,7 +165,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 title="Local calculation check",
                 description="Independent checks that the local derivative, Fermi window, and tensor assembly are internally coherent.",
                 collapsed=False,
-                markdowns=(
+                body=(
                     MarkdownBlock(
                         id="ashcroft_local_calculation_intro",
                         title="Local calculation equations",
@@ -220,8 +220,7 @@ The strongest check is the analytic end-to-end test: a known periodic band is di
 This validates the local derivative, unit conversions, Fermi window, tensor assembly, and conductivity prefactor independently of Vincent's data.
 """,
                     ),
-                ),
-                tables=(
+                # tables continue in body
                     Table(
                         id="section_validation_summary",
                         title="Validation summary",
@@ -288,14 +287,13 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                             TableRow(("antisymmetric part / trace", f"{conductivity_invariants['antisym_abs_over_trace']:.8e}", "0")),
                         ),
                     ),
-                ),
-                sections=(
+                # nested sections continue in body
                     DiagnosticSection(
                         id="ashcroft_local_detailed_checks",
                         title="Detailed local checks",
                         description="Additional stability and sensitivity checks.",
                         collapsed=True,
-                        tables=(
+                        body=(
                             Table(
                                 id="section_conductivity_grid_subsample_stability",
                                 title="Grid subsampling stability",
@@ -354,7 +352,7 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                 title="Velocity comparison",
                 description="Vincent's printed velocities are reproduced by Delaunay plane-fit interpolation, with simplex-choice ambiguity at grid vertices.",
                 collapsed=False,
-                markdowns=(
+                body=(
                     MarkdownBlock(
                         id="ashcroft_velocity_comparison_summary",
                         title="Velocity result",
@@ -365,8 +363,6 @@ At the printed k-points, which lie exactly on grid vertices, the Delaunay piecew
 This resolves the velocity mismatch as a simplex-choice issue at grid vertices, not a units, k-grid, `hbar`, Hartree conversion, or `2π` issue.
 """,
                     ),
-                ),
-                tables=(
                     Table(
                         id="section_velocity_delaunay_interpolation_probe",
                         title="Direct Delaunay interpolation",
@@ -457,7 +453,7 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                 title="Conductivity comparison",
                 description="Conductivity comparison after the local calculation and velocity interpolation have been validated.",
                 collapsed=False,
-                markdowns=(
+                body=(
                     MarkdownBlock(
                         id="ashcroft_conductivity_comparison_summary",
                         title="Conductivity result",
@@ -476,8 +472,7 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             "The shifted-k and velocity-shift printouts are treated as erroneous and are not used in this comparison.",
                         ),
                     ),
-                ),
-                tables=(
+                # tables continue in body
                     Table(
                         id="section_conductivity_fermi_window",
                         title="Fermi-window validation",
@@ -579,14 +574,13 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             TableRow(("trace ratio local/Vincent", "1.00000000e+00", f"{np.trace(local_sigma) / np.trace(sigma):.8e}", f"{np.trace(best_conductivity) / np.trace(sigma):.8e}")),
                         ),
                     ),
-                ),
-                sections=(
+                # nested sections continue in body
                     DiagnosticSection(
                         id="ashcroft_conductivity_details",
                         title="Conductivity details",
                         description="Raw local tensors and continuum-convention comparison.",
                         collapsed=True,
-                        tables=(
+                        body=(
                             Table(
                                 id="section_conductivity_normalisation",
                                 title="Conductivity normalisation",

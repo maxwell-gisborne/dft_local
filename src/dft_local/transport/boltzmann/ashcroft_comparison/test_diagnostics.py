@@ -583,7 +583,11 @@ def test_vincent_delaunay_velocity_probe_is_present() -> None:
     result = specs["transport.boltzmann.ashcroft_comparison.overview"].compute(None, {})
     velocity = _section_by_id(result, "ashcroft_velocity_comparison")
 
-    table_ids = {table.id for table in velocity.tables}
+    from dft_local.diagnostics.models import Table
+
+    table_ids = {table.id for table in velocity.tables} | {
+        block.id for block in velocity.body if isinstance(block, Table)
+    }
     assert "section_velocity_delaunay_interpolation_probe" in table_ids
 
 
@@ -606,7 +610,11 @@ def test_vincent_delaunay_adjacent_simplex_probe_is_present() -> None:
     result = specs["transport.boltzmann.ashcroft_comparison.overview"].compute(None, {})
     velocity = _section_by_id(result, "ashcroft_velocity_comparison")
 
-    table_ids = {table.id for table in velocity.tables}
+    from dft_local.diagnostics.models import Table
+
+    table_ids = {table.id for table in velocity.tables} | {
+        block.id for block in velocity.body if isinstance(block, Table)
+    }
     assert "section_velocity_delaunay_adjacent_simplex_probe" in table_ids
 
 
@@ -636,11 +644,23 @@ def test_ashcroft_local_calculation_check_contains_validation_evidence() -> None
     result = specs["transport.boltzmann.ashcroft_comparison.overview"].compute(None, {})
 
     local = _section_by_id(result, "ashcroft_local_calculation_check")
-    table_ids = {table.id for table in local.tables}
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    table_ids = {table.id for table in local.tables} | {
+        block.id for block in local.body if isinstance(block, Table)
+    }
+    nested_sections = tuple(local.sections) + tuple(
+        block for block in local.body if isinstance(block, DiagnosticSection)
+    )
     nested_table_ids = {
         table.id
-        for section in local.sections
+        for section in nested_sections
         for table in section.tables
+    } | {
+        block.id
+        for section in nested_sections
+        for block in section.body
+        if isinstance(block, Table)
     }
 
     assert local.title == "Local calculation check"
@@ -653,7 +673,11 @@ def test_ashcroft_local_calculation_check_contains_validation_evidence() -> None
     assert "section_conductivity_temperature_response" in nested_table_ids
     assert "section_conductivity_contribution_localisation" in nested_table_ids
 
-    markdown = "\n".join(str(block.markdown) for block in local.markdowns if hasattr(block, "markdown"))
+    markdown = "\n".join(
+        str(block.markdown)
+        for block in (*local.markdowns, *local.body)
+        if hasattr(block, "markdown")
+    )
     assert "independently of Vincent's data" in markdown
     assert "Fermi window" in markdown
     assert "conductivity prefactor" in markdown
@@ -664,13 +688,21 @@ def test_ashcroft_velocity_comparison_contains_delaunay_resolution() -> None:
     result = specs["transport.boltzmann.ashcroft_comparison.overview"].compute(None, {})
 
     velocity = _section_by_id(result, "ashcroft_velocity_comparison")
-    table_ids = {table.id for table in velocity.tables}
+    from dft_local.diagnostics.models import Table
+
+    table_ids = {table.id for table in velocity.tables} | {
+        block.id for block in velocity.body if isinstance(block, Table)
+    }
 
     assert "section_velocity_delaunay_interpolation_probe" in table_ids
     assert "section_velocity_delaunay_adjacent_simplex_probe" in table_ids
     assert "section_velocity_k_grid" in table_ids
 
-    markdown = "\n".join(block.markdown for block in velocity.markdowns)
+    markdown = "\n".join(
+        block.markdown
+        for block in (*velocity.markdowns, *velocity.body)
+        if hasattr(block, "markdown")
+    )
     assert "Delaunay interpolation" in markdown
     assert "adjacent triangle" in markdown
     assert "simplex-choice issue" in markdown
@@ -682,11 +714,23 @@ def test_ashcroft_conductivity_comparison_contains_measure_result() -> None:
     result = specs["transport.boltzmann.ashcroft_comparison.overview"].compute(None, {})
 
     conductivity = _section_by_id(result, "ashcroft_conductivity_comparison")
-    table_ids = {table.id for table in conductivity.tables}
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    table_ids = {table.id for table in conductivity.tables} | {
+        block.id for block in conductivity.body if isinstance(block, Table)
+    }
+    nested_sections = tuple(conductivity.sections) + tuple(
+        block for block in conductivity.body if isinstance(block, DiagnosticSection)
+    )
     nested_table_ids = {
         table.id
-        for section in conductivity.sections
+        for section in nested_sections
         for table in section.tables
+    } | {
+        block.id
+        for section in nested_sections
+        for block in section.body
+        if isinstance(block, Table)
     }
 
     assert "section_conductivity_fermi_window" in table_ids
@@ -699,7 +743,11 @@ def test_ashcroft_conductivity_comparison_contains_measure_result() -> None:
     assert "section_conductivity_local_tensor" in nested_table_ids
     assert "section_conductivity_target" in nested_table_ids
 
-    markdown = "\n".join(str(block.markdown) for block in conductivity.markdowns if hasattr(block, "markdown"))
+    markdown = "\n".join(
+        str(block.markdown)
+        for block in (*conductivity.markdowns, *conductivity.body)
+        if hasattr(block, "markdown")
+    )
     assert "Fermi-window statistics are reproduced" in markdown
     assert "reciprocal-space measure convention" in markdown
 
