@@ -6,6 +6,7 @@ discovered pytest targets and optionally run them in a subprocess.
 
 from __future__ import annotations
 
+from dft_local.diagnostics.user_strings import TypstMath
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,

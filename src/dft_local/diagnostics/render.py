@@ -8,7 +8,44 @@ from typing import Any
 import math
 import json
 
-from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, DiagnosticResult, Graph2D
+from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, DiagnosticResult, Graph2D, TypstMathBlock
+from dft_local.diagnostics.typst import TypstRenderError, render_typst_error, render_typst_math_to_svg
+from dft_local.diagnostics.user_strings import RichText, TypstMath, rich
+
+
+
+
+def render_user_string(value: Any) -> str:
+    """Render a user-facing string to safe HTML.
+
+    Plain strings are escaped.  TypstMath snippets are compiled to inline SVG.
+    RichText concatenates plain text and rich inline parts so only mathematical
+    content is rendered by Typst.
+    """
+
+    if isinstance(value, RichText):
+        return "".join(render_user_string(part) for part in value.parts)
+
+    if isinstance(value, TypstMath):
+        try:
+            svg = render_typst_math_to_svg(value.source, display=value.display)
+        except TypstRenderError as exc:
+            return render_typst_error(value.source, exc)
+
+        cls = "typst-math display" if value.display else "typst-math inline"
+        source = escape(value.source, quote=True)
+        name = escape(value.name, quote=True)
+        return f"<span class='{cls}' data-typst-source='{source}' data-typst-name='{name}'>{svg}</span>"
+
+    return render_user_string(value) if isinstance(value, (RichText, TypstMath)) else escape(str(value))
+
+
+def render_display_value(value: Any) -> str:
+    """Render a value that appears in a table cell or compact value slot."""
+
+    if isinstance(value, (RichText, TypstMath)):
+        return render_user_string(value)
+    return escape(fmt(value))
 
 
 def fmt(value: Any) -> str:
@@ -113,7 +150,7 @@ def _render_graph_svg(graph: Graph2D) -> str:
             "<svg class='graph-svg' "
             f"viewBox='0 0 {width:.0f} {height:.0f}' "
             "role='img' "
-            f"aria-label='{escape(graph.title, quote=True)}'>"
+            f"aria-label='{escape(str(graph.title), quote=True)}'>"
         ),
         "<rect class='graph-bg' x='0' y='0' width='1000' height='520' />",
     ]
@@ -134,10 +171,10 @@ def _render_graph_svg(graph: Graph2D) -> str:
 
     parts.append(f"<line class='axis' x1='{left:.3f}' y1='{top + inner_h:.3f}' x2='{left + inner_w:.3f}' y2='{top + inner_h:.3f}' />")
     parts.append(f"<line class='axis' x1='{left:.3f}' y1='{top:.3f}' x2='{left:.3f}' y2='{top + inner_h:.3f}' />")
-    parts.append(f"<text class='axis-title' x='{left + inner_w / 2:.3f}' y='{height - 6:.3f}' text-anchor='middle'>{escape(graph.x_label)}</text>")
+    parts.append(f"<text class='axis-title' x='{left + inner_w / 2:.3f}' y='{height - 6:.3f}' text-anchor='middle'>{render_user_string(graph.x_label)}</text>")
     parts.append(
         f"<text class='axis-title' x='18' y='{top + inner_h / 2:.3f}' text-anchor='middle' "
-        f"transform='rotate(-90 18 {top + inner_h / 2:.3f})'>{escape(graph.y_label)}</text>"
+        f"transform='rotate(-90 18 {top + inner_h / 2:.3f})'>{render_user_string(graph.y_label)}</text>"
     )
 
     for series_index, series in enumerate(graph.series):
@@ -168,75 +205,116 @@ def _render_graph_svg(graph: Graph2D) -> str:
         lx, ly = points[-1]
         parts.append(
             f"<text class='series-label' x='{lx + 5:.3f}' y='{ly + 4:.3f}' "
-            f"fill='{colour}'>{escape(series.name)}</text>"
+            f"fill='{colour}'>{render_user_string(series.name)}</text>"
         )
 
     parts.append("</svg>")
     return "\n".join(parts)
 
 
+def render_typst_math_block(block: TypstMathBlock) -> str:
+    math = block.math
+    if not math.display:
+        math = TypstMath(math.source, display=True, name=math.name)
+
+    return (
+        f"<div id='{escape(block.id)}' class='typst-math-block'>"
+        + render_user_string(math)
+        + "</div>"
+    )
+
+
 def render_markdown_block(block: MarkdownBlock) -> str:
     return (
         f"<section id='{escape(block.id)}'>"
-        f"<h2>{escape(block.title)}</h2>"
+        f"<h2>{render_user_string(block.title)}</h2>"
         + DiagnosticApp.render_markdown(block.markdown)
         + "</section>"
     )
 
 
-def render_markdown_text(markdown: str) -> str:
+def render_markdown_text(markdown: Any) -> str:
+    """Render lightweight prose content.
+
+    Plain strings use simple paragraph/list rendering. RichText keeps prose as
+    normal HTML text while rendering only TypstMath parts as inline SVG.
+    """
+
+    if isinstance(markdown, RichText):
+        paragraphs: list[list[Any]] = [[]]
+
+        for part in markdown.parts:
+            if isinstance(part, str):
+                pieces = part.split("\n\n")
+                for index, piece in enumerate(pieces):
+                    if index > 0:
+                        paragraphs.append([])
+                    if piece:
+                        paragraphs[-1].append(piece)
+            else:
+                paragraphs[-1].append(part)
+
+        html_parts: list[str] = []
+        for paragraph in paragraphs:
+            if not paragraph:
+                continue
+
+            # Do not replace newlines after render_user_string().  Typst SVG
+            # output contains internal newlines; converting those to <br>
+            # creates huge visual gaps in inline math.
+            normalised_parts = tuple(
+                part.replace("\n", " ") if isinstance(part, str) else part
+                for part in paragraph
+            )
+            content = rich(*normalised_parts)
+            html_parts.append("<p>" + render_user_string(content) + "</p>")
+        return "".join(html_parts)
+
+    if not isinstance(markdown, str):
+        return "<p>" + render_user_string(markdown) + "</p>"
+
     lines = markdown.splitlines()
-    html: list[str] = []
-    in_list = False
+    parts: list[str] = []
     paragraph: list[str] = []
 
     def flush_paragraph() -> None:
-        nonlocal paragraph
         if paragraph:
-            html.append("<p>" + " ".join(escape(line.strip()) for line in paragraph) + "</p>")
-            paragraph = []
-
-    def close_list() -> None:
-        nonlocal in_list
-        if in_list:
-            html.append("</ul>")
-            in_list = False
+            parts.append("<p>" + " ".join(paragraph) + "</p>")
+            paragraph.clear()
 
     for line in lines:
-        stripped = line.rstrip()
-
+        stripped = line.strip()
         if not stripped:
             flush_paragraph()
-            close_list()
-            continue
-
-        heading = re.match(r"^(#{1,6})\s+(.*)$", stripped)
-        if heading:
-            flush_paragraph()
-            close_list()
-            level = len(heading.group(1))
-            html.append(f"<h{level}>{escape(heading.group(2).strip())}</h{level}>")
             continue
 
         if stripped.startswith("- "):
             flush_paragraph()
-            if not in_list:
-                html.append("<ul>")
-                in_list = True
-            html.append(f"<li>{escape(stripped[2:].strip())}</li>")
+            parts.append("<ul><li>" + escape(stripped[2:]) + "</li></ul>")
             continue
 
-        paragraph.append(stripped)
+        paragraph.append(escape(stripped))
 
     flush_paragraph()
-    close_list()
-    return "\n".join(html)
+    return "".join(parts)
+
+
+def render_typst_math_block(block: TypstMathBlock) -> str:
+    math = block.math
+    if not math.display:
+        math = TypstMath(math.source, display=True, name=math.name)
+
+    return (
+        f"<div id='{escape(block.id)}' class='typst-math-block'>"
+        + render_user_string(math)
+        + "</div>"
+    )
 
 
 def render_markdown_block(block: MarkdownBlock) -> str:
     return (
         f"<section id='{escape(block.id)}' class='markdown-block'>"
-        f"<h2>{escape(block.title)}</h2>"
+        f"<h2>{render_user_string(block.title)}</h2>"
         + render_markdown_text(block.markdown)
         + "</section>"
     )
@@ -249,32 +327,32 @@ def render_card(card) -> str:
 
     return (
         "<div class='card'>"
-        f"<strong>{escape(str(title))}</strong>"
-        f"<div>{escape(str(value))}</div>"
-        f"<small>{escape(str(subtitle))}</small>"
+        f"<strong>{render_user_string(title)}</strong>"
+        f"<div>{render_user_string(value) if isinstance(value, (RichText, TypstMath)) else escape(str(value))}</div>"
+        f"<small>{render_user_string(subtitle)}</small>"
         "</div>"
     )
 
 
 def render_table(table) -> str:
-    headers = "".join(f"<th>{escape(str(header))}</th>" for header in table.headers)
+    headers = "".join(f"<th>{render_user_string(header)}</th>" for header in table.headers)
 
     rows = []
     for row in table.rows:
         cells = getattr(row, "cells", row)
         rows.append(
             "<tr>"
-            + "".join(f"<td>{escape(str(cell))}</td>" for cell in cells)
+            + "".join(f"<td>{render_display_value(cell)}</td>" for cell in cells)
             + "</tr>"
         )
 
     description = ""
     if getattr(table, "description", ""):
-        description = f"<p><small>{escape(str(table.description))}</small></p>"
+        description = f"<p><small>{render_user_string(table.description)}</small></p>"
 
     return (
         f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'>"
-        f"<h3>{escape(str(table.title))}</h3>"
+        f"<h3>{render_user_string(table.title)}</h3>"
         + description
         + "<div class='table-breakout' tabindex='0'>"
         + "<table><thead><tr>"
@@ -290,10 +368,37 @@ def render_diagnostic_section(section: DiagnosticSection) -> str:
     body: list[str] = []
 
     if section.description:
-        body.append(f"<p>{escape(section.description)}</p>")
+        body.append(f"<p>{render_user_string(section.description)}</p>")
 
-    for block in section.markdowns:
+    blocks = tuple(section.markdowns)
+    i = 0
+    while i < len(blocks):
+        block = blocks[i]
+
+        if isinstance(block, MarkdownBlock):
+            attached_math: list[TypstMathBlock] = []
+            j = i + 1
+            while j < len(blocks) and isinstance(blocks[j], TypstMathBlock):
+                attached_math.append(blocks[j])
+                j += 1
+
+            group = ["<div class='markdown-math-group'>", render_markdown_block(block)]
+            group.extend(render_typst_math_block(math_block) for math_block in attached_math)
+            group.append("</div>")
+            body.append("".join(group))
+            i = j
+            continue
+
+        if isinstance(block, TypstMathBlock):
+            body.append(render_typst_math_block(block))
+            i += 1
+            continue
+
         body.append(render_markdown_block(block))
+        i += 1
+
+    for block in getattr(section, "math_blocks", ()):
+        body.append(render_typst_math_block(block))
 
     for card in section.cards:
         body.append(render_card(card))
@@ -306,7 +411,7 @@ def render_diagnostic_section(section: DiagnosticSection) -> str:
 
     return (
         f"<details id='{escape(section.id)}' class='diagnostic-section'{open_attr}>"
-        f"<summary>{escape(section.title)}</summary>"
+        f"<summary>{render_user_string(section.title)}</summary>"
         + "".join(body)
         + "</details>"
     )
@@ -318,17 +423,17 @@ def render_result(result: DiagnosticResult) -> str:
 
     parts: list[str] = []
 
-    parts.append(f"<h1>{escape(result.title)}</h1>")
-    parts.append(f"<p>{escape(result.summary)}</p>")
+    parts.append(f"<h1>{render_user_string(result.title)}</h1>")
+    parts.append(f"<p>{render_user_string(result.summary)}</p>")
 
     if result.cards:
         parts.append("<section class='cards'>")
         for card in result.cards:
             parts.append(
                 "<article class='card'>"
-                f"<h3>{escape(card.label)}</h3>"
+                f"<h3>{render_user_string(card.label)}</h3>"
                 f"<p class='{escape(card.status)}'>{escape(fmt(card.value))}</p>"
-                f"<small>{escape(card.help)}</small>"
+                f"<small>{render_user_string(card.help)}</small>"
                 "</article>"
             )
         parts.append("</section>")
@@ -337,18 +442,18 @@ def render_result(result: DiagnosticResult) -> str:
         parts.append(render_diagnostic_section(section))
 
     for matrix in result.matrices:
-        parts.append(f"<section><h2>{escape(matrix.title)}</h2>")
-        parts.append(f"<p>{escape(matrix.description)}</p>")
+        parts.append(f"<section><h2>{render_user_string(matrix.title)}</h2>")
+        parts.append(f"<p>{render_user_string(matrix.description)}</p>")
         parts.append("<table><thead><tr><th></th>")
         for label in matrix.col_labels:
-            parts.append(f"<th>{escape(label)}</th>")
+            parts.append(f"<th>{render_user_string(label)}</th>")
         parts.append("</tr></thead><tbody>")
 
         cells = {(cell.i, cell.j): cell.value for cell in matrix.cells}
         for i, row_label in enumerate(matrix.row_labels):
-            parts.append(f"<tr><th>{escape(row_label)}</th>")
+            parts.append(f"<tr><th>{render_user_string(row_label)}</th>")
             for j, _col_label in enumerate(matrix.col_labels):
-                parts.append(f"<td>{escape(fmt(cells.get((i, j))))}</td>")
+                parts.append(f"<td>{render_display_value(cells.get((i, j)))}</td>")
             parts.append("</tr>")
 
         parts.append("</tbody></table></section>")
@@ -358,8 +463,8 @@ def render_result(result: DiagnosticResult) -> str:
         data_id = f"data-{graph.id}"
         component = "dft-kspace-plot" if "kspace" in graph.id else "dft-line-graph"
 
-        parts.append(f"<section class='graph-panel'><h2>{escape(graph.title)}</h2>")
-        parts.append(f"<p>{escape(graph.description)}</p>")
+        parts.append(f"<section class='graph-panel'><h2>{render_user_string(graph.title)}</h2>")
+        parts.append(f"<p>{render_user_string(graph.description)}</p>")
         parts.append(
             f"<script type='application/json' id='{escape(data_id)}'>"
             f"{payload}"
@@ -381,8 +486,8 @@ def render_result(result: DiagnosticResult) -> str:
         energy_index = table.headers.index("energy") if "energy" in table.headers else -1
         row_label_index = 0
 
-        parts.append(f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'><h2>{escape(table.title)}</h2>")
-        parts.append(f"<p>{escape(table.description)}</p>")
+        parts.append(f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'><h2>{render_user_string(table.title)}</h2>")
+        parts.append(f"<p>{render_user_string(table.description)}</p>")
 
         if has_step:
             parts.append(
@@ -396,7 +501,7 @@ def render_result(result: DiagnosticResult) -> str:
         if has_step:
             parts.append("<th>select</th>")
         for header in table.headers:
-            parts.append(f"<th>{escape(header)}</th>")
+            parts.append(f"<th>{render_user_string(header)}</th>")
         parts.append("</tr></thead><tbody>")
 
         for row in table.rows:
@@ -432,7 +537,7 @@ def render_result(result: DiagnosticResult) -> str:
                 )
 
             for cell in row.cells:
-                parts.append(f"<td>{escape(fmt(cell))}</td>")
+                parts.append(f"<td>{render_display_value(cell)}</td>")
             parts.append("</tr>")
 
         parts.append("</tbody></table></div></section>")
@@ -440,7 +545,7 @@ def render_result(result: DiagnosticResult) -> str:
     if result.notes:
         parts.append("<section><h2>Notes</h2>")
         for note in result.notes:
-            parts.append(f"<p>{escape(note)}</p>")
+            parts.append(f"<p>{render_user_string(note)}</p>")
         parts.append("</section>")
 
     return rendered_markdowns + "\n".join(parts)
@@ -605,6 +710,104 @@ pre .diagnostic-paper code {
   display: block;
   font-variant: small-caps;
   letter-spacing: 0.035em;
+}
+
+
+/* Document prose block, optionally followed by one or more display equations. */
+.diagnostic-paper .markdown-math-group {
+  margin: 1rem 0;
+  padding: 0.85rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+  overflow-x: hidden;
+}
+
+.diagnostic-paper .markdown-math-group .markdown-block {
+  margin: 0;
+  padding: 0;
+  border-left: 0;
+  background: transparent;
+}
+
+.diagnostic-paper .markdown-math-group .typst-math-block {
+  margin: 0.7rem 0 0;
+  background: transparent;
+}
+
+.diagnostic-paper .typst-math-block {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 1rem 0 1.2rem;
+  padding: 0.15rem 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  contain: inline-size;
+}
+
+.diagnostic-paper .typst-math-block .typst-math {
+  display: inline-flex;
+  max-width: 100%;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+.diagnostic-paper .typst-math-block svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  flex: 0 1 auto;
+}
+
+.diagnostic-paper .typst-math {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  vertical-align: -0.12em;
+  line-height: 1;
+}
+
+.diagnostic-paper .typst-math.inline {
+  height: 1.15em;
+}
+
+.diagnostic-paper .typst-math.inline svg {
+  display: inline-block;
+  height: 1.15em !important;
+  width: auto !important;
+  max-width: 100%;
+  overflow: visible;
+}
+
+.diagnostic-paper .typst-math.display svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.diagnostic-paper p:has(> .typst-math.display:only-child) {
+  text-align: center;
+}
+
+.diagnostic-paper p > .typst-math.display:only-child {
+  display: inline-flex;
+  justify-content: center;
+  margin: 0.85rem auto;
+}
+
+.diagnostic-paper .markdown-block > .typst-math.display:only-child,
+.diagnostic-paper .diagnostic-section > .typst-math.display:only-child {
+  display: flex;
+  justify-content: center;
+  margin: 0.85rem auto;
+}
+
+.diagnostic-paper .typst-error {
+  color: #8a1f11;
+  border-bottom: 1px dotted #8a1f11;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .diagnostic-paper .card div {

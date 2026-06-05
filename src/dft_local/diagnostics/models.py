@@ -12,6 +12,8 @@ from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Literal, Mapping
 import json
 
+from dft_local.diagnostics.user_strings import UserString
+
 InputKind = Literal["int", "float", "str", "select", "bool"]
 Status = Literal["ok", "warn", "bad", "neutral"]
 GraphKind = Literal["line", "points", "line_points"]
@@ -45,10 +47,10 @@ class InputSpec:
     """
 
     name: str
-    label: str
+    label: UserString
     kind: InputKind
     default: Any
-    help: str = ""
+    help: UserString = ""
     min_value: float | None = None
     max_value: float | None = None
     options: tuple[tuple[str, str], ...] = ()
@@ -107,10 +109,10 @@ class InputSpec:
 class Card:
     """Small status card shown near the top of a diagnostic."""
 
-    label: str
+    label: UserString
     value: Any
     status: Status = "neutral"
-    help: str = ""
+    help: UserString = ""
     entity_id: str | None = None
     interaction_channel: str | None = None
 
@@ -118,8 +120,8 @@ class Card:
 @dataclass(frozen=True, slots=True)
 class MarkdownBlock:
     id: str
-    title: str
-    markdown: str
+    title: UserString
+    markdown: UserString
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,8 +135,20 @@ class TableRow:
 @dataclass(frozen=True, slots=True)
 class MarkdownBlock:
     id: str
-    title: str
-    markdown: str
+    title: UserString
+    markdown: UserString
+
+
+@dataclass(frozen=True, slots=True)
+class TypstMathBlock:
+    """A display-style Typst equation used as document content.
+
+    This is not a section, card, or foldable diagnostic unit. It is just a
+    centered block equation in the surrounding prose.
+    """
+
+    id: str
+    math: TypstMath
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,9 +156,9 @@ class Table:
     """Generic sortable table output."""
 
     id: str
-    title: str
-    description: str
-    headers: tuple[str, ...]
+    title: UserString
+    description: UserString
+    headers: tuple[UserString, ...]
     rows: tuple[TableRow, ...]
     numeric: frozenset[int] = frozenset()
     interaction_channel: str | None = None
@@ -157,7 +171,7 @@ class GraphPoint:
     x: float
     y: float
     entity_id: str | None = None
-    label: str = ""
+    label: UserString = ""
     meta: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -175,10 +189,10 @@ class Graph2D:
     """Reusable 2D canvas graph output."""
 
     id: str
-    title: str
-    description: str
-    x_label: str
-    y_label: str
+    title: UserString
+    description: UserString
+    x_label: UserString
+    y_label: UserString
     series: tuple[GraphSeries, ...]
     interaction_channel: str | None = None
 
@@ -225,10 +239,10 @@ class Matrix:
     """Rectangular matrix/heatmap-style diagnostic output."""
 
     id: str
-    title: str
-    description: str
-    row_labels: tuple[str, ...]
-    col_labels: tuple[str, ...]
+    title: UserString
+    description: UserString
+    row_labels: tuple[UserString, ...]
+    col_labels: tuple[UserString, ...]
     cells: tuple[MatrixCell, ...]
     interaction_channel: str | None = None
 
@@ -238,8 +252,8 @@ class WebGLView:
     """JSON-backed WebGL visualisation payload."""
 
     id: str
-    title: str
-    description: str
+    title: UserString
+    description: UserString
     renderer: Literal["region_surface", "graphene_viewer"]
     payload: dict[str, Any]
     interaction_channel: str | None = None
@@ -250,17 +264,18 @@ class EntityDetail:
     """Detailed fields displayed when a selectable entity is chosen."""
 
     entity_id: str
-    title: str
+    title: UserString
     fields: tuple[tuple[str, Any], ...]
 
 
 @dataclass(frozen=True, slots=True)
 class DiagnosticSection:
     id: str
-    title: str
-    description: str = ""
+    title: UserString
+    description: UserString = ""
     collapsed: bool = False
     markdowns: tuple[MarkdownBlock, ...] = ()
+    math_blocks: tuple[TypstMathBlock, ...] = ()
     cards: tuple[Card, ...] = ()
     tables: tuple[Table, ...] = ()
     sections: tuple["DiagnosticSection", ...] = ()
@@ -273,15 +288,15 @@ class DiagnosticResult:
     It contains only structured data.  The renderer decides how to display it.
     """
 
-    title: str
-    summary: str
+    title: UserString
+    summary: UserString
     cards: tuple[Card, ...] = ()
     tables: tuple[Table, ...] = ()
     graphs: tuple[Graph2D, ...] = ()
     matrices: tuple[Matrix, ...] = ()
     webgl: tuple[WebGLView, ...] = ()
     entity_details: tuple[EntityDetail, ...] = ()
-    notes: tuple[str, ...] = ()
+    notes: tuple[UserString, ...] = ()
 
 
     markdowns: tuple[MarkdownBlock, ...] = ()
@@ -292,8 +307,8 @@ class DiagnosticSpec:
 
     id: str
     group: str
-    title: str
-    description: str
+    title: UserString
+    description: UserString
     inputs: tuple[InputSpec, ...]
     compute: Callable[[Any, dict[str, Any]], DiagnosticResult]
     tier: Literal["instant", "cheap", "expensive"] = "cheap"

@@ -772,3 +772,56 @@ def test_diagnostic_title_renders_before_sections() -> None:
     )
 
     assert html.index("<h1>Ordered title</h1>") < html.index("id='example_section'")
+
+
+def test_typst_math_renders_to_inline_svg() -> None:
+    from dft_local.diagnostics.models import DiagnosticResult
+    from dft_local.diagnostics.render import render_result
+    from dft_local.diagnostics.user_strings import TypstMath
+
+    html = render_result(
+        DiagnosticResult(
+            title=TypstMath("$ H(k) u = E dot S(k) u $", name="generalized_eigenproblem"),
+            summary="plain summary",
+        )
+    )
+
+    assert "class='typst-math inline'" in html
+    assert "<svg" in html
+    assert "plain summary" in html
+
+
+def test_plain_user_strings_are_still_escaped() -> None:
+    from dft_local.diagnostics.models import DiagnosticResult
+    from dft_local.diagnostics.render import render_result
+
+    html = render_result(
+        DiagnosticResult(
+            title="<script>alert(1)</script>",
+            summary="<b>not bold</b>",
+        )
+    )
+
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+    assert "&lt;b&gt;not bold&lt;/b&gt;" in html
+
+
+
+def test_rich_user_string_renders_plain_text_as_text_and_math_as_svg() -> None:
+    from dft_local.diagnostics.render import render_user_string
+    from dft_local.diagnostics.user_strings import TypstMath, rich
+
+    html = render_user_string(
+        rich(
+            "Conductivity ",
+            TypstMath("$ sigma_(alpha beta) $", name="sigma_label"),
+            " [S/m]",
+        )
+    )
+
+    assert html.startswith("Conductivity ")
+    assert "data-typst-name='sigma_label'" in html
+    assert "<svg" in html
+    assert html.endswith(" [S/m]")
+    assert "typst-error" not in html

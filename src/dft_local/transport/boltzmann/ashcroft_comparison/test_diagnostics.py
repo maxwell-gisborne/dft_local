@@ -645,7 +645,7 @@ def test_ashcroft_local_calculation_check_contains_validation_evidence() -> None
     assert "section_conductivity_temperature_response" in nested_table_ids
     assert "section_conductivity_contribution_localisation" in nested_table_ids
 
-    markdown = "\n".join(block.markdown for block in local.markdowns)
+    markdown = "\n".join(str(block.markdown) for block in local.markdowns if hasattr(block, "markdown"))
     assert "independently of Vincent's data" in markdown
     assert "Fermi window" in markdown
     assert "conductivity prefactor" in markdown
@@ -691,10 +691,14 @@ def test_ashcroft_conductivity_comparison_contains_measure_result() -> None:
     assert "section_conductivity_local_tensor" in nested_table_ids
     assert "section_conductivity_target" in nested_table_ids
 
-    markdown = "\n".join(block.markdown for block in conductivity.markdowns)
+    markdown = "\n".join(str(block.markdown) for block in conductivity.markdowns if hasattr(block, "markdown"))
     assert "Fermi-window statistics are reproduced" in markdown
     assert "reciprocal-space measure convention" in markdown
-    assert "d^2 k / (2 pi)^2" in markdown
+
+    from dft_local.diagnostics.user_strings import iter_typst_math
+
+    snippets = {item.name: item.source for item in iter_typst_math(conductivity)}
+    assert snippets["ashcroft_continuum_measure_inline"] == "$ (d^2 k) / ((2 pi)^2) $"
     assert "erroneous" in markdown
 
 
@@ -709,3 +713,142 @@ def test_ashcroft_removed_deprecated_forensic_sections() -> None:
     assert "ashcroft_best_current_reconstruction" not in section_ids
     assert "ashcroft_velocity_matching" not in section_ids
     assert "ashcroft_conductivity_matching" not in section_ids
+
+
+def test_ashcroft_computed_result_typst_math_compiles() -> None:
+    """Every TypstMath snippet in the computed Ashcroft result must compile.
+
+    The generic spec-level test only sees DiagnosticSpec text.  The Ashcroft
+    equations are produced inside the computed DiagnosticResult, so they need a
+    result-level compile check too.
+    """
+
+    from dft_local.diagnostics.typst import render_typst_math_to_svg
+    from dft_local.diagnostics.user_strings import iter_typst_math
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    result = compute_overview(None, {})
+    failures: list[str] = []
+
+    for snippet in iter_typst_math(result):
+        label = snippet.name or snippet.source
+        try:
+            render_typst_math_to_svg(snippet.source, display=snippet.display)
+        except Exception as exc:  # noqa: BLE001 - collect all compile failures
+            failures.append(f"{label}: {exc}")
+
+    assert not failures, "\n".join(failures)
+
+
+def test_ashcroft_rendered_result_has_no_typst_error_fallbacks() -> None:
+    """Rendered Ashcroft page should not contain Typst fallback source spans."""
+
+    from dft_local.diagnostics.render import render_result
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    html = render_result(compute_overview(None, {}))
+
+    assert "typst-error" not in html
+
+
+
+
+def test_ashcroft_conductivity_detail_header_uses_mixed_text_and_typst_sigma() -> None:
+    from dft_local.diagnostics.render import render_result
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    html = render_result(compute_overview(None, {}))
+
+    assert "ashcroft_conductivity_section_title" not in html
+    assert "<summary>Conductivity comparison</summary>" in html
+    assert "Conductivity result" in html
+    assert "ashcroft_target_conductivity_title_sigma" in html
+    assert "data-typst-source='$ sigma_(alpha beta) $'" in html
+    assert "Conductivity <span class='typst-math inline'" in html
+    assert " [S/m]" in html
+    assert "typst-error" not in html
+
+
+
+
+def test_ashcroft_local_equations_are_interleaved_with_prose() -> None:
+    from dft_local.diagnostics.render import render_result
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    html = render_result(compute_overview(None, {}))
+
+    points = [
+        html.find("The continuum expression being discretised is:"),
+        html.find("id='ashcroft_conductivity_equation'"),
+        html.find("The velocity entering the tensor"),
+        html.find("id='ashcroft_velocity_equation'"),
+        html.find("The thermal weighting"),
+        html.find("id='ashcroft_fermi_window_equation'"),
+        html.find("Validation summary"),
+    ]
+
+    assert all(point >= 0 for point in points)
+    assert points == sorted(points)
+    assert "class='typst-math-block'" in html
+    assert html.count("typst-math display") >= 3
+    assert "typst-error" not in html
+
+
+def test_ashcroft_equation_prose_and_block_math_share_visual_group() -> None:
+    from dft_local.diagnostics.render import render_result
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    html = render_result(compute_overview(None, {}))
+
+    assert html.count("class='markdown-math-group'") >= 3
+
+    velocity_text = html.find("The velocity entering the tensor")
+    velocity_math = html.find("id='ashcroft_velocity_equation'")
+    group_start = html.rfind("class='markdown-math-group'", 0, velocity_text)
+    group_end = html.find("</div>", velocity_math)
+
+    assert group_start >= 0
+    assert velocity_text > group_start
+    assert velocity_math > velocity_text
+    assert group_end > velocity_math
+    assert "typst-error" not in html
+
+
+def test_ashcroft_validation_summary_uses_same_document_block_style() -> None:
+    from dft_local.diagnostics.render import render_result
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    html = render_result(compute_overview(None, {}))
+
+    validation = html.find("Validation summary")
+    assert validation >= 0
+
+    group_start = html.rfind("class='markdown-math-group'", 0, validation)
+    group_end = html.find("</div>", validation)
+
+    assert group_start >= 0
+    assert group_start < validation < group_end
+    assert "typst-error" not in html
+
+
+
+def test_ashcroft_inline_math_fragments_render_inside_prose() -> None:
+    from dft_local.diagnostics.render import render_result
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    html = render_result(compute_overview(None, {}))
+
+    for name in (
+        "ashcroft_mu_mean_epsilon",
+        "ashcroft_continuum_measure_inline",
+        "ashcroft_two_pi_squared_inline",
+        "ashcroft_grid_measure_inline",
+        "ashcroft_continuum_measure_factor_inline",
+        "ashcroft_raw_velocity_weight_inline",
+        "ashcroft_local_tensor_measure_inline",
+        "ashcroft_normalisation_table_continuum_measure",
+        "ashcroft_normalisation_table_grid_measure",
+    ):
+        assert name in html
+
+    assert "typst-error" not in html

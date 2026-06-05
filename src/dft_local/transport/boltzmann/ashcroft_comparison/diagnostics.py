@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSection, DiagnosticSpec, MarkdownBlock, Table, TableRow
+from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSection, DiagnosticSpec, MarkdownBlock, Table, TableRow, TypstMathBlock
+from dft_local.diagnostics.user_strings import TypstMath, rich
 
 from dft_local.transport.boltzmann.ashcroft_comparison.core import (
     conductivity_from_epsilon_grid,
@@ -165,6 +166,50 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 description="Independent checks that the local derivative, Fermi window, and tensor assembly are internally coherent.",
                 collapsed=False,
                 markdowns=(
+                    MarkdownBlock(
+                        id="ashcroft_local_calculation_intro",
+                        title="Local calculation equations",
+                        markdown="""The local calculation evaluates the Boltzmann conductivity from the band energy, the energy gradient, and the Fermi-window factor.
+
+The continuum expression being discretised is:
+""",
+                    ),
+                    TypstMathBlock(
+                        id="ashcroft_conductivity_equation",
+                        math=TypstMath(
+                            "$ sigma_(alpha beta) = e^2 tau integral (d^2 k) / ((2 pi)^2) v_alpha (k) v_beta (k) (- (diff f_0) / (diff epsilon)) $",
+                            display=True,
+                            name="ashcroft_conductivity_equation",
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="ashcroft_velocity_equation_intro",
+                        title="Velocity equation",
+                        markdown="""The velocity entering the tensor is computed from the Cartesian derivative of the energy:
+""",
+                    ),
+                    TypstMathBlock(
+                        id="ashcroft_velocity_equation",
+                        math=TypstMath(
+                            "$ v_alpha (k) = (1 / hbar) (diff epsilon (k)) / (diff k_alpha) $",
+                            display=True,
+                            name="ashcroft_velocity_equation",
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="ashcroft_fermi_window_equation_intro",
+                        title="Fermi-window equation",
+                        markdown="""The thermal weighting is written as the derivative of the Fermi occupation:
+""",
+                    ),
+                    TypstMathBlock(
+                        id="ashcroft_fermi_window_equation",
+                        math=TypstMath(
+                            "$ - (diff f_0) / (diff epsilon) = (f_0 (1 - f_0)) / (k_B T) $",
+                            display=True,
+                            name="ashcroft_fermi_window_equation",
+                        ),
+                    ),
                     MarkdownBlock(
                         id="ashcroft_local_calculation_check_summary",
                         title="Validation summary",
@@ -416,12 +461,20 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                     MarkdownBlock(
                         id="ashcroft_conductivity_comparison_summary",
                         title="Conductivity result",
-                        markdown="""The Fermi-window statistics are reproduced using `mu = mean(epsilon)` in Joules.
-
-The remaining conductivity-scale difference is explained by the reciprocal-space measure convention. With the continuum measure `d^2 k / (2 pi)^2`, the local tensor is smaller by approximately `(2 pi)^2`. With Vincent's grid-measure convention `d^2 k`, the diagonal conductivity agrees to within a few percent.
-
-The shifted-k and velocity-shift printouts are treated as erroneous and are not used in this comparison.
-""",
+                        markdown=rich(
+                            "The Fermi-window statistics are reproduced using ",
+                            TypstMath("$ mu = \"mean\" (epsilon) $", name="ashcroft_mu_mean_epsilon"),
+                            " in Joules.\n\n"
+                            "The remaining conductivity-scale difference is explained by the reciprocal-space measure convention. "
+                            "With the continuum measure ",
+                            TypstMath("$ (d^2 k) / ((2 pi)^2) $", name="ashcroft_continuum_measure_inline"),
+                            ", the local tensor is smaller by approximately ",
+                            TypstMath("$ (2 pi)^2 $", name="ashcroft_two_pi_squared_inline"),
+                            ". With Vincent's grid-measure convention ",
+                            TypstMath("$ d^2 k $", name="ashcroft_grid_measure_inline"),
+                            ", the diagonal conductivity agrees to within a few percent.\n\n"
+                            "The shifted-k and velocity-shift printouts are treated as erroneous and are not used in this comparison.",
+                        ),
                     ),
                 ),
                 tables=(
@@ -440,7 +493,11 @@ The shifted-k and velocity-shift printouts are treated as erroneous and are not 
                     Table(
                         id="section_best_conductivity_reconstruction",
                         title="Best conductivity reconstruction",
-                        description="Vincent/grid measure convention, equivalent to removing the extra continuum /(2π)^2 factor from the local tensor.",
+                        description=rich(
+                            "Vincent/grid measure convention, equivalent to removing the extra continuum ",
+                            TypstMath("$ 1 / ((2 pi)^2) $", name="ashcroft_continuum_measure_factor_inline"),
+                            " factor from the local tensor.",
+                        ),
                         headers=(
                             "component",
                             "Vincent x",
@@ -540,14 +597,24 @@ The shifted-k and velocity-shift printouts are treated as erroneous and are not 
                                     TableRow(("prefactor", f"{local_conductivity.prefactor_S_m2_per_J:.8e}")),
                                     TableRow(("temperature [K]", f"{local_conductivity.temperature_K:.8e}")),
                                     TableRow(("relaxation time [s]", f"{local_conductivity.relaxation_time_s:.8e}")),
-                                    TableRow(("continuum measure convention", "d^2 k / (2 pi)^2")),
-                                    TableRow(("Vincent/grid measure convention", "d^2 k")),
+                                    TableRow((
+                                        "continuum measure convention",
+                                        rich(TypstMath("$ (d^2 k) / ((2 pi)^2) $", name="ashcroft_normalisation_table_continuum_measure")),
+                                    )),
+                                    TableRow((
+                                        "Vincent/grid measure convention",
+                                        rich(TypstMath("$ d^2 k $", name="ashcroft_normalisation_table_grid_measure")),
+                                    )),
                                 ),
                             ),
                             Table(
                                 id="section_conductivity_raw_tensor",
                                 title="Raw velocity-weight tensor",
-                                description="Raw sum of v_a v_b f(1-f) before k-space cell area and conductivity prefactor.",
+                                description=rich(
+                                    "Raw sum of ",
+                                    TypstMath("$ v_a v_b f (1 - f) $", name="ashcroft_raw_velocity_weight_inline"),
+                                    " before k-space cell area and conductivity prefactor.",
+                                ),
                                 headers=("component", "x", "y"),
                                 rows=(
                                     TableRow(("x", f"{local_conductivity.raw_velocity_weight_tensor[0, 0]:.8e}", f"{local_conductivity.raw_velocity_weight_tensor[0, 1]:.8e}")),
@@ -557,7 +624,11 @@ The shifted-k and velocity-shift printouts are treated as erroneous and are not 
                             Table(
                                 id="section_conductivity_local_tensor",
                                 title="Local continuum-measure tensor",
-                                description="Conductivity tensor computed with continuum d^2 k / (2 pi)^2 measure.",
+                                description=rich(
+                                    "Conductivity tensor computed with continuum ",
+                                    TypstMath("$ (d^2 k) / ((2 pi)^2) $", name="ashcroft_local_tensor_measure_inline"),
+                                    " measure.",
+                                ),
                                 headers=("component", "x", "y"),
                                 rows=(
                                     TableRow(("x", f"{local_sigma[0, 0]:.8e}", f"{local_sigma[0, 1]:.8e}")),
@@ -566,7 +637,11 @@ The shifted-k and velocity-shift printouts are treated as erroneous and are not 
                             ),
                             Table(
                                 id="section_conductivity_target",
-                                title="Vincent target conductivity tensor σ_αβ [S/m]",
+                                title=rich(
+                                    "Conductivity ",
+                                    TypstMath("$ sigma_(alpha beta) $", name="ashcroft_target_conductivity_title_sigma"),
+                                    " [S/m]",
+                                ),
                                 description="Reference tensor from Vincent's recorded output.",
                                 headers=("component", "x", "y"),
                                 rows=(

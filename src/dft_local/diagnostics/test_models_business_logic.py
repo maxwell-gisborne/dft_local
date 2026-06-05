@@ -112,3 +112,85 @@ def test_table_rows_carry_entity_ids():
     )
     assert table.rows[0].entity_id == "row:1"
     assert table.interaction_channel == "rows"
+
+
+def test_iter_typst_math_finds_nested_user_strings():
+    from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSection, Table, TableRow
+    from dft_local.diagnostics.user_strings import TypstMath, iter_typst_math
+
+    alpha = TypstMath("$ alpha $", name="alpha")
+    beta = TypstMath("$ beta $", name="beta")
+    gamma = TypstMath("$ gamma $", name="gamma")
+
+    result = DiagnosticResult(
+        title=alpha,
+        summary="plain summary",
+        cards=(Card(label=beta, value=1.0),),
+        sections=(
+            DiagnosticSection(
+                id="s",
+                title="section",
+                description=gamma,
+                tables=(
+                    Table(
+                        id="t",
+                        title="table",
+                        description="plain",
+                        headers=("x",),
+                        rows=(TableRow((1.0,)),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assert [item.name for item in iter_typst_math(result)] == ["alpha", "beta", "gamma"]
+
+
+def test_all_registered_diagnostic_typst_math_compiles() -> None:
+    """Every authored TypstMath snippet in registered specs must compile.
+
+    This protects documentation/discussion strings from silently rotting.
+    Diagnostic results can get a similar test once more diagnostics use
+    TypstMath in computed output.
+    """
+
+    from dft_local.diagnostics.discovery import load_diagnostics
+    from dft_local.diagnostics.typst import render_typst_math_to_svg
+    from dft_local.diagnostics.user_strings import iter_typst_math
+
+    specs = load_diagnostics()
+    failures: list[str] = []
+
+    for spec in specs:
+        for snippet in iter_typst_math(spec):
+            label = snippet.name or f"{spec.id}: {snippet.source!r}"
+            try:
+                render_typst_math_to_svg(snippet.source, display=snippet.display)
+            except Exception as exc:  # noqa: BLE001 - collect all compile failures
+                failures.append(f"{label}: {exc}")
+
+    assert not failures, "\n".join(failures)
+
+
+def test_bad_typst_math_is_rejected_by_compile_test() -> None:
+    """A broken Typst snippet must fail the compile path used by tests."""
+
+    import pytest
+
+    from dft_local.diagnostics.typst import TypstRenderError, render_typst_math_to_svg
+
+    with pytest.raises(TypstRenderError):
+        render_typst_math_to_svg("$ unknown_symbol_without_spaces $")
+
+
+
+def test_rich_user_string_helpers_collect_typst_math() -> None:
+    from dft_local.diagnostics.user_strings import iter_typst_math, math, rich
+
+    text = rich("Energy ", math("$ epsilon_n (k) $", name="energy_label"), " [eV]")
+
+    snippets = list(iter_typst_math(text))
+
+    assert len(snippets) == 1
+    assert snippets[0].name == "energy_label"
