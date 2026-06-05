@@ -104,6 +104,18 @@ class DiagnosticsState:
 
         return self.data.units
 
+    def unit_provenance_rows(self) -> list[list[object]]:
+        """Rows describing disk-to-working unit provenance for the loaded dataset."""
+
+        return [
+            ["disk energy unit", self.data.disk_unit_context.energy.symbol],
+            ["working energy unit", self.data.working_unit_context.energy.symbol],
+            ["disk length unit", self.data.disk_unit_context.length.symbol],
+            ["working length unit", self.data.working_unit_context.length.symbol],
+            ["energy disk-to-working factor", self.data.energy_conversion_disk_to_working],
+            ["length disk-to-working factor", self.data.length_conversion_disk_to_working],
+        ]
+
     def kernels(self, choice: KernelChoice) -> tuple[GdKernelArrays, GdKernelArrays]:
         """Return ``(KH, KS)`` for a named kernel variant."""
 

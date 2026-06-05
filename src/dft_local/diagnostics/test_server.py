@@ -825,3 +825,19 @@ def test_rich_user_string_renders_plain_text_as_text_and_math_as_svg() -> None:
     assert "<svg" in html
     assert html.endswith(" [S/m]")
     assert "typst-error" not in html
+
+
+
+def test_diagnostics_context_exposes_unit_provenance_rows() -> None:
+    from dft_local.diagnostics.server import load_default_context
+
+    ctx = load_default_context("test_run/run_dir/data")
+    rows = ctx.state.unit_provenance_rows()
+    row_map = {row[0]: row[1] for row in rows}
+
+    assert row_map["disk energy unit"] == "hartree"
+    assert row_map["working energy unit"] == "eV"
+    assert row_map["disk length unit"] == "bohr"
+    assert row_map["working length unit"] == "angstrom"
+    assert row_map["energy disk-to-working factor"] == ctx.state.data.energy_conversion_disk_to_working
+    assert row_map["length disk-to-working factor"] == ctx.state.data.length_conversion_disk_to_working
