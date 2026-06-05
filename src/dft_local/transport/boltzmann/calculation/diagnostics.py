@@ -25,7 +25,7 @@ from dft_local.diagnostics.models import (
     Table,
     TableRow,
 )
-from dft_local.core.units import DisplayQuantity, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, Unit
+from dft_local.core.units import DisplayQuantity, CONDUCTIVITY, ELECTRON_VOLT, ENERGY, HARTREE, TEMPERATURE, TIME, Unit
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 
 
@@ -90,6 +90,12 @@ def _energy_display_unit(calc: BoltzmannConductivity) -> Unit:
     return calc.unit_context.unit_for_dimension(ENERGY)
 
 
+def _conductivity_display_unit(calc: BoltzmannConductivity) -> Unit:
+    """Return the conductivity unit represented by the calculation state."""
+
+    return calc.unit_context.unit_for_dimension(CONDUCTIVITY)
+
+
 def sigma_matrix(calc: BoltzmannConductivity) -> Matrix:
     calc.require_solved()
     assert calc.sigma is not None
@@ -104,11 +110,16 @@ def sigma_matrix(calc: BoltzmannConductivity) -> Matrix:
                 MatrixCell(
                     i=i,
                     j=j,
-                    value={
-                        "real": float(z.real),
-                        "imag": float(z.imag),
-                        "abs": float(abs(z)),
-                    },
+                    value=DisplayQuantity(
+                        value={
+                            "real": float(z.real),
+                            "imag": float(z.imag),
+                            "abs": float(abs(z)),
+                        },
+                        dimension=CONDUCTIVITY,
+                        unit=_conductivity_display_unit(calc),
+                        name=f"sigma_{i}{j}",
+                    ),
                     entity_id=f"sigma:{i}:{j}",
                 )
             )
@@ -132,7 +143,14 @@ def sigma_rows(calc: BoltzmannConductivity) -> list[list[object]]:
     for i in range(calc.sigma.shape[0]):
         for j in range(calc.sigma.shape[1]):
             z = calc.sigma[i, j]
-            rows.append([i, j, float(z.real), float(z.imag), float(abs(z))])
+            unit = _conductivity_display_unit(calc)
+            rows.append([
+                i,
+                j,
+                DisplayQuantity(float(z.real), CONDUCTIVITY, unit, name=f"Re sigma_{i}{j}"),
+                DisplayQuantity(float(z.imag), CONDUCTIVITY, unit, name=f"Im sigma_{i}{j}"),
+                DisplayQuantity(float(abs(z)), CONDUCTIVITY, unit, name=f"|sigma_{i}{j}|"),
+            ])
 
     return rows
 
