@@ -29,6 +29,7 @@ KERNEL_OPTIONS = (
 MATCHING_OPTIONS = (
     ("energy_predict", "Energy prediction"),
     ("state_overlap", "State overlap"),
+    ("energy_order", "Energy ordering"),
 )
 
 PATH_OPTIONS = (

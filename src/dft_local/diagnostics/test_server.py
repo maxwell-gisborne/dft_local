@@ -841,3 +841,23 @@ def test_diagnostics_context_exposes_unit_provenance_rows() -> None:
     assert row_map["working length unit"] == "angstrom"
     assert row_map["energy disk-to-working factor"] == ctx.state.data.energy_conversion_disk_to_working
     assert row_map["length disk-to-working factor"] == ctx.state.data.length_conversion_disk_to_working
+
+
+
+def test_band_path_page_renders_with_energy_order_matching() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_order",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    assert "Band path Γ-K-M-Γ" in html
+    assert "Energy ordering" in html or "energy_order" in html
+    assert "<svg" in html

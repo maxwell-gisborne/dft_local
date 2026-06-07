@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 from scipy.linalg import eigh, eigvalsh
 from scipy.optimize import linear_sum_assignment
 
-MatchingStrategy = Literal["state_overlap", "energy_predict"]
+MatchingStrategy = Literal["state_overlap", "energy_predict", "energy_order"]
 
 from dft_local.core.local_problem import LocalProblem, SymbolPair
 from dft_local.core.numerics import (
@@ -27,6 +27,7 @@ from dft_local.core.numerics import (
 )
 
 from dft_local.core.kernels import GdKernelArrays
+from dft_local.transport.band_labelling import apply_band_order, energy_order
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,6 +440,7 @@ class LocalPath:
     matching_strategy: Literal[
         "state_overlap",
         "energy_predict",
+        "energy_order",
     ] = "state_overlap"
 
     def __post_init__(self) -> None:
@@ -635,6 +637,12 @@ class LocalPath:
             S_metric = metric_between(prev_S, p_i.Sk, kind=metric)
 
             match self.matching_strategy:
+                case "energy_order":
+                    order = energy_order(E_raw[None, :])
+                    E = apply_band_order(E_raw[None, :], order, band_axis=1)[0]
+                    U = apply_band_order(U_raw[None, :, :], order, band_axis=2)[0]
+                    matched_scores = np.ones(nbands, dtype=np.float64)
+
                 case "energy_predict":
                     order, _matched_costs = match_via_energies(
                         E_raw,

@@ -66,3 +66,10 @@ def test_bands_path_spec_has_inputs() -> None:
         "path",
         "points_per_segment",
     }
+
+
+
+def test_band_path_matching_options_include_energy_order() -> None:
+    from dft_local.transport.bands.diagnostics import MATCHING_OPTIONS
+
+    assert ("energy_order", "Energy ordering") in MATCHING_OPTIONS
