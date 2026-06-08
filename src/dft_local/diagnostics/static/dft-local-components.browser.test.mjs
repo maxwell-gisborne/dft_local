@@ -127,7 +127,19 @@ test("band surface viewer renders in a real browser", async () => {
     const status = await page.locator("[data-dft-surface-status]").innerText();
     assert.match(status, /band 0/);
     assert.match(status, /vertices 9/);
+    assert.match(status, /hex mask off/);
     assert.doesNotMatch(status, /no surface data/);
+
+    await page.waitForFunction(() => {
+      const host = document.querySelector("[data-dft-three-surface]");
+      if (!host) return false;
+
+      return (
+        host.querySelector("canvas") !== null
+        || (host.textContent || "").includes("three.js failed to load")
+        || (host.textContent || "").includes("no surface data")
+      );
+    }, { timeout: 10000 });
 
     const threeText = await page.locator("[data-dft-three-surface]").innerText();
     const canvasCount = await page.locator("[data-dft-three-surface] canvas").count();
@@ -135,10 +147,89 @@ test("band surface viewer renders in a real browser", async () => {
     assert.equal(
       canvasCount > 0 || threeText.includes("three.js failed to load"),
       true,
-      "expected a three.js canvas or explicit load failure",
+      `expected a three.js canvas or explicit load failure, got text=${threeText}`,
     );
 
     assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+
+
+test("band surface hex mask toggle changes rendered status", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-mask-"));
+  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
+  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 10], [0, 10]],
+    k2: [[0, 0], [1, 1]],
+    energies: [
+      [[0], [1]],
+      [[2], [3]],
+    ],
+    bands: [0],
+    nbands: 1,
+    selected_band: 0,
+    bz_hexagon: [
+      [2, 0],
+      [1, 1],
+      [-1, 1],
+      [-2, 0],
+      [-1, -1],
+      [1, -1],
+    ],
+  };
+
+  writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="application/json" id="surface-payload">${JSON.stringify(payload).replaceAll("</", "<\/")}</script>
+  <dft-band-surface-viewer data-source="surface-payload"></dft-band-surface-viewer>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+  const server = await serveDirectory(root);
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+
+  try {
+    await page.goto(server.url);
+    await page.waitForSelector("dft-band-surface-viewer .band-surface-viewer-three-only", { timeout: 10000 });
+
+    const status = page.locator("[data-dft-surface-status]");
+    await page.waitForFunction(() => {
+      const el = document.querySelector("[data-dft-surface-status]");
+      return (el?.textContent || "").includes("triangles 2")
+        && (el?.textContent || "").includes("hex mask off");
+    }, { timeout: 10000 });
+
+    await page.locator("[data-dft-mask-to-hexagon]").check();
+
+    await page.waitForFunction(() => {
+      const el = document.querySelector("[data-dft-surface-status]");
+      return (el?.textContent || "").includes("triangles 0")
+        && (el?.textContent || "").includes("hex mask on");
+    }, { timeout: 10000 });
+
+    assert.match(await status.innerText(), /hex mask on/);
+    assert.match(await status.innerText(), /triangles 0/);
   } finally {
     await browser.close();
     await server.close();
