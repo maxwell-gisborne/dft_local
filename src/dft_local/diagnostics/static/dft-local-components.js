@@ -556,9 +556,9 @@ function projectBandSurfacePoint(point, view) {
 }
 
 /**
- * @param {{vertices:Array<{x:number, y:number, z:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
+ * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
  * @param {HTMLCanvasElement} canvas
- * @param {{energyScale?:number, rotation?:number}} options
+ * @param {{energyScale?:number, rotation?:number, sliceAxis?:string|null, sliceValue?:number|null}} options
  */
 function drawBandSurfacePreview(mesh, canvas, options = {}) {
   const ctx = canvas.getContext("2d");
@@ -619,7 +619,76 @@ function drawBandSurfacePreview(mesh, canvas, options = {}) {
     ctx.stroke();
   }
 
+  drawBandSurfaceSliceGuide(mesh, ctx, view, options);
   ctx.globalAlpha = 1.0;
+}
+
+/**
+ * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{sliceAxis?:string|null, sliceValue?:number|null}} options
+ */
+function drawBandSurfaceSliceGuide(mesh, ctx, view, options) {
+  const axis = options.sliceAxis ?? null;
+  const value = options.sliceValue ?? null;
+
+  if (axis === null || value === null || !Number.isFinite(value)) return;
+
+  const clamped = Math.max(0.0, Math.min(1.0, value));
+  ctx.save();
+  ctx.lineWidth = 2.0;
+  ctx.globalAlpha = 0.9;
+  ctx.setLineDash([6, 4]);
+
+  if (axis === "u") {
+    const iValues = mesh.vertices.map((v) => v.i);
+    const imax = Math.max(...iValues);
+    const target = Math.round(clamped * imax);
+    const points = mesh.vertices.filter((v) => v.i === target);
+
+    if (points.length >= 2) {
+      drawProjectedPolyline(points, ctx, view);
+    }
+  } else if (axis === "v") {
+    const jValues = mesh.vertices.map((v) => v.j);
+    const jmax = Math.max(...jValues);
+    const target = Math.round(clamped * jmax);
+    const points = mesh.vertices.filter((v) => v.j === target);
+
+    if (points.length >= 2) {
+      drawProjectedPolyline(points, ctx, view);
+    }
+  } else if (axis === "energy") {
+    const z = view.zmin + clamped * (view.zmax - view.zmin);
+    const points = mesh.vertices
+      .slice()
+      .sort((a, b) => a.x - b.x || a.y - b.y)
+      .map((v) => ({ ...v, z }));
+
+    if (points.length >= 2) {
+      drawProjectedPolyline(points, ctx, view);
+    }
+  }
+
+  ctx.restore();
+}
+
+/**
+ * @param {Array<{x:number, y:number, z:number}>} points
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ */
+function drawProjectedPolyline(points, ctx, view) {
+  ctx.beginPath();
+
+  for (let index = 0; index < points.length; index += 1) {
+    const p = projectBandSurfacePoint(points[index], view);
+    if (index === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  }
+
+  ctx.stroke();
 }
 
 
@@ -1504,7 +1573,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       const canvas = this.querySelector("canvas.band-surface-preview");
       if (canvas instanceof HTMLCanvasElement) {
-        drawBandSurfacePreview(mesh, canvas, { energyScale: this.energyScale, rotation: this.rotation });
+        drawBandSurfacePreview(mesh, canvas, {
+          energyScale: this.energyScale,
+          rotation: this.rotation,
+          sliceAxis: this.sliceAxis,
+          sliceValue: this.sliceValue,
+        });
       }
     }
   }
@@ -2027,4 +2101,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, drawBandSurfacePreview, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, drawBandSurfacePreview, drawBandSurfaceSliceGuide, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

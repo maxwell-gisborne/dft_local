@@ -664,7 +664,8 @@ test("energy scale signal policy exists", () => {
   assert.equal(source.includes('emitDftSignal("view-changed"'), true);
   assert.equal(source.includes('onDftSignal("view-changed"'), true);
   assert.equal(source.includes("energyScale"), true);
-  assert.equal(source.includes("drawBandSurfacePreview(mesh, canvas, { energyScale: this.energyScale"), true);
+  assert.equal(source.includes("drawBandSurfacePreview(mesh, canvas"), true);
+  assert.equal(source.includes("energyScale: this.energyScale"), true);
 });
 
 
@@ -678,4 +679,18 @@ test("surface rotation signal policy exists", () => {
   assert.equal(source.includes("rotation: this.rotation"), true);
   assert.equal(source.includes("Math.cos(theta)"), true);
   assert.equal(source.includes("Math.sin(theta)"), true);
+});
+
+
+
+test("band surface slice guide policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function drawBandSurfaceSliceGuide"), true);
+  assert.equal(source.includes("function drawProjectedPolyline"), true);
+  assert.equal(source.includes("sliceAxis: this.sliceAxis"), true);
+  assert.equal(source.includes("sliceValue: this.sliceValue"), true);
+  assert.equal(source.includes('axis === "u"'), true);
+  assert.equal(source.includes('axis === "v"'), true);
+  assert.equal(source.includes('axis === "energy"'), true);
 });
