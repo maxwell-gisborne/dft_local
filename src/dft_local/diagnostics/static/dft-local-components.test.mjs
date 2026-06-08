@@ -18,9 +18,15 @@ import {
   bandSurfaceVertices,
   bandSurfaceTriangles,
   bandSurfaceMeshData,
+  bandSurfaceMeshDataWithMask,
   bandSurfaceSummary,
   projectBandSurfacePoint,
   nearestBandSurfaceVertex,
+  pointInDisplayPolygon,
+  vertexInsideVisibleHexagon,
+  bandBasisToCartesian,
+  threeUvGridReferenceData,
+  threeHexagonReferenceData,
   threeBandSurfaceGeometryData,
   nearestPathPoint,
   selectedPathHits,
@@ -535,7 +541,8 @@ test("band surface viewer reads payload policy", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
   assert.equal(source.includes("this.payload = readJsonPayload("), true);
-  assert.equal(source.includes("bandSurfaceMeshData(this.payload, band)"), true);
+  assert.equal(source.includes("bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon)"), true);
+  assert.equal(source.includes("vertexInsideVisibleHexagon(payload, vertex)"), true);
   assert.equal(source.includes("this.updateSurface();"), true);
 });
 
@@ -757,9 +764,9 @@ test("selected kpoint marker policy exists", () => {
 test("threeBandSurfaceGeometryData builds position and index buffers", () => {
   const mesh = {
     vertices: [
-      { x: 0, y: 10, z: 100, i: 0, j: 0, band: 0 },
-      { x: 1, y: 11, z: 101, i: 0, j: 1, band: 0 },
-      { x: 2, y: 12, z: 102, i: 1, j: 0, band: 0 },
+      { x: 0, y: 0, z: 100, i: 0, j: 0, band: 0 },
+      { x: 1, y: 0, z: 101, i: 0, j: 1, band: 0 },
+      { x: 0, y: 1, z: 102, i: 1, j: 0, band: 0 },
     ],
     /** @type {Array<[number, number, number]>} */
     triangles: [[0, 1, 2]],
@@ -771,7 +778,11 @@ test("threeBandSurfaceGeometryData builds position and index buffers", () => {
   assert.equal(data.positions.length, 9);
   assert.equal(data.indices.length, 3);
   assert.deepEqual(Array.from(data.indices), [0, 1, 2]);
+  assert.equal(Number.isFinite(data.center.x), true);
+  assert.equal(Number.isFinite(data.center.y), true);
+  assert.equal(Number.isFinite(data.center.z), true);
   assert.equal(Number.isFinite(data.radius), true);
+  assert.equal(data.radius > 0, true);
 });
 
 
@@ -807,3 +818,207 @@ test("band surface selected marker is threejs mesh policy exists", () => {
   assert.equal(source.includes("new THREE.SphereGeometry"), true);
   assert.equal(source.includes("this.selectedMarker.position.set"), true);
 });
+
+
+
+test("threeBandSurfaceGeometryData uses Cartesian k-plane and normalized energy", () => {
+  const mesh = {
+    vertices: [
+      { x: 0, y: 0, z: 100, i: 0, j: 0, band: 0 },
+      { x: 1, y: 0, z: 200, i: 0, j: 1, band: 0 },
+      { x: 0, y: 1, z: 300, i: 1, j: 0, band: 0 },
+    ],
+    /** @type {Array<[number, number, number]>} */
+    triangles: [[0, 1, 2]],
+    summary: { count: 3, zmin: 100, zmax: 300 },
+  };
+
+  const data = threeBandSurfaceGeometryData(mesh);
+  const positions = Array.from(data.positions);
+  const ys = positions.filter((_, i) => i % 3 === 1);
+
+  // Energy coordinates should be visual-normalized, not raw 100..300.
+  assert.equal(Math.max(...ys) < 10, true);
+  assert.equal(Math.min(...ys) > -10, true);
+
+  // The second basis vector should not map to raw square coordinate (0, 1).
+  const secondBasisMappedX = positions[6];
+  const secondBasisMappedZ = positions[8];
+  assert.equal(Math.abs(secondBasisMappedX) > 1e-12 || Math.abs(secondBasisMappedZ - 1) > 1e-12, true);
+});
+
+
+
+test("bandBasisToCartesian embeds oblique reciprocal basis", () => {
+  assert.deepEqual(bandBasisToCartesian(1, 0), { x: 1, y: 0 });
+
+  const e2 = bandBasisToCartesian(0, 1);
+  assert.equal(Math.abs(e2.x + 0.5) < 1e-12, true);
+  assert.equal(Math.abs(e2.y - Math.sqrt(3) / 2) < 1e-12, true);
+});
+
+
+
+test("band surface threejs resize policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("resizeThreeSurface()"), true);
+  assert.equal(source.includes("new ResizeObserver"), true);
+  assert.equal(source.includes("this.camera.aspect = width / height"), true);
+  assert.equal(source.includes("this.camera.updateProjectionMatrix()"), true);
+  assert.equal(source.includes("renderer.setSize(width, height, false)"), true);
+  assert.equal(source.includes("min-height:560px"), true);
+});
+
+
+
+test("threeHexagonReferenceData converts bz hexagon to display plane", () => {
+  const points = threeHexagonReferenceData({
+    bz_hexagon: [
+      [1, 0],
+      [0, 1],
+      [-1, 1],
+      ["bad", 2],
+    ],
+  });
+
+  assert.equal(points.length, 3);
+  assert.deepEqual(points[0], { x: 1, y: 0, z: 0 });
+  assert.equal(Math.abs(points[1].x + 0.5) < 1e-12, true);
+  assert.equal(Math.abs(points[1].z - Math.sqrt(3) / 2) < 1e-12, true);
+});
+
+
+test("band surface uv plane and hexagon reference policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function threeHexagonReferenceData(payload)"), true);
+  assert.equal(source.includes("new THREE.PlaneGeometry"), true);
+  assert.equal(source.includes("new THREE.GridHelper"), false);
+  assert.equal(source.includes("threeHexagonReferenceData(this.payload)"), true);
+  assert.equal(source.includes("band-surface-reference-group"), true);
+  assert.equal(source.includes("plane.position.set(data.center.x, 0.0, data.center.z)"), true);
+});
+
+
+
+test("threeHexagonReferenceData provides fallback regular hexagon", () => {
+  const points = threeHexagonReferenceData({});
+
+  assert.equal(points.length, 6);
+  const radii = points.map((p) => Math.hypot(p.x, p.z));
+  assert.equal(Math.max(...radii) - Math.min(...radii) < 1e-12, true);
+});
+
+
+
+test("threeUvGridReferenceData creates u and v grid lines", () => {
+  const lines = threeUvGridReferenceData(Math.PI, 2);
+
+  assert.equal(lines.length, 10);
+  for (const line of lines) {
+    assert.equal(line.length, 2);
+    assert.equal(Number.isFinite(line[0].x), true);
+    assert.equal(Number.isFinite(line[0].z), true);
+    assert.equal(Number.isFinite(line[1].x), true);
+    assert.equal(Number.isFinite(line[1].z), true);
+  }
+});
+
+
+test("band surface uv reference plane styling policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("threeUvGridReferenceData(Math.PI, 8)"), true);
+  assert.equal(source.includes("color: 0x101820"), true);
+  assert.equal(source.includes("color: 0xffb000"), true);
+  assert.equal(source.includes("depthTest: false"), true);
+  assert.equal(source.includes("color: 0x4e6e81"), true);
+});
+
+
+
+test("bandSurfaceMeshDataWithMask clips triangles against visible hexagon", () => {
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 10], [0, 10]],
+    k2: [[0, 0], [1, 1]],
+    energies: [
+      [[0], [1]],
+      [[2], [3]],
+    ],
+    bz_hexagon: [
+      [2, 0],
+      [1, 1],
+      [-1, 1],
+      [-2, 0],
+      [-1, -1],
+      [1, -1],
+    ],
+  };
+
+  const unmasked = bandSurfaceMeshDataWithMask(payload, 0, false);
+  const masked = bandSurfaceMeshDataWithMask(payload, 0, true);
+
+  assert.equal(unmasked.vertices.length, 4);
+  assert.equal(unmasked.triangles.length, 2);
+  assert.equal(masked.triangles.length, 0);
+});
+
+
+test("visible hexagon point predicate follows displayed polygon", () => {
+  const polygon = threeHexagonReferenceData({
+    bz_hexagon: [
+      [2, 0],
+      [1, 1],
+      [-1, 1],
+      [-2, 0],
+      [-1, -1],
+      [1, -1],
+    ],
+  });
+
+  assert.equal(pointInDisplayPolygon({ x: 0, z: 0 }, polygon), true);
+  assert.equal(pointInDisplayPolygon({ x: 100, z: 100 }, polygon), false);
+});
+
+
+test("band surface hex mask toggle policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("data-dft-mask-to-hexagon"), true);
+  assert.equal(source.includes("mask to hexagon"), true);
+  assert.equal(source.includes("this.maskToHexagon"), true);
+  assert.equal(source.includes("this.maskToHexagon = false"), true);
+  assert.equal(source.includes("bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon)"), true);
+  assert.equal(source.includes("hex mask on"), true);
+  assert.equal(source.includes("hex mask off"), true);
+});
+
+
+
+test("threeHexagonReferenceData fallback hexagon is regular in Cartesian display", () => {
+  const points = threeHexagonReferenceData({});
+  assert.equal(points.length, 6);
+
+  const lengths = points.map((p, i) => {
+    const q = points[(i + 1) % points.length];
+    return Math.hypot(p.x - q.x, p.z - q.z);
+  });
+
+  assert.equal(Math.max(...lengths) - Math.min(...lengths) < 1e-12, true);
+});
+
+
+
+test("band surface preserves camera across data updates", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("hasInitialCamera"), true);
+  assert.equal(source.includes("resetCameraIfNeeded"), true);
+  assert.equal(source.includes("hasInitialCamera = true"), true);
+  assert.equal(source.includes("hasInitialCamera = false"), true);
+  assert.equal(source.includes("resetCameraIfNeeded(data)"), true);
+});
+

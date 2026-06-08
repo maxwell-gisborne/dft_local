@@ -75,7 +75,17 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 nv,
                 resolved.sigma_band.shape[0],
             ).tolist(),
-            "mask": np.ones((nu, nv), dtype=bool).tolist(),
+            "mask": (
+                (np.abs(np.asarray(k1, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
+                & (np.abs(np.asarray(k2, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
+                & (
+                    np.abs(
+                        np.asarray(k1, dtype=float).reshape(nu, nv)
+                        - np.asarray(k2, dtype=float).reshape(nu, nv)
+                    )
+                    <= np.pi + 1e-12
+                )
+            ).tolist(),
             "bands": list(range(int(resolved.sigma_band.shape[0]))),
             "nbands": int(resolved.sigma_band.shape[0]),
             "selected_band": band,

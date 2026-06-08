@@ -110,12 +110,183 @@ async function loadThreeRuntime() {
 }
 
 /**
+ * Convert oblique reciprocal-basis coordinates into a Euclidean display plane.
+ *
+ * The payload uses basis coordinates (k1, k2). The central BZ condition
+ * |k1| <= pi, |k2| <= pi, |k1 - k2| <= pi corresponds to an oblique
+ * hexagonal coordinate system, so display basis vectors should not be
+ * drawn as a square grid.
+ *
+ * @param {number} k1
+ * @param {number} k2
+ * @returns {{x:number, y:number}}
+ */
+function bandBasisToCartesian(k1, k2) {
+  return {
+    x: k1 - 0.5 * k2,
+    y: (Math.sqrt(3.0) / 2.0) * k2,
+  };
+}
+
+/**
+ * Convert payload BZ hexagon vertices into the three.js display plane.
+ *
+ * @param {JsonPayload | null} payload
+ * @returns {Array<{x:number, y:number, z:number}>}
+ */
+/**
+ * Build oblique u/v grid line segments on the display k-plane.
+ *
+ * @param {number} limit
+ * @param {number} steps
+ * @returns {Array<[{x:number, y:number, z:number}, {x:number, y:number, z:number}]>}
+ */
+function threeUvGridReferenceData(limit = Math.PI, steps = 8) {
+  /** @type {Array<[{x:number, y:number, z:number}, {x:number, y:number, z:number}]>} */
+  const lines = [];
+
+  for (let i = -steps; i <= steps; i += 1) {
+    const t = (limit * i) / steps;
+
+    const u0 = bandBasisToCartesian(t, -limit);
+    const u1 = bandBasisToCartesian(t, limit);
+    lines.push([
+      { x: u0.x, y: 0.0, z: u0.y },
+      { x: u1.x, y: 0.0, z: u1.y },
+    ]);
+
+    const v0 = bandBasisToCartesian(-limit, t);
+    const v1 = bandBasisToCartesian(limit, t);
+    lines.push([
+      { x: v0.x, y: 0.0, z: v0.y },
+      { x: v1.x, y: 0.0, z: v1.y },
+    ]);
+  }
+
+  return lines;
+}
+
+
+/**
+ * Convert payload BZ hexagon vertices into the three.js display plane.
+ *
+ * @param {JsonPayload | null} payload
+ * @returns {Array<{x:number, y:number, z:number}>}
+ */
+function threeHexagonReferenceData(payload) {
+  const raw = Array.isArray(payload?.bz_hexagon) ? payload.bz_hexagon : [];
+  /** @type {Array<{x:number, y:number, z:number}>} */
+  const out = [];
+
+  for (const point of raw) {
+    if (!Array.isArray(point) || point.length < 2) continue;
+
+    const k1 = Number(point[0]);
+    const k2 = Number(point[1]);
+
+    if (!Number.isFinite(k1) || !Number.isFinite(k2)) continue;
+
+    const p = bandBasisToCartesian(k1, k2);
+    out.push({ x: p.x, y: 0.0, z: p.y });
+  }
+
+  if (out.length >= 3) return out;
+
+  return [
+    [Math.PI, 0.0],
+    [Math.PI, Math.PI],
+    [0.0, Math.PI],
+    [-Math.PI, 0.0],
+    [-Math.PI, -Math.PI],
+    [0.0, -Math.PI],
+  ].map(([k1, k2]) => {
+    const p = bandBasisToCartesian(k1, k2);
+    return { x: p.x, y: 0.0, z: p.y };
+  });
+}
+
+
+/**
+ * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
+ * @returns {{positions:Float32Array, indices:Uint32Array, center:{x:number,y:number,z:number}, radius:number}}
+ */
+/**
+ * @param {{x:number, z:number}} point
+ * @param {Array<{x:number, y:number, z:number}>} polygon
+ * @returns {boolean}
+ */
+function pointInDisplayPolygon(point, polygon) {
+  if (polygon.length < 3) return true;
+
+  const tol = 1e-10;
+  let inside = false;
+
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i, i += 1) {
+    const pi = polygon[i];
+    const pj = polygon[j];
+
+    const dx = pj.x - pi.x;
+    const dz = pj.z - pi.z;
+    const cross = (point.x - pi.x) * dz - (point.z - pi.z) * dx;
+    const dot = (point.x - pi.x) * dx + (point.z - pi.z) * dz;
+    const len2 = dx * dx + dz * dz;
+
+    if (Math.abs(cross) <= tol && dot >= -tol && dot <= len2 + tol) {
+      return true;
+    }
+
+    const crosses = (
+      (pi.z > point.z) !== (pj.z > point.z)
+      && point.x < ((pj.x - pi.x) * (point.z - pi.z)) / ((pj.z - pi.z) || 1e-30) + pi.x
+    );
+
+    if (crosses) inside = !inside;
+  }
+
+  return inside;
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {{x:number, y:number, z:number, i:number, j:number, band:number}} vertex
+ * @returns {boolean}
+ */
+function vertexInsideVisibleHexagon(payload, vertex) {
+  const polygon = threeHexagonReferenceData(payload);
+  const p = bandBasisToCartesian(vertex.x, vertex.y);
+  return pointInDisplayPolygon({ x: p.x, z: p.y }, polygon);
+}
+
+
+/**
  * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
  * @returns {{positions:Float32Array, indices:Uint32Array, center:{x:number,y:number,z:number}, radius:number}}
  */
 function threeBandSurfaceGeometryData(mesh) {
   const positions = new Float32Array(mesh.vertices.length * 3);
   const indices = new Uint32Array(mesh.triangles.length * 3);
+
+  let kxmin = Infinity;
+  let kxmax = -Infinity;
+  let kymin = Infinity;
+  let kymax = -Infinity;
+  let emin = Infinity;
+  let emax = -Infinity;
+
+  const cartesian = mesh.vertices.map((v) => {
+    const p = bandBasisToCartesian(v.x, v.y);
+    kxmin = Math.min(kxmin, p.x);
+    kxmax = Math.max(kxmax, p.x);
+    kymin = Math.min(kymin, p.y);
+    kymax = Math.max(kymax, p.y);
+    emin = Math.min(emin, v.z);
+    emax = Math.max(emax, v.z);
+    return { kx: p.x, ky: p.y, energy: v.z };
+  });
+
+  const kSpan = Math.max(kxmax - kxmin, kymax - kymin, 1.0);
+  const eSpan = Math.max(emax - emin, 1e-12);
+  const energyVisualHeight = 0.9 * kSpan;
 
   let xmin = Infinity;
   let xmax = -Infinity;
@@ -124,18 +295,23 @@ function threeBandSurfaceGeometryData(mesh) {
   let zmin = Infinity;
   let zmax = -Infinity;
 
-  for (let i = 0; i < mesh.vertices.length; i += 1) {
-    const v = mesh.vertices[i];
-    positions[3 * i + 0] = v.x;
-    positions[3 * i + 1] = v.z;
-    positions[3 * i + 2] = v.y;
+  for (let i = 0; i < cartesian.length; i += 1) {
+    const p = cartesian[i];
 
-    xmin = Math.min(xmin, v.x);
-    xmax = Math.max(xmax, v.x);
-    ymin = Math.min(ymin, v.y);
-    ymax = Math.max(ymax, v.y);
-    zmin = Math.min(zmin, v.z);
-    zmax = Math.max(zmax, v.z);
+    const x = p.kx;
+    const y = ((p.energy - emin) / eSpan - 0.5) * energyVisualHeight;
+    const z = p.ky;
+
+    positions[3 * i + 0] = x;
+    positions[3 * i + 1] = y;
+    positions[3 * i + 2] = z;
+
+    xmin = Math.min(xmin, x);
+    xmax = Math.max(xmax, x);
+    ymin = Math.min(ymin, y);
+    ymax = Math.max(ymax, y);
+    zmin = Math.min(zmin, z);
+    zmax = Math.max(zmax, z);
   }
 
   for (let i = 0; i < mesh.triangles.length; i += 1) {
@@ -147,8 +323,8 @@ function threeBandSurfaceGeometryData(mesh) {
 
   const center = {
     x: 0.5 * (xmin + xmax),
-    y: 0.5 * (zmin + zmax),
-    z: 0.5 * (ymin + ymax),
+    y: 0.5 * (ymin + ymax),
+    z: 0.5 * (zmin + zmax),
   };
 
   const radius = Math.max(
@@ -511,9 +687,10 @@ function bandSurfaceVertices(payload, band) {
 
 /**
  * @param {JsonPayload | null} payload
+ * @param {boolean} useMask
  * @returns {Array<[number, number, number]>}
  */
-function bandSurfaceTriangles(payload) {
+function bandSurfaceTriangles(payload, useMask = true) {
   if (!payload) return [];
 
   const nu = Number(payload.nu);
@@ -535,7 +712,7 @@ function bandSurfaceTriangles(payload) {
    * @param {number} j
    */
   function enabled(i, j) {
-    if (!Array.isArray(mask)) return true;
+    if (!useMask || !Array.isArray(mask)) return true;
     return Boolean(mask[i]?.[j]);
   }
 
@@ -601,6 +778,82 @@ function bandSurfaceMeshData(payload, band) {
 
   return { vertices, triangles, summary };
 }
+
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {number} band
+ * @param {boolean} useMask
+ * @returns {{
+ *   vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>,
+ *   triangles:Array<[number, number, number]>,
+ *   summary:{count:number, zmin:number|null, zmax:number|null}
+ * }}
+ */
+function bandSurfaceMeshDataWithMask(payload, band, useMask) {
+  const rawVertices = bandSurfaceVertices(payload, band);
+  const rawTriangles = bandSurfaceTriangles(payload, false);
+
+  if (!useMask) {
+    const summary = bandSurfaceSummary(payload, band);
+    return { vertices: rawVertices, triangles: rawTriangles, summary };
+  }
+
+  /** @type {Map<number, number>} */
+  const indexMap = new Map();
+  /** @type {Array<{x:number, y:number, z:number, i:number, j:number, band:number}>} */
+  const vertices = [];
+  /** @type {Array<[number, number, number]>} */
+  const triangles = [];
+
+  for (const tri of rawTriangles) {
+    const triVertices = tri.map((rawIndex) => rawVertices[rawIndex]);
+
+    if (
+      triVertices.length !== 3
+      || triVertices.some((vertex) => !vertex || !vertexInsideVisibleHexagon(payload, vertex))
+    ) {
+      continue;
+    }
+
+    /** @type {number[]} */
+    const remapped = [];
+
+    for (const rawIndex of tri) {
+      let mapped = indexMap.get(rawIndex);
+
+      if (mapped === undefined) {
+        const vertex = rawVertices[rawIndex];
+        if (!vertex) break;
+
+        mapped = vertices.length;
+        indexMap.set(rawIndex, mapped);
+        vertices.push(vertex);
+      }
+
+      remapped.push(mapped);
+    }
+
+    if (remapped.length === 3) {
+      triangles.push(/** @type {[number, number, number]} */ ([remapped[0], remapped[1], remapped[2]]));
+    }
+  }
+
+  if (vertices.length === 0) {
+    return { vertices, triangles, summary: { count: 0, zmin: null, zmax: null } };
+  }
+
+  let zmin = Infinity;
+  let zmax = -Infinity;
+
+  for (const vertex of vertices) {
+    zmin = Math.min(zmin, vertex.z);
+    zmax = Math.max(zmax, vertex.z);
+  }
+
+  return { vertices, triangles, summary: { count: vertices.length, zmin, zmax } };
+}
+
 
 
 /**
@@ -1815,6 +2068,14 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       /** @type {null | Record<string, unknown>} */
       this.selectedKpoint = null;
 
+      /** @type {ResizeObserver | null} */
+      this.resizeObserver = null;
+      /** @type {any} */
+      this.referenceGroup = null;
+      /** @type {boolean} */
+      this.maskToHexagon = false;
+      /** @type {boolean} */
+      this.hasInitialCamera = false;
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
 
@@ -1890,8 +2151,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.innerHTML = `
         <div class="band-surface-viewer-three-only">
           <div class="band-surface-status" data-dft-surface-status></div>
+          <label class="band-surface-mask-toggle">
+            <input type="checkbox" data-dft-mask-to-hexagon>
+            mask to hexagon
+          </label>
           <div class="band-surface-hover" data-dft-surface-hover>hover: none</div>
-          <div class="band-surface-three" data-dft-three-surface></div>
+          <div class="band-surface-three" data-dft-three-surface style="width:100%; min-height:560px;"></div>
           <p class="band-surface-help">three.js controls: left drag rotate, wheel zoom, right drag pan.</p>
         </div>
       `;
@@ -1899,6 +2164,23 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.statusEl = this.querySelector("[data-dft-surface-status]");
       this.hoverEl = this.querySelector("[data-dft-surface-hover]");
       this.threeHost = this.querySelector("[data-dft-three-surface]");
+      this.bindMaskToggle();
+    }
+
+    bindMaskToggle() {
+      const input = this.querySelector("[data-dft-mask-to-hexagon]");
+      if (!(input instanceof HTMLInputElement)) return;
+      if (input.dataset.bound === "1") return;
+
+      input.checked = this.maskToHexagon;
+      input.dataset.bound = "1";
+      const update = () => {
+        this.maskToHexagon = input.checked;
+        this.updateSurface();
+      };
+
+      input.addEventListener("input", update);
+      input.addEventListener("change", update);
     }
 
     selectedBandIndex() {
@@ -1949,6 +2231,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.camera = camera;
       this.controls = controls;
 
+      this.resizeThreeSurface();
+
+      if (this.resizeObserver) this.resizeObserver.disconnect();
+      this.resizeObserver = new ResizeObserver(() => this.resizeThreeSurface());
+      this.resizeObserver.observe(this.threeHost);
+
       renderer.domElement.addEventListener("pointermove", (/** @type {PointerEvent} */ event) => this.handlePointerMove(event));
       renderer.domElement.addEventListener("click", (/** @type {MouseEvent} */ event) => this.handleClick(event));
 
@@ -1963,10 +2251,27 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.animationFrame = requestAnimationFrame(() => this.startThreeLoop());
     }
 
+    resizeThreeSurface() {
+      if (!this.renderer || !this.camera || !(this.threeHost instanceof HTMLElement)) return;
+
+      const rect = this.threeHost.getBoundingClientRect();
+      const width = Math.max(320, Math.floor(rect.width || this.threeHost.clientWidth || 720));
+      const height = 560;
+
+      this.renderer.setSize(width, height, false);
+      this.camera.aspect = width / height;
+      this.camera.updateProjectionMatrix();
+    }
+
     disposeThree() {
       if (this.animationFrame !== null) {
         cancelAnimationFrame(this.animationFrame);
         this.animationFrame = null;
+      }
+
+      if (this.resizeObserver) {
+        this.resizeObserver.disconnect();
+        this.resizeObserver = null;
       }
 
       if (this.controls && typeof this.controls.dispose === "function") this.controls.dispose();
@@ -1979,11 +2284,17 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.surface = null;
       this.wire = null;
       this.selectedMarker = null;
+      this.hasInitialCamera = false;
     }
 
     async updateSurface() {
+      const maskInput = this.querySelector("[data-dft-mask-to-hexagon]");
+      if (maskInput instanceof HTMLInputElement) {
+        this.maskToHexagon = maskInput.checked;
+      }
+
       const band = this.selectedBandIndex();
-      const mesh = bandSurfaceMeshData(this.payload, band);
+      const mesh = bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon);
       this.currentMesh = mesh;
 
       this.updateStatus();
@@ -2028,7 +2339,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.scene.add(this.wire);
 
       this.addReferenceObjects(data);
-      this.resetCamera(data);
+      this.resetCameraIfNeeded(data);
       this.updateSelectedMarker();
     }
 
@@ -2036,26 +2347,101 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
      * @param {{center:{x:number,y:number,z:number}, radius:number}} data
      */
     addReferenceObjects(data) {
-      if (!this.THREE || !this.scene) return;
       const THREE = this.THREE;
+      if (!THREE || !this.scene) return;
 
-      const old = this.scene.getObjectByName("band-surface-reference");
-      if (old) this.scene.remove(old);
+      if (this.referenceGroup) {
+        this.scene.remove(this.referenceGroup);
+        this.referenceGroup = null;
+      }
 
+      const radius = Number.isFinite(data.radius) && data.radius > 0 ? data.radius : 1.0;
       const group = new THREE.Group();
-      group.name = "band-surface-reference";
+      group.name = "band-surface-reference-group";
 
-      const axes = new THREE.AxesHelper(data.radius * 0.7);
-      axes.position.set(data.center.x, data.center.y, data.center.z);
+      // Reference plane is the uv/k plane.  It is deliberately at y=0, so
+      // it passes through the OrbitControls target and is easy to compare
+      // against the band surface.
+      const planeSize = 2.4 * radius;
+      const plane = new THREE.Mesh(
+        new THREE.PlaneGeometry(planeSize, planeSize),
+        new THREE.MeshBasicMaterial({
+          color: 0x101820,
+          transparent: true,
+          opacity: 0.22,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        }),
+      );
+      plane.rotation.x = -Math.PI / 2.0;
+      plane.position.set(data.center.x, 0.0, data.center.z);
+      group.add(plane);
+
+      const uvGridLines = threeUvGridReferenceData(Math.PI, 8);
+      const uvGridMaterial = new THREE.LineBasicMaterial({
+        color: 0x4e6e81,
+        transparent: true,
+        opacity: 0.42,
+        depthTest: false,
+      });
+
+      for (const line of uvGridLines) {
+        const lineGeom = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(line[0].x, 0.006 * radius, line[0].z),
+          new THREE.Vector3(line[1].x, 0.006 * radius, line[1].z),
+        ]);
+        group.add(new THREE.Line(lineGeom, uvGridMaterial));
+      }
+
+      const hex = threeHexagonReferenceData(this.payload);
+      if (hex.length >= 3) {
+        const pts = hex.map((p) => new THREE.Vector3(p.x, 0.0, p.z));
+        pts.push(new THREE.Vector3(hex[0].x, 0.0, hex[0].z));
+
+        const hexGeom = new THREE.BufferGeometry().setFromPoints(pts);
+        const hexLine = new THREE.Line(
+          hexGeom,
+          new THREE.LineBasicMaterial({
+            color: 0xffb000,
+            transparent: true,
+            opacity: 1.0,
+            depthTest: false,
+          }),
+        );
+        group.add(hexLine);
+
+        // radial spokes make the hexagon visibly non-square
+        for (const p of hex) {
+          const spoke = new THREE.BufferGeometry().setFromPoints([
+            new THREE.Vector3(0.0, 0.0, 0.0),
+            new THREE.Vector3(p.x, 0.0, p.z),
+          ]);
+          group.add(new THREE.Line(
+            spoke,
+            new THREE.LineBasicMaterial({
+              color: 0xffd166,
+              transparent: true,
+              opacity: 0.45,
+              depthTest: false,
+            }),
+          ));
+        }
+      }
+
+      const axes = new THREE.AxesHelper(0.8 * radius);
+      axes.position.set(0.0, 0.0, 0.0);
       group.add(axes);
 
+      this.referenceGroup = group;
       this.scene.add(group);
     }
 
-    /**
+
+/**
      * @param {{center:{x:number,y:number,z:number}, radius:number}} data
      */
-    resetCamera(data) {
+    resetCameraIfNeeded(data) {
+      if (this.hasInitialCamera) return;
       if (!this.camera || !this.controls) return;
 
       this.camera.position.set(
@@ -2063,10 +2449,11 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         data.center.y + 0.9 * data.radius,
         data.center.z + 1.3 * data.radius,
       );
-      this.camera.lookAt(data.center.x, data.center.y, data.center.z);
+      this.camera.lookAt(data.center.x, 0.0, data.center.z);
 
-      this.controls.target.set(data.center.x, data.center.y, data.center.z);
+      this.controls.target.set(data.center.x, 0.0, data.center.z);
       this.controls.update();
+      this.hasInitialCamera = true;
     }
 
     updateStatus() {
@@ -2089,7 +2476,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         : `${this.sliceAxis}=${nice(this.sliceValue)}`;
 
       if (this.statusEl) {
-        this.statusEl.textContent = `band ${band}; grid ${gridText}; bands ${bandsText}; vertices ${mesh?.summary.count ?? 0}; triangles ${mesh?.triangles.length ?? 0}; energy ${energyText}; slice ${slice}`;
+        const maskText = this.maskToHexagon ? "hex mask on" : "hex mask off";
+        this.statusEl.textContent = `band ${band}; grid ${gridText}; bands ${bandsText}; vertices ${mesh?.summary.count ?? 0}; triangles ${mesh?.triangles.length ?? 0}; energy ${energyText}; slice ${slice}; ${maskText}`;
       }
     }
 
@@ -2705,4 +3093,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

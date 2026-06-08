@@ -90,3 +90,4 @@ def test_group_resolved_surface_payload_contains_real_band_data() -> None:
     assert len(payload["energies"]) == 3
     assert len(payload["energies"][0]) == 3
     assert len(payload["energies"][0][0]) == payload["nbands"]
+    assert any(not value for row in payload["mask"] for value in row)
