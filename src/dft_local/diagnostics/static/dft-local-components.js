@@ -558,7 +558,7 @@ function projectBandSurfacePoint(point, view) {
 /**
  * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
  * @param {HTMLCanvasElement} canvas
- * @param {{energyScale?:number, rotation?:number, sliceAxis?:string|null, sliceValue?:number|null}} options
+ * @param {{energyScale?:number, rotation?:number, sliceAxis?:string|null, sliceValue?:number|null, payload?:JsonPayload|null}} options
  */
 function drawBandSurfacePreview(mesh, canvas, options = {}) {
   const ctx = canvas.getContext("2d");
@@ -619,6 +619,7 @@ function drawBandSurfacePreview(mesh, canvas, options = {}) {
     ctx.stroke();
   }
 
+  drawBandSurfaceReferenceFrame(options.payload ?? null, ctx, view);
   drawBandSurfaceSliceGuide(mesh, ctx, view, options);
   ctx.globalAlpha = 1.0;
 }
@@ -689,6 +690,122 @@ function drawProjectedPolyline(points, ctx, view) {
   }
 
   ctx.stroke();
+}
+
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ */
+function drawBandSurfaceReferenceFrame(payload, ctx, view) {
+  ctx.save();
+  ctx.globalAlpha = 1.0;
+  ctx.lineWidth = 1.4;
+  ctx.setLineDash([]);
+
+  const origin = projectBandSurfacePoint({ x: 0, y: 0, z: view.zmin }, view);
+  const k1Tip = projectBandSurfacePoint({ x: view.xmax, y: 0, z: view.zmin }, view);
+  const k2Tip = projectBandSurfacePoint({ x: 0, y: view.ymax, z: view.zmin }, view);
+  const eTip = projectBandSurfacePoint({ x: 0, y: 0, z: view.zmax }, view);
+
+  drawArrow(ctx, origin, k1Tip, "k1");
+  drawArrow(ctx, origin, k2Tip, "k2");
+  drawArrow(ctx, origin, eTip, "E");
+
+  drawBandSurfaceBzBoundary(payload, ctx, view);
+  drawBandSurfaceSymmetryLabels(ctx, view);
+
+  ctx.restore();
+}
+
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{x:number, y:number}} a
+ * @param {{x:number, y:number}} b
+ * @param {string} label
+ */
+function drawArrow(ctx, a, b, label) {
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1.0;
+  const ux = dx / len;
+  const uy = dy / len;
+  const size = 8;
+
+  ctx.beginPath();
+  ctx.moveTo(b.x, b.y);
+  ctx.lineTo(b.x - size * ux - 0.45 * size * uy, b.y - size * uy + 0.45 * size * ux);
+  ctx.lineTo(b.x - size * ux + 0.45 * size * uy, b.y - size * uy - 0.45 * size * ux);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillText(label, b.x + 6, b.y - 6);
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ */
+function drawBandSurfaceBzBoundary(payload, ctx, view) {
+  const bz = /** @type {unknown[][] | undefined} */ (payload?.bz_hexagon);
+  if (!Array.isArray(bz) || bz.length < 3) return;
+
+  ctx.save();
+  ctx.lineWidth = 2.0;
+  ctx.setLineDash([3, 3]);
+
+  ctx.beginPath();
+  for (let index = 0; index < bz.length; index += 1) {
+    const point = bz[index];
+    if (!Array.isArray(point) || point.length < 2) continue;
+
+    const p = projectBandSurfacePoint({
+      x: Number(point[0]),
+      y: Number(point[1]),
+      z: view.zmin,
+    }, view);
+
+    if (index === 0) ctx.moveTo(p.x, p.y);
+    else ctx.lineTo(p.x, p.y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/**
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ */
+function drawBandSurfaceSymmetryLabels(ctx, view) {
+  const labels = [
+    ["Γ", 0.0, 0.0],
+    ["K", (2.0 * Math.PI) / 3.0, -(2.0 * Math.PI) / 3.0],
+    ["M", Math.PI, 0.0],
+  ];
+
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.lineWidth = 1.0;
+
+  for (const [label, x, y] of labels) {
+    const p = projectBandSurfacePoint({ x: Number(x), y: Number(y), z: view.zmin }, view);
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 3.5, 0, 2.0 * Math.PI);
+    ctx.fill();
+    ctx.fillText(String(label), p.x + 6, p.y - 6);
+  }
+
+  ctx.restore();
 }
 
 
@@ -1567,6 +1684,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           <span>energy: ${energyText}</span>
           <span>energy scale: ${nice(this.energyScale)}</span>
           <span>rotation: ${nice(this.rotation)}</span>
+          <span>reference: Γ/K/M, BZ boundary, k1/k2/E axes</span>
           <canvas class="band-surface-preview" width="720" height="420"></canvas>
         </div>
       `;
@@ -1578,6 +1696,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           rotation: this.rotation,
           sliceAxis: this.sliceAxis,
           sliceValue: this.sliceValue,
+          payload,
         });
       }
     }
@@ -2101,4 +2220,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, drawBandSurfacePreview, drawBandSurfaceSliceGuide, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

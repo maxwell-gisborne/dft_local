@@ -61,13 +61,25 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
 
     band = max(0, min(band, resolved.sigma_band.shape[0] - 1))
     residual = resolved.sigma - calc.sigma
+    assert calc.energies is not None
+
     surface_payload = json.dumps(
         {
             "kind": "band-surface-preview",
             "nu": nu,
             "nv": nv,
+            "k1": np.asarray(k1, dtype=float).reshape(nu, nv).tolist(),
+            "k2": np.asarray(k2, dtype=float).reshape(nu, nv).tolist(),
+            "energies": np.asarray(calc.energies, dtype=float).reshape(
+                nu,
+                nv,
+                resolved.sigma_band.shape[0],
+            ).tolist(),
+            "mask": np.ones((nu, nv), dtype=bool).tolist(),
+            "bands": list(range(int(resolved.sigma_band.shape[0]))),
             "nbands": int(resolved.sigma_band.shape[0]),
             "selected_band": band,
+            "energy_unit": calc.unit_context.energy.symbol,
         }
     )
 

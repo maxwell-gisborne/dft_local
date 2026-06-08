@@ -694,3 +694,20 @@ test("band surface slice guide policy exists", () => {
   assert.equal(source.includes('axis === "v"'), true);
   assert.equal(source.includes('axis === "energy"'), true);
 });
+
+
+
+test("band surface reference frame policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function drawBandSurfaceReferenceFrame"), true);
+  assert.equal(source.includes("function drawBandSurfaceBzBoundary"), true);
+  assert.equal(source.includes("function drawBandSurfaceSymmetryLabels"), true);
+  assert.equal(source.includes('drawArrow(ctx, origin, k1Tip, "k1")'), true);
+  assert.equal(source.includes('drawArrow(ctx, origin, k2Tip, "k2")'), true);
+  assert.equal(source.includes('drawArrow(ctx, origin, eTip, "E")'), true);
+  assert.equal(source.includes('"Γ"'), true);
+  assert.equal(source.includes('"K"'), true);
+  assert.equal(source.includes('"M"'), true);
+  assert.equal(source.includes("bz_hexagon"), true);
+});

@@ -53,3 +53,41 @@ def test_group_resolved_result_contains_compact_invariant() -> None:
 
     assert "||sum bands - compact||" in html
     assert "sigma_00" in html
+
+
+
+def test_group_resolved_surface_payload_contains_real_band_data() -> None:
+    import json
+    import re
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.boltzmann.group_resolved.overview",
+        {
+            "kernel": "average_star",
+            "nu": "3",
+            "nv": "3",
+            "band": "0",
+        },
+    )
+
+    match = re.search(
+        r"<script type='application/json' id='band_surface_payload'>(.*?)</script>",
+        html,
+        re.S,
+    )
+    assert match is not None
+
+    payload = json.loads(match.group(1))
+
+    assert payload["nu"] == 3
+    assert payload["nv"] == 3
+    assert len(payload["k1"]) == 3
+    assert len(payload["k1"][0]) == 3
+    assert len(payload["k2"]) == 3
+    assert len(payload["k2"][0]) == 3
+    assert len(payload["energies"]) == 3
+    assert len(payload["energies"][0]) == 3
+    assert len(payload["energies"][0][0]) == payload["nbands"]
