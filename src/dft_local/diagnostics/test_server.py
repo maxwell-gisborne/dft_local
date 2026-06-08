@@ -861,3 +861,22 @@ def test_band_path_page_renders_with_energy_order_matching() -> None:
     assert "Band path Γ-K-M-Γ" in html
     assert "Energy ordering" in html or "energy_order" in html
     assert "<svg" in html
+
+
+
+def test_diagnostic_page_includes_three_import_map() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.region_surface",
+        {
+            "kernel": "average_star",
+            "matching": "energy_order",
+            "nu": "3",
+            "nv": "3",
+        },
+    )
+
+    assert 'type="importmap"' in html
+    assert '"three": "https://unpkg.com/three@0.160.0/build/three.module.js"' in html

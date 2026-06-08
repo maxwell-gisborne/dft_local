@@ -89,6 +89,79 @@ function createDftSignalBus(target = null) {
   return { on, emit };
 }
 
+const THREE_MODULE_URL = "https://unpkg.com/three@0.160.0/build/three.module.js";
+const ORBIT_CONTROLS_MODULE_URL = "https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+
+/** @type {null | Promise<{THREE:any, OrbitControls:any}>} */
+let threeRuntimePromise = null;
+
+async function loadThreeRuntime() {
+  if (threeRuntimePromise) return threeRuntimePromise;
+
+  threeRuntimePromise = Promise.all([
+    import(THREE_MODULE_URL),
+    import(ORBIT_CONTROLS_MODULE_URL),
+  ]).then(([THREE, controlsModule]) => ({
+    THREE,
+    OrbitControls: controlsModule.OrbitControls,
+  }));
+
+  return threeRuntimePromise;
+}
+
+/**
+ * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
+ * @returns {{positions:Float32Array, indices:Uint32Array, center:{x:number,y:number,z:number}, radius:number}}
+ */
+function threeBandSurfaceGeometryData(mesh) {
+  const positions = new Float32Array(mesh.vertices.length * 3);
+  const indices = new Uint32Array(mesh.triangles.length * 3);
+
+  let xmin = Infinity;
+  let xmax = -Infinity;
+  let ymin = Infinity;
+  let ymax = -Infinity;
+  let zmin = Infinity;
+  let zmax = -Infinity;
+
+  for (let i = 0; i < mesh.vertices.length; i += 1) {
+    const v = mesh.vertices[i];
+    positions[3 * i + 0] = v.x;
+    positions[3 * i + 1] = v.z;
+    positions[3 * i + 2] = v.y;
+
+    xmin = Math.min(xmin, v.x);
+    xmax = Math.max(xmax, v.x);
+    ymin = Math.min(ymin, v.y);
+    ymax = Math.max(ymax, v.y);
+    zmin = Math.min(zmin, v.z);
+    zmax = Math.max(zmax, v.z);
+  }
+
+  for (let i = 0; i < mesh.triangles.length; i += 1) {
+    const tri = mesh.triangles[i];
+    indices[3 * i + 0] = tri[0];
+    indices[3 * i + 1] = tri[1];
+    indices[3 * i + 2] = tri[2];
+  }
+
+  const center = {
+    x: 0.5 * (xmin + xmax),
+    y: 0.5 * (zmin + zmax),
+    z: 0.5 * (ymin + ymax),
+  };
+
+  const radius = Math.max(
+    xmax - xmin,
+    ymax - ymin,
+    zmax - zmin,
+    1.0,
+  );
+
+  return { positions, indices, center, radius };
+}
+
+
 const dftSignals = createDftSignalBus(
   typeof window === "undefined" ? null : window,
 );
@@ -1732,262 +1805,384 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   class DftBandSurfaceViewer extends HTMLElement {
     constructor() {
       super();
+
       /** @type {number | null} */
       this.selectedBand = null;
       /** @type {string | null} */
       this.sliceAxis = null;
       /** @type {number | null} */
       this.sliceValue = null;
-      /** @type {number} */
-      this.energyScale = 1.0;
-      /** @type {number} */
-      this.rotation = 0.0;
-      /** @type {number | null} */
-      this.dragStartX = null;
-      /** @type {number} */
-      this.dragStartRotation = 0.0;
-      /** @type {null | ReturnType<typeof bandSurfaceMeshData>} */
-      this.currentMesh = null;
-      /** @type {null | {xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} */
-      this.currentView = null;
-      /** @type {null | {vertex:{x:number, y:number, z:number, i:number, j:number, band:number}, sx:number, sy:number, distance:number}} */
-      this.hoverHit = null;
-      /** @type {number} */
-      this.pitch = 0.65;
-      /** @type {number} */
-      this.viewZoom = 1.0;
       /** @type {null | Record<string, unknown>} */
       this.selectedKpoint = null;
+
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
+
+      /** @type {JsonPayload | null} */
+      this.payload = null;
+      /** @type {null | ReturnType<typeof bandSurfaceMeshData>} */
+      this.currentMesh = null;
+
+      /** @type {HTMLElement | null} */
+      this.statusEl = null;
+      /** @type {HTMLElement | null} */
+      this.hoverEl = null;
+      /** @type {HTMLElement | null} */
+      this.threeHost = null;
+
+      /** @type {any} */
+      this.THREE = null;
+      /** @type {any} */
+      this.OrbitControls = null;
+      /** @type {any} */
+      this.renderer = null;
+      /** @type {any} */
+      this.scene = null;
+      /** @type {any} */
+      this.camera = null;
+      /** @type {any} */
+      this.controls = null;
+      /** @type {any} */
+      this.surface = null;
+      /** @type {any} */
+      this.wire = null;
+      /** @type {any} */
+      this.selectedMarker = null;
+      /** @type {number | null} */
+      this.animationFrame = null;
     }
 
     connectedCallback() {
       if (this.dataset.bound === "1") return;
       this.dataset.bound = "1";
 
+      this.payload = readJsonPayload(/** @type {Element} */ (this));
+      this.buildStaticDom();
+
       this.unsubscribers.push(onDftSignal("selected-band", (payload) => {
         this.selectedBand = Number(payload.detail.band);
-        this.render();
+        this.updateSurface();
       }));
 
       this.unsubscribers.push(onDftSignal("slice-changed", (payload) => {
         this.sliceAxis = String(payload.detail.axis ?? "");
         this.sliceValue = Number(payload.detail.value);
-        this.render();
+        this.updateStatus();
       }));
 
-      this.render();
+      this.unsubscribers.push(onDftSignal("selected-kpoint", (payload) => {
+        this.selectedKpoint = payload.detail;
+        this.updateSelectedMarker();
+        this.updateStatus();
+      }));
+
+      this.updateSurface();
     }
 
     disconnectedCallback() {
       for (const unsubscribe of this.unsubscribers) unsubscribe();
       this.unsubscribers = [];
+      this.disposeThree();
       delete this.dataset.bound;
     }
 
-    /**
-     * @param {HTMLCanvasElement} canvas
-     */
-    bindSurfaceCanvas(canvas) {
-      canvas.style.touchAction = "none";
+    buildStaticDom() {
+      this.innerHTML = `
+        <div class="band-surface-viewer-three-only">
+          <div class="band-surface-status" data-dft-surface-status></div>
+          <div class="band-surface-hover" data-dft-surface-hover>hover: none</div>
+          <div class="band-surface-three" data-dft-three-surface></div>
+          <p class="band-surface-help">three.js controls: left drag rotate, wheel zoom, right drag pan.</p>
+        </div>
+      `;
 
-      canvas.addEventListener("pointerdown", (event) => {
-        canvas.setPointerCapture(event.pointerId);
-        this.dragStartX = event.clientX;
-        this.dragStartRotation = this.rotation;
-      });
-
-      canvas.addEventListener("pointermove", (event) => {
-        if (this.dragStartX === null) return;
-
-        const dx = event.clientX - this.dragStartX;
-        const rotation = this.dragStartRotation + dx * 0.01;
-        emitDftSignal("view-changed", {
-          energyScale: this.energyScale,
-          rotation,
-          pitch: this.pitch,
-          viewZoom: this.viewZoom,
-        }, this);
-      });
-
-      const clearDrag = () => {
-        this.dragStartX = null;
-      };
-
-      canvas.addEventListener("pointerup", clearDrag);
-      canvas.addEventListener("pointercancel", clearDrag);
-      canvas.addEventListener("pointerleave", clearDrag);
-
-      canvas.addEventListener("wheel", (event) => {
-        event.preventDefault();
-
-        const factor = event.deltaY < 0 ? 1.1 : 1.0 / 1.1;
-        const energyScale = Math.max(0.05, Math.min(20.0, this.energyScale * factor));
-
-        emitDftSignal("view-changed", {
-          energyScale,
-          rotation: this.rotation,
-          pitch: this.pitch,
-          viewZoom: this.viewZoom,
-        }, this);
-      }, { passive: false });
-
-      canvas.addEventListener("pointermove", (event) => {
-        if (this.dragStartX !== null) return;
-        this.updateHoverFromCanvasEvent(canvas, event);
-      });
-
-      canvas.addEventListener("click", (event) => {
-        this.updateHoverFromCanvasEvent(canvas, event);
-        if (!this.hoverHit) return;
-
-        const v = this.hoverHit.vertex;
-        emitDftSignal("selected-kpoint", {
-          i: v.i,
-          j: v.j,
-          band: v.band,
-          k1: v.x,
-          k2: v.y,
-          energy: v.z,
-        }, this);
-      });
+      this.statusEl = this.querySelector("[data-dft-surface-status]");
+      this.hoverEl = this.querySelector("[data-dft-surface-hover]");
+      this.threeHost = this.querySelector("[data-dft-three-surface]");
     }
 
-    /**
-     * @param {HTMLCanvasElement} canvas
-     * @param {PointerEvent | MouseEvent} event
-     */
-    updateHoverFromCanvasEvent(canvas, event) {
-      if (!this.currentMesh || !this.currentView) return;
+    selectedBandIndex() {
+      if (this.selectedBand !== null && Number.isFinite(this.selectedBand)) {
+        return this.selectedBand;
+      }
 
-      const rect = canvas.getBoundingClientRect();
-      const pointer = {
-        x: (event.clientX - rect.left) * (canvas.width / rect.width),
-        y: (event.clientY - rect.top) * (canvas.height / rect.height),
-      };
-
-      this.hoverHit = nearestBandSurfaceVertex(this.currentMesh, pointer, this.currentView, 24.0);
-      this.renderHoverReadout();
+      return Number(this.payload?.selected_band ?? 0);
     }
 
-    renderHoverReadout() {
-      const target = this.querySelector("[data-dft-surface-hover]");
-      if (!(target instanceof HTMLElement)) return;
+    async ensureThree() {
+      if (this.renderer && this.scene && this.camera && this.controls) return;
+      if (!(this.threeHost instanceof HTMLElement)) return;
 
-      if (!this.hoverHit) {
-        target.textContent = "hover: none";
+      const { THREE, OrbitControls } = await loadThreeRuntime();
+      if (!this.isConnected) return;
+
+      this.THREE = THREE;
+      this.OrbitControls = OrbitControls;
+
+      const width = Math.max(360, this.threeHost.clientWidth || 800);
+      const height = 560;
+
+      const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.domElement.style.width = "100%";
+      renderer.domElement.style.height = `${height}px`;
+
+      this.threeHost.replaceChildren(renderer.domElement);
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(45, width / height, 0.001, 100000);
+      const controls = new OrbitControls(camera, renderer.domElement);
+
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.08;
+      controls.screenSpacePanning = true;
+
+      scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+      const light = new THREE.DirectionalLight(0xffffff, 1.2);
+      light.position.set(1, 2, 2);
+      scene.add(light);
+
+      this.renderer = renderer;
+      this.scene = scene;
+      this.camera = camera;
+      this.controls = controls;
+
+      renderer.domElement.addEventListener("pointermove", (/** @type {PointerEvent} */ event) => this.handlePointerMove(event));
+      renderer.domElement.addEventListener("click", (/** @type {MouseEvent} */ event) => this.handleClick(event));
+
+      this.startThreeLoop();
+    }
+
+    startThreeLoop() {
+      if (!this.renderer || !this.scene || !this.camera || !this.controls) return;
+
+      this.controls.update();
+      this.renderer.render(this.scene, this.camera);
+      this.animationFrame = requestAnimationFrame(() => this.startThreeLoop());
+    }
+
+    disposeThree() {
+      if (this.animationFrame !== null) {
+        cancelAnimationFrame(this.animationFrame);
+        this.animationFrame = null;
+      }
+
+      if (this.controls && typeof this.controls.dispose === "function") this.controls.dispose();
+      if (this.renderer && typeof this.renderer.dispose === "function") this.renderer.dispose();
+
+      this.renderer = null;
+      this.scene = null;
+      this.camera = null;
+      this.controls = null;
+      this.surface = null;
+      this.wire = null;
+      this.selectedMarker = null;
+    }
+
+    async updateSurface() {
+      const band = this.selectedBandIndex();
+      const mesh = bandSurfaceMeshData(this.payload, band);
+      this.currentMesh = mesh;
+
+      this.updateStatus();
+
+      if (mesh.vertices.length === 0 || mesh.triangles.length === 0) {
+        if (this.threeHost) this.threeHost.textContent = "no surface data";
         return;
       }
 
-      const v = this.hoverHit.vertex;
-      target.textContent = `hover: i=${v.i}, j=${v.j}, band=${v.band}, k1=${nice(v.x)}, k2=${nice(v.y)}, E=${nice(v.z)}`;
+      await this.ensureThree();
+      if (!this.THREE || !this.scene || !this.camera || !this.controls) return;
+
+      const THREE = this.THREE;
+      const data = threeBandSurfaceGeometryData(mesh);
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
+      geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+      geometry.computeVertexNormals();
+
+      if (this.surface) this.scene.remove(this.surface);
+      if (this.wire) this.scene.remove(this.wire);
+
+      const material = new THREE.MeshStandardMaterial({
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.82,
+        roughness: 0.72,
+        metalness: 0.0,
+      });
+
+      const wireMaterial = new THREE.MeshBasicMaterial({
+        wireframe: true,
+        transparent: true,
+        opacity: 0.22,
+      });
+
+      this.surface = new THREE.Mesh(geometry, material);
+      this.wire = new THREE.Mesh(geometry, wireMaterial);
+
+      this.scene.add(this.surface);
+      this.scene.add(this.wire);
+
+      this.addReferenceObjects(data);
+      this.resetCamera(data);
+      this.updateSelectedMarker();
     }
 
-    bindSurfaceViewButtons() {
-      const emitView = (updates = {}) => {
-        emitDftSignal("view-changed", {
-          energyScale: this.energyScale,
-          rotation: this.rotation,
-          pitch: this.pitch,
-          viewZoom: this.viewZoom,
-          ...updates,
-        }, this);
-      };
+    /**
+     * @param {{center:{x:number,y:number,z:number}, radius:number}} data
+     */
+    addReferenceObjects(data) {
+      if (!this.THREE || !this.scene) return;
+      const THREE = this.THREE;
 
-      const buttons = [
-        ["[data-dft-surface-rotate-left]", () => emitView({ rotation: this.rotation - 0.2 })],
-        ["[data-dft-surface-rotate-right]", () => emitView({ rotation: this.rotation + 0.2 })],
-        ["[data-dft-surface-pitch-up]", () => emitView({ pitch: this.pitch + 0.08 })],
-        ["[data-dft-surface-pitch-down]", () => emitView({ pitch: this.pitch - 0.08 })],
-        ["[data-dft-surface-zoom-in]", () => emitView({ viewZoom: this.viewZoom * 1.15 })],
-        ["[data-dft-surface-zoom-out]", () => emitView({ viewZoom: this.viewZoom / 1.15 })],
-        ["[data-dft-surface-reset]", () => emitView({ rotation: 0.0, pitch: 0.65, viewZoom: 1.0, energyScale: 1.0 })],
-      ];
+      const old = this.scene.getObjectByName("band-surface-reference");
+      if (old) this.scene.remove(old);
 
-      for (const [selector, handler] of buttons) {
-        const button = this.querySelector(String(selector));
-        if (button instanceof HTMLButtonElement && button.dataset.bound !== "1") {
-          button.dataset.bound = "1";
-          button.addEventListener("click", /** @type {() => void} */ (handler));
-        }
-      }
+      const group = new THREE.Group();
+      group.name = "band-surface-reference";
+
+      const axes = new THREE.AxesHelper(data.radius * 0.7);
+      axes.position.set(data.center.x, data.center.y, data.center.z);
+      group.add(axes);
+
+      this.scene.add(group);
     }
 
-    render() {
-      const payload = readJsonPayload(this);
-      const band = this.selectedBand === null || !Number.isFinite(this.selectedBand)
-        ? "none"
-        : String(this.selectedBand);
-      const slice = this.sliceAxis === null || this.sliceValue === null || !Number.isFinite(this.sliceValue)
-        ? "none"
-        : `${this.sliceAxis}=${nice(this.sliceValue)}`;
+    /**
+     * @param {{center:{x:number,y:number,z:number}, radius:number}} data
+     */
+    resetCamera(data) {
+      if (!this.camera || !this.controls) return;
 
-      const nbands = Number(payload?.nbands ?? NaN);
-      const bands = /** @type {unknown[] | undefined} */ (payload?.bands);
-      const nu = Number(payload?.nu ?? NaN);
-      const nv = Number(payload?.nv ?? NaN);
+      this.camera.position.set(
+        data.center.x + 1.3 * data.radius,
+        data.center.y + 0.9 * data.radius,
+        data.center.z + 1.3 * data.radius,
+      );
+      this.camera.lookAt(data.center.x, data.center.y, data.center.z);
+
+      this.controls.target.set(data.center.x, data.center.y, data.center.z);
+      this.controls.update();
+    }
+
+    updateStatus() {
+      const mesh = this.currentMesh;
+      const band = this.selectedBandIndex();
+      const bands = /** @type {unknown[] | undefined} */ (this.payload?.bands);
+      const nbands = Number(this.payload?.nbands ?? NaN);
+      const nu = Number(this.payload?.nu ?? NaN);
+      const nv = Number(this.payload?.nv ?? NaN);
+
       const gridText = Number.isFinite(nu) && Number.isFinite(nv) ? `${nu}×${nv}` : "unknown";
       const bandsText = Number.isFinite(nbands)
         ? String(nbands)
         : Array.isArray(bands) ? String(bands.length) : "unknown";
-      const summaryBand = this.selectedBand === null || !Number.isFinite(this.selectedBand)
-        ? Number(payload?.selected_band ?? 0)
-        : this.selectedBand;
-      const mesh = bandSurfaceMeshData(payload, summaryBand);
-      const energyText = mesh.summary.zmin === null || mesh.summary.zmax === null
+      const energyText = !mesh || mesh.summary.zmin === null || mesh.summary.zmax === null
         ? "unknown"
         : `${nice(mesh.summary.zmin)} to ${nice(mesh.summary.zmax)}`;
+      const slice = this.sliceAxis === null || this.sliceValue === null || !Number.isFinite(this.sliceValue)
+        ? "none"
+        : `${this.sliceAxis}=${nice(this.sliceValue)}`;
 
-      this.innerHTML = `
-        <div class="band-surface-viewer-stub">
-          <strong>Band surface viewer</strong>
-          <span>grid: ${gridText}</span>
-          <span>bands: ${bandsText}</span>
-          <span>band: ${band}</span>
-          <span>slice: ${slice}</span>
-          <span>vertices: ${mesh.summary.count}</span>
-          <span>triangles: ${mesh.triangles.length}</span>
-          <span>energy: ${energyText}</span>
-          <span>energy scale: ${nice(this.energyScale)}</span>
-          <span>rotation: ${nice(this.rotation)}</span>
-          <span>pitch: ${nice(this.pitch)}</span>
-          <span>zoom: ${nice(this.viewZoom)}</span>
-          <span>reference: Γ/K/M, BZ boundary, k1/k2/E axes</span>
-          <div class="band-surface-view-controls">
-            <button type="button" data-dft-surface-rotate-left>rotate left</button>
-            <button type="button" data-dft-surface-rotate-right>rotate right</button>
-            <button type="button" data-dft-surface-pitch-up>pitch up</button>
-            <button type="button" data-dft-surface-pitch-down>pitch down</button>
-            <button type="button" data-dft-surface-zoom-in>zoom in</button>
-            <button type="button" data-dft-surface-zoom-out>zoom out</button>
-            <button type="button" data-dft-surface-reset>reset view</button>
-          </div>
-          <span data-dft-surface-hover>hover: none</span>
-          <canvas class="band-surface-preview" width="720" height="420"></canvas>
-        </div>
-      `;
-
-      const canvas = this.querySelector("canvas.band-surface-preview");
-      if (canvas instanceof HTMLCanvasElement) {
-        this.currentMesh = mesh;
-        this.bindSurfaceCanvas(canvas);
-        this.currentView = drawBandSurfacePreview(mesh, canvas, {
-          energyScale: this.energyScale,
-          rotation: this.rotation,
-          pitch: this.pitch,
-          viewZoom: this.viewZoom,
-          sliceAxis: this.sliceAxis,
-          sliceValue: this.sliceValue,
-          payload,
-          selectedKpoint: this.selectedKpoint,
-        });
-        this.bindSurfaceViewButtons();
-        this.renderHoverReadout();
+      if (this.statusEl) {
+        this.statusEl.textContent = `band ${band}; grid ${gridText}; bands ${bandsText}; vertices ${mesh?.summary.count ?? 0}; triangles ${mesh?.triangles.length ?? 0}; energy ${energyText}; slice ${slice}`;
       }
     }
-  }
 
+    /**
+     * @param {PointerEvent} event
+     */
+    handlePointerMove(event) {
+      const hit = this.pickNearestVertex(event, 0.06);
+      if (!this.hoverEl) return;
+
+      if (!hit) {
+        this.hoverEl.textContent = "hover: none";
+        return;
+      }
+
+      const v = hit.vertex;
+      this.hoverEl.textContent = `hover: i=${v.i}, j=${v.j}, band=${v.band}, k1=${nice(v.x)}, k2=${nice(v.y)}, E=${nice(v.z)}`;
+    }
+
+    /**
+     * @param {MouseEvent} event
+     */
+    handleClick(event) {
+      const hit = this.pickNearestVertex(event, 0.08);
+      if (!hit) return;
+
+      const v = hit.vertex;
+      emitDftSignal("selected-kpoint", {
+        i: v.i,
+        j: v.j,
+        band: v.band,
+        k1: v.x,
+        k2: v.y,
+        energy: v.z,
+      }, this);
+    }
+
+    /**
+     * @param {MouseEvent | PointerEvent} event
+     * @param {number} maxDistance
+     */
+    pickNearestVertex(event, maxDistance = 0.08) {
+      if (!this.currentMesh || !this.renderer || !this.camera || !this.THREE) return null;
+
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      const pointer = {
+        x: ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        y: -(((event.clientY - rect.top) / rect.height) * 2 - 1),
+      };
+
+      let best = null;
+      let bestDistance = maxDistance;
+
+      for (const vertex of this.currentMesh.vertices) {
+        const p = new this.THREE.Vector3(vertex.x, vertex.z, vertex.y);
+        p.project(this.camera);
+
+        const distance = Math.hypot(pointer.x - p.x, pointer.y - p.y);
+        if (distance <= bestDistance) {
+          bestDistance = distance;
+          best = { vertex, distance };
+        }
+      }
+
+      return best;
+    }
+
+    updateSelectedMarker() {
+      if (!this.THREE || !this.scene || !this.currentMesh) return;
+
+      if (this.selectedMarker) {
+        this.scene.remove(this.selectedMarker);
+        this.selectedMarker = null;
+      }
+
+      if (!this.selectedKpoint) return;
+
+      const i = Number(this.selectedKpoint.i);
+      const j = Number(this.selectedKpoint.j);
+      const band = Number(this.selectedKpoint.band);
+
+      const vertex = this.currentMesh.vertices.find((v) => v.i === i && v.j === j && v.band === band);
+      if (!vertex) return;
+
+      const THREE = this.THREE;
+      const geometry = new THREE.SphereGeometry(0.035 * Math.max(1, Math.abs(vertex.z) ** 0.2), 16, 16);
+      const material = new THREE.MeshBasicMaterial();
+
+      this.selectedMarker = new THREE.Mesh(geometry, material);
+      this.selectedMarker.position.set(vertex.x, vertex.z, vertex.y);
+      this.scene.add(this.selectedMarker);
+    }
+  }
 
   class DftLineGraph extends HTMLElement {
     constructor() {
@@ -2510,4 +2705,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

@@ -39,8 +39,6 @@ def test_group_resolved_overview_renders() -> None:
     assert "<dft-band-controls>" in html
     assert "<dft-band-readout>" in html
     assert "<dft-kpoint-readout>" in html
-    assert "data-dft-energy-scale" in html
-    assert "data-dft-rotation" in html
     assert "id='band_surface_payload'" in html
     assert "<dft-band-surface-viewer data-source='band_surface_payload'>" in html
 

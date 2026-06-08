@@ -21,6 +21,7 @@ import {
   bandSurfaceSummary,
   projectBandSurfacePoint,
   nearestBandSurfaceVertex,
+  threeBandSurfaceGeometryData,
   nearestPathPoint,
   selectedPathHits,
   nearestPointByX,
@@ -515,10 +516,9 @@ test("band surface viewer signal listener policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
   assert.equal(source.includes("class DftBandSurfaceViewer extends HTMLElement"), true);
-  assert.equal(source.includes('customElements.define("dft-band-surface-viewer"'), true);
   assert.equal(source.includes('onDftSignal("selected-band"'), true);
   assert.equal(source.includes('onDftSignal("slice-changed"'), true);
-  assert.equal(source.includes("band-surface-viewer-stub"), true);
+  assert.equal(source.includes('onDftSignal("selected-kpoint"'), true);
 });
 
 
@@ -534,10 +534,9 @@ test("generic json payload reader policy exists", () => {
 test("band surface viewer reads payload policy", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
-  assert.equal(source.includes("const payload = readJsonPayload(this);"), true);
-  assert.equal(source.includes("payload?.nbands"), true);
-  assert.equal(source.includes("payload?.nu"), true);
-  assert.equal(source.includes("payload?.nv"), true);
+  assert.equal(source.includes("this.payload = readJsonPayload("), true);
+  assert.equal(source.includes("bandSurfaceMeshData(this.payload, band)"), true);
+  assert.equal(source.includes("this.updateSurface();"), true);
 });
 
 
@@ -648,53 +647,25 @@ test("band surface projection maps finite points into canvas", () => {
 });
 
 
-test("band surface viewer canvas policy exists", () => {
+test("band surface viewer is threejs only policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
-  assert.equal(source.includes("function drawBandSurfacePreview"), true);
-  assert.equal(source.includes('canvas class="band-surface-preview"'), true);
-  assert.equal(source.includes("drawBandSurfacePreview(mesh, canvas"), true);
+  assert.equal(source.includes("class DftBandSurfaceViewer extends HTMLElement"), true);
+  assert.equal(source.includes("async ensureThree()"), true);
+  assert.equal(source.includes("new THREE.WebGLRenderer"), true);
+  assert.equal(source.includes("new OrbitControls(camera, renderer.domElement)"), true);
+  assert.equal(source.includes("band-surface-three"), true);
+  assert.equal(source.includes("band-surface-preview"), false);
 });
 
 
 
-test("energy scale signal policy exists", () => {
-  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes("data-dft-energy-scale"), true);
-  assert.equal(source.includes('emitDftSignal("view-changed"'), true);
-  assert.equal(source.includes('onDftSignal("view-changed"'), true);
-  assert.equal(source.includes("energyScale"), true);
-  assert.equal(source.includes("drawBandSurfacePreview(mesh, canvas"), true);
-  assert.equal(source.includes("energyScale: this.energyScale"), true);
-});
 
 
 
-test("surface rotation signal policy exists", () => {
-  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes("data-dft-rotation"), true);
-  assert.equal(source.includes("rotationInput"), true);
-  assert.equal(source.includes("this.rotation"), true);
-  assert.equal(source.includes("rotation: this.rotation"), true);
-  assert.equal(source.includes("Math.cos(theta)"), true);
-  assert.equal(source.includes("Math.sin(theta)"), true);
-});
 
 
 
-test("band surface slice guide policy exists", () => {
-  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes("function drawBandSurfaceSliceGuide"), true);
-  assert.equal(source.includes("function drawProjectedPolyline"), true);
-  assert.equal(source.includes("sliceAxis: this.sliceAxis"), true);
-  assert.equal(source.includes("sliceValue: this.sliceValue"), true);
-  assert.equal(source.includes('axis === "u"'), true);
-  assert.equal(source.includes('axis === "v"'), true);
-  assert.equal(source.includes('axis === "energy"'), true);
-});
 
 
 
@@ -715,28 +686,9 @@ test("band surface reference frame policy exists", () => {
 
 
 
-test("band surface viewer drag rotation policy exists", () => {
-  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes("bindSurfaceCanvas(canvas)"), true);
-  assert.equal(source.includes('canvas.addEventListener("pointerdown"'), true);
-  assert.equal(source.includes('canvas.addEventListener("pointermove"'), true);
-  assert.equal(source.includes('emitDftSignal("view-changed"'), true);
-  assert.equal(source.includes("rotation,"), true);
-  assert.equal(source.includes("canvas.setPointerCapture(event.pointerId)"), true);
-});
 
 
 
-test("band surface viewer wheel energy scale policy exists", () => {
-  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes('canvas.addEventListener("wheel"'), true);
-  assert.equal(source.includes("event.preventDefault()"), true);
-  assert.equal(source.includes("event.deltaY < 0 ? 1.1 : 1.0 / 1.1"), true);
-  assert.equal(source.includes("Math.max(0.05, Math.min(20.0"), true);
-  assert.equal(source.includes("passive: false"), true);
-});
 
 
 
@@ -770,9 +722,9 @@ test("nearestBandSurfaceVertex selects closest projected point", () => {
 test("band surface hover selection policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
-  assert.equal(source.includes("function nearestBandSurfaceVertex"), true);
-  assert.equal(source.includes("updateHoverFromCanvasEvent"), true);
-  assert.equal(source.includes("renderHoverReadout"), true);
+  assert.equal(source.includes("handlePointerMove(event)"), true);
+  assert.equal(source.includes("handleClick(event)"), true);
+  assert.equal(source.includes("pickNearestVertex(event"), true);
   assert.equal(source.includes('emitDftSignal("selected-kpoint"'), true);
   assert.equal(source.includes("data-dft-surface-hover"), true);
 });
@@ -799,17 +751,59 @@ test("selected kpoint marker policy exists", () => {
 });
 
 
-test("band surface explicit view controls policy exists", () => {
+
+
+
+test("threeBandSurfaceGeometryData builds position and index buffers", () => {
+  const mesh = {
+    vertices: [
+      { x: 0, y: 10, z: 100, i: 0, j: 0, band: 0 },
+      { x: 1, y: 11, z: 101, i: 0, j: 1, band: 0 },
+      { x: 2, y: 12, z: 102, i: 1, j: 0, band: 0 },
+    ],
+    /** @type {Array<[number, number, number]>} */
+    triangles: [[0, 1, 2]],
+    summary: { count: 3, zmin: 100, zmax: 102 },
+  };
+
+  const data = threeBandSurfaceGeometryData(mesh);
+
+  assert.equal(data.positions.length, 9);
+  assert.equal(data.indices.length, 3);
+  assert.deepEqual(Array.from(data.indices), [0, 1, 2]);
+  assert.equal(Number.isFinite(data.radius), true);
+});
+
+
+test("band surface threejs orbit controls policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
-  assert.equal(source.includes("bindSurfaceViewButtons"), true);
-  assert.equal(source.includes("data-dft-surface-rotate-left"), true);
-  assert.equal(source.includes("data-dft-surface-rotate-right"), true);
-  assert.equal(source.includes("data-dft-surface-pitch-up"), true);
-  assert.equal(source.includes("data-dft-surface-pitch-down"), true);
-  assert.equal(source.includes("data-dft-surface-zoom-in"), true);
-  assert.equal(source.includes("data-dft-surface-zoom-out"), true);
-  assert.equal(source.includes("data-dft-surface-reset"), true);
-  assert.equal(source.includes("viewZoom"), true);
-  assert.equal(source.includes("pitch"), true);
+  assert.equal(source.includes("async function loadThreeRuntime"), true);
+  assert.equal(source.includes("OrbitControls"), true);
+  assert.equal(source.includes("new THREE.WebGLRenderer"), true);
+  assert.equal(source.includes("new OrbitControls(camera, renderer.domElement)"), true);
+  assert.equal(source.includes("data-dft-three-surface"), true);
+  assert.equal(source.includes("three.js controls: left drag rotate, wheel zoom, right drag pan"), true);
+});
+
+
+
+test("band surface orbit control interaction policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("controls.enableDamping = true"), true);
+  assert.equal(source.includes("controls.screenSpacePanning = true"), true);
+  assert.equal(source.includes("handlePointerMove(event)"), true);
+  assert.equal(source.includes("handleClick(event)"), true);
+  assert.equal(source.includes("pickNearestVertex(event"), true);
+  assert.equal(source.includes('emitDftSignal("selected-kpoint"'), true);
+});
+
+
+test("band surface selected marker is threejs mesh policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("updateSelectedMarker()"), true);
+  assert.equal(source.includes("new THREE.SphereGeometry"), true);
+  assert.equal(source.includes("this.selectedMarker.position.set"), true);
 });

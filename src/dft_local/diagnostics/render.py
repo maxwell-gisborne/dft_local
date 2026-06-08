@@ -1025,6 +1025,16 @@ details.diagnostic-section .diagnostic-paper details.diagnostic-section {
 """
 
 
+THREE_IMPORT_MAP = """  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+"""
+
+
 def render_page(title: str, body: str) -> str:
     return (
         "<!doctype html>\n"
@@ -1033,6 +1043,7 @@ def render_page(title: str, body: str) -> str:
         "  <meta charset='utf-8'>\n"
         f"  <title>{escape(title)}</title>\n"
         f"{ACADEMIC_STYLE}\n"
+        f"{THREE_IMPORT_MAP}\n"
         "  <script type='module' src='/static/dft-local-components.js'></script>\n"
         "</head>\n"
         "<body>\n"
@@ -1043,14 +1054,3 @@ def render_page(title: str, body: str) -> str:
         "</html>\n"
     )
 
-    return f"""<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>{escape(title)}</title>
-  <script type='module' src='/static/dft-local-components.js'></script>
-</head>
-<body>
-{body}
-</body>
-</html>"""
