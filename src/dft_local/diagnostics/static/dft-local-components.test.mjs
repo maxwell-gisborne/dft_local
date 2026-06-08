@@ -711,3 +711,28 @@ test("band surface reference frame policy exists", () => {
   assert.equal(source.includes('"M"'), true);
   assert.equal(source.includes("bz_hexagon"), true);
 });
+
+
+
+test("band surface viewer drag rotation policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("bindSurfaceCanvas(canvas)"), true);
+  assert.equal(source.includes('canvas.addEventListener("pointerdown"'), true);
+  assert.equal(source.includes('canvas.addEventListener("pointermove"'), true);
+  assert.equal(source.includes('emitDftSignal("view-changed"'), true);
+  assert.equal(source.includes("rotation,"), true);
+  assert.equal(source.includes("canvas.setPointerCapture(event.pointerId)"), true);
+});
+
+
+
+test("band surface viewer wheel energy scale policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes('canvas.addEventListener("wheel"'), true);
+  assert.equal(source.includes("event.preventDefault()"), true);
+  assert.equal(source.includes("event.deltaY < 0 ? 1.1 : 1.0 / 1.1"), true);
+  assert.equal(source.includes("Math.max(0.05, Math.min(20.0"), true);
+  assert.equal(source.includes("passive: false"), true);
+});

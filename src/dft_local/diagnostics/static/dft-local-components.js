@@ -1619,6 +1619,10 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.energyScale = 1.0;
       /** @type {number} */
       this.rotation = 0.0;
+      /** @type {number | null} */
+      this.dragStartX = null;
+      /** @type {number} */
+      this.dragStartRotation = 0.0;
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
     }
@@ -1645,6 +1649,50 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       for (const unsubscribe of this.unsubscribers) unsubscribe();
       this.unsubscribers = [];
       delete this.dataset.bound;
+    }
+
+    /**
+     * @param {HTMLCanvasElement} canvas
+     */
+    bindSurfaceCanvas(canvas) {
+      canvas.style.touchAction = "none";
+
+      canvas.addEventListener("pointerdown", (event) => {
+        canvas.setPointerCapture(event.pointerId);
+        this.dragStartX = event.clientX;
+        this.dragStartRotation = this.rotation;
+      });
+
+      canvas.addEventListener("pointermove", (event) => {
+        if (this.dragStartX === null) return;
+
+        const dx = event.clientX - this.dragStartX;
+        const rotation = this.dragStartRotation + dx * 0.01;
+        emitDftSignal("view-changed", {
+          energyScale: this.energyScale,
+          rotation,
+        }, this);
+      });
+
+      const clearDrag = () => {
+        this.dragStartX = null;
+      };
+
+      canvas.addEventListener("pointerup", clearDrag);
+      canvas.addEventListener("pointercancel", clearDrag);
+      canvas.addEventListener("pointerleave", clearDrag);
+
+      canvas.addEventListener("wheel", (event) => {
+        event.preventDefault();
+
+        const factor = event.deltaY < 0 ? 1.1 : 1.0 / 1.1;
+        const energyScale = Math.max(0.05, Math.min(20.0, this.energyScale * factor));
+
+        emitDftSignal("view-changed", {
+          energyScale,
+          rotation: this.rotation,
+        }, this);
+      }, { passive: false });
     }
 
     render() {
@@ -1691,6 +1739,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       const canvas = this.querySelector("canvas.band-surface-preview");
       if (canvas instanceof HTMLCanvasElement) {
+        this.bindSurfaceCanvas(canvas);
         drawBandSurfacePreview(mesh, canvas, {
           energyScale: this.energyScale,
           rotation: this.rotation,
