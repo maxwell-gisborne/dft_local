@@ -20,6 +20,7 @@ import {
   bandSurfaceMeshData,
   bandSurfaceSummary,
   projectBandSurfacePoint,
+  nearestBandSurfaceVertex,
   nearestPathPoint,
   selectedPathHits,
   nearestPointByX,
@@ -735,4 +736,43 @@ test("band surface viewer wheel energy scale policy exists", () => {
   assert.equal(source.includes("event.deltaY < 0 ? 1.1 : 1.0 / 1.1"), true);
   assert.equal(source.includes("Math.max(0.05, Math.min(20.0"), true);
   assert.equal(source.includes("passive: false"), true);
+});
+
+
+
+test("nearestBandSurfaceVertex selects closest projected point", () => {
+  const mesh = {
+    vertices: [
+      { x: 0, y: 0, z: 0, i: 0, j: 0, band: 0 },
+      { x: 1, y: 0, z: 0, i: 1, j: 0, band: 0 },
+    ],
+    summary: { zmin: 0, zmax: 1 },
+  };
+  const view = {
+    xmin: 0,
+    xmax: 1,
+    ymin: 0,
+    ymax: 1,
+    zmin: 0,
+    zmax: 1,
+    width: 100,
+    height: 100,
+  };
+
+  const projected = projectBandSurfacePoint(mesh.vertices[1], view);
+  const hit = nearestBandSurfaceVertex(mesh, projected, view, 5.0);
+
+  assert.notEqual(hit, null);
+  assert.equal(hit?.vertex.i, 1);
+});
+
+
+test("band surface hover selection policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function nearestBandSurfaceVertex"), true);
+  assert.equal(source.includes("updateHoverFromCanvasEvent"), true);
+  assert.equal(source.includes("renderHoverReadout"), true);
+  assert.equal(source.includes('emitDftSignal("selected-kpoint"'), true);
+  assert.equal(source.includes("data-dft-surface-hover"), true);
 });

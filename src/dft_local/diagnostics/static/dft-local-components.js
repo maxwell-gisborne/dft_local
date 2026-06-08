@@ -556,13 +556,38 @@ function projectBandSurfacePoint(point, view) {
 }
 
 /**
- * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
+ * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, summary:{zmin:number|null, zmax:number|null}}} mesh
+ * @param {{x:number, y:number}} pointer
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {number} maxDistance
+ * @returns {null | {vertex:{x:number, y:number, z:number, i:number, j:number, band:number}, sx:number, sy:number, distance:number}}
+ */
+function nearestBandSurfaceVertex(mesh, pointer, view, maxDistance = 20.0) {
+  let best = null;
+  let bestDistance = maxDistance;
+
+  for (const vertex of mesh.vertices) {
+    const p = projectBandSurfacePoint(vertex, view);
+    const distance = Math.hypot(pointer.x - p.x, pointer.y - p.y);
+
+    if (distance <= bestDistance) {
+      bestDistance = distance;
+      best = { vertex, sx: p.x, sy: p.y, distance };
+    }
+  }
+
+  return best;
+}
+
+/**
+ * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
  * @param {HTMLCanvasElement} canvas
  * @param {{energyScale?:number, rotation?:number, sliceAxis?:string|null, sliceValue?:number|null, payload?:JsonPayload|null}} options
+ * @returns {null | {xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}}
  */
 function drawBandSurfacePreview(mesh, canvas, options = {}) {
   const ctx = canvas.getContext("2d");
-  if (!ctx) return;
+  if (!ctx) return null;
 
   const width = canvas.width;
   const height = canvas.height;
@@ -570,7 +595,7 @@ function drawBandSurfacePreview(mesh, canvas, options = {}) {
 
   if (mesh.vertices.length === 0) {
     ctx.fillText("no surface data", 16, 24);
-    return;
+    return null;
   }
 
   let xmin = Infinity;
@@ -622,6 +647,7 @@ function drawBandSurfacePreview(mesh, canvas, options = {}) {
   drawBandSurfaceReferenceFrame(options.payload ?? null, ctx, view);
   drawBandSurfaceSliceGuide(mesh, ctx, view, options);
   ctx.globalAlpha = 1.0;
+  return view;
 }
 
 /**
@@ -1623,6 +1649,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.dragStartX = null;
       /** @type {number} */
       this.dragStartRotation = 0.0;
+      /** @type {null | ReturnType<typeof bandSurfaceMeshData>} */
+      this.currentMesh = null;
+      /** @type {null | {xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} */
+      this.currentView = null;
+      /** @type {null | {vertex:{x:number, y:number, z:number, i:number, j:number, band:number}, sx:number, sy:number, distance:number}} */
+      this.hoverHit = null;
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
     }
@@ -1693,6 +1725,56 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           rotation: this.rotation,
         }, this);
       }, { passive: false });
+
+      canvas.addEventListener("pointermove", (event) => {
+        if (this.dragStartX !== null) return;
+        this.updateHoverFromCanvasEvent(canvas, event);
+      });
+
+      canvas.addEventListener("click", (event) => {
+        this.updateHoverFromCanvasEvent(canvas, event);
+        if (!this.hoverHit) return;
+
+        const v = this.hoverHit.vertex;
+        emitDftSignal("selected-kpoint", {
+          i: v.i,
+          j: v.j,
+          band: v.band,
+          k1: v.x,
+          k2: v.y,
+          energy: v.z,
+        }, this);
+      });
+    }
+
+    /**
+     * @param {HTMLCanvasElement} canvas
+     * @param {PointerEvent | MouseEvent} event
+     */
+    updateHoverFromCanvasEvent(canvas, event) {
+      if (!this.currentMesh || !this.currentView) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const pointer = {
+        x: (event.clientX - rect.left) * (canvas.width / rect.width),
+        y: (event.clientY - rect.top) * (canvas.height / rect.height),
+      };
+
+      this.hoverHit = nearestBandSurfaceVertex(this.currentMesh, pointer, this.currentView, 24.0);
+      this.renderHoverReadout();
+    }
+
+    renderHoverReadout() {
+      const target = this.querySelector("[data-dft-surface-hover]");
+      if (!(target instanceof HTMLElement)) return;
+
+      if (!this.hoverHit) {
+        target.textContent = "hover: none";
+        return;
+      }
+
+      const v = this.hoverHit.vertex;
+      target.textContent = `hover: i=${v.i}, j=${v.j}, band=${v.band}, k1=${nice(v.x)}, k2=${nice(v.y)}, E=${nice(v.z)}`;
     }
 
     render() {
@@ -1733,20 +1815,23 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           <span>energy scale: ${nice(this.energyScale)}</span>
           <span>rotation: ${nice(this.rotation)}</span>
           <span>reference: Γ/K/M, BZ boundary, k1/k2/E axes</span>
+          <span data-dft-surface-hover>hover: none</span>
           <canvas class="band-surface-preview" width="720" height="420"></canvas>
         </div>
       `;
 
       const canvas = this.querySelector("canvas.band-surface-preview");
       if (canvas instanceof HTMLCanvasElement) {
+        this.currentMesh = mesh;
         this.bindSurfaceCanvas(canvas);
-        drawBandSurfacePreview(mesh, canvas, {
+        this.currentView = drawBandSurfacePreview(mesh, canvas, {
           energyScale: this.energyScale,
           rotation: this.rotation,
           sliceAxis: this.sliceAxis,
           sliceValue: this.sliceValue,
           payload,
         });
+        this.renderHoverReadout();
       }
     }
   }
@@ -2269,4 +2354,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
