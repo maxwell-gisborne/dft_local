@@ -42,6 +42,14 @@ PATH_OPTIONS = (
 )
 
 
+SYNTHETIC_SURFACE_OPTIONS = (
+    ("plane_x", "Plane wave in Cartesian x"),
+    ("plane_y", "Plane wave in Cartesian y"),
+    ("gaussian", "Rotational Gaussian"),
+    ("radial_bowl", "Rotational bowl"),
+)
+
+
 def _domain_root() -> Path:
     return Path(__file__).resolve().parent
 
@@ -443,6 +451,100 @@ def compute_region_surface(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     )
 
 
+def _synthetic_surface_payload(kind: str, *, nu: int, nv: int) -> dict:
+    k1_axis = np.linspace(-np.pi, np.pi, nu)
+    k2_axis = np.linspace(-np.pi, np.pi, nv)
+    k1, k2 = np.meshgrid(k1_axis, k2_axis, indexing="ij")
+
+    # Same display embedding as the JS viewer.  The central BZ mask uses
+    # |k1| <= pi, |k2| <= pi, |k1 - k2| <= pi, so the reciprocal basis vectors
+    # are displayed at 120 degrees.
+    x = k1 - 0.5 * k2
+    y = (np.sqrt(3.0) / 2.0) * k2
+    r2 = x * x + y * y
+
+    frequency = 4.0
+
+    if kind == "plane_x":
+        energy = np.sin(frequency * x)
+        title = "Synthetic plane-wave-x surface"
+    elif kind == "plane_y":
+        energy = np.sin(frequency * y)
+        title = "Synthetic plane-wave-y surface"
+    elif kind == "gaussian":
+        sigma = np.pi / 2.0
+        energy = np.exp(-r2 / (2.0 * sigma * sigma))
+        title = "Synthetic rotational Gaussian surface"
+    elif kind == "radial_bowl":
+        energy = r2 / (np.pi * np.pi)
+        title = "Synthetic rotational bowl surface"
+    else:
+        raise ValueError(f"unknown synthetic surface kind: {kind!r}")
+
+    mask = (
+        (np.abs(k1) <= np.pi + 1e-12)
+        & (np.abs(k2) <= np.pi + 1e-12)
+        & (np.abs(k1 - k2) <= np.pi + 1e-12)
+    )
+
+    return {
+        "name": title,
+        "nu": int(nu),
+        "nv": int(nv),
+        "k1": k1.tolist(),
+        "k2": k2.tolist(),
+        "mask": mask.tolist(),
+        "energies": energy[:, :, None].tolist(),
+        "bands": [0],
+        "nbands": 1,
+        "selected_band": 0,
+        "energy_unit": "synthetic",
+        "matching_strategy": "synthetic",
+        "bz_hexagon": [
+            [np.pi, 0.0],
+            [np.pi, np.pi],
+            [0.0, np.pi],
+            [-np.pi, 0.0],
+            [-np.pi, -np.pi],
+            [0.0, -np.pi],
+        ],
+    }
+
+
+def compute_synthetic_surface(ctx, inputs: dict[str, object]) -> DiagnosticResult:
+    kind = str(inputs["surface"])
+    nu = int(inputs["nu"])
+    nv = int(inputs["nv"])
+
+    payload = _synthetic_surface_payload(kind, nu=nu, nv=nv)
+
+    return DiagnosticResult(
+        title="Synthetic band surface aspect diagnostic",
+        summary=(
+            "Known analytic surfaces for checking the three.js viewer aspect, "
+            "orientation, and hexagon mask."
+        ),
+        cards=(
+            Card("surface", kind, "ok"),
+            Card("grid", f"{nu}×{nv}", "ok"),
+            Card("purpose", "aspect/orientation check", "neutral"),
+        ),
+        body=(
+            WebGLView(
+                id="synthetic_band_surface",
+                title=str(payload["name"]),
+                description=(
+                    "Expected: plane_x slopes along display x, plane_y slopes along display y, "
+                    "gaussian and radial_bowl should be rotationally symmetric on the uv/k plane."
+                ),
+                renderer="region_surface",
+                payload=payload,
+                interaction_channel="synthetic_band_surface",
+            ),
+        ),
+    )
+
+
 def diagnostics() -> list[DiagnosticSpec]:
     return [
         DiagnosticSpec(
@@ -496,6 +598,42 @@ def diagnostics() -> list[DiagnosticSpec]:
             ),
             compute=compute_band_path,
             tier="real_data",
+        ),
+        DiagnosticSpec(
+            id="transport.bands.synthetic_surface",
+            group="transport",
+            title="Synthetic band surface aspect check",
+            description="Render known analytic surfaces to validate viewer aspect and orientation.",
+            inputs=(
+                InputSpec(
+                    "surface",
+                    "Surface",
+                    "select",
+                    "gaussian",
+                    options=SYNTHETIC_SURFACE_OPTIONS,
+                    help="Known analytic function used for aspect/orientation validation.",
+                ),
+                InputSpec(
+                    "nu",
+                    "nu",
+                    "int",
+                    25,
+                    min_value=3,
+                    max_value=80,
+                    help="Grid points along u.",
+                ),
+                InputSpec(
+                    "nv",
+                    "nv",
+                    "int",
+                    25,
+                    min_value=3,
+                    max_value=80,
+                    help="Grid points along v.",
+                ),
+            ),
+            compute=compute_synthetic_surface,
+            tier="instant",
         ),
         DiagnosticSpec(
             id="transport.bands.region_surface",

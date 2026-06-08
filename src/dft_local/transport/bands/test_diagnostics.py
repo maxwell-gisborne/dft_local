@@ -1,8 +1,10 @@
 from __future__ import annotations
+import numpy as np
 
 from dft_local.diagnostics.models import DiagnosticSpec
 from dft_local.transport.bands.diagnostics import (
     compute_overview,
+    compute_synthetic_surface,
     diagnostics,
 )
 
@@ -11,9 +13,10 @@ def test_bands_diagnostics_exports_overview_spec() -> None:
     specs = diagnostics()
     by_id = {spec.id: spec for spec in specs}
 
-    assert len(specs) == 3
+    assert len(specs) >= 4
     assert isinstance(by_id["transport.bands.overview"], DiagnosticSpec)
     assert isinstance(by_id["transport.bands.path"], DiagnosticSpec)
+    assert "transport.bands.synthetic_surface" in by_id
 
 
 def test_bands_overview_mentions_public_api() -> None:
@@ -100,3 +103,72 @@ def test_band_region_surface_diagnostic_renders_webgl_payload() -> None:
     assert "<dft-band-surface-viewer data-source='data-band_region_surface'></dft-band-surface-viewer>" in html
     assert '"energies"' in html
     assert '"nbands"' in html or '"bands"' in html
+
+
+
+def test_synthetic_surface_gaussian_payload_is_rotational() -> None:
+    result = compute_synthetic_surface(
+        None,
+        {
+            "surface": "gaussian",
+            "nu": "5",
+            "nv": "5",
+        },
+    )
+
+    view = result.body[0]
+    payload = view.payload
+
+    assert payload["nu"] == 5
+    assert payload["nv"] == 5
+    assert payload["nbands"] == 1
+    assert len(payload["energies"]) == 5
+    assert len(payload["energies"][0]) == 5
+    assert len(payload["energies"][0][0]) == 1
+
+    centre = payload["energies"][2][2][0]
+    corner = payload["energies"][0][0][0]
+
+    assert centre > corner
+    assert any(not value for row in payload["mask"] for value in row)
+
+
+def test_synthetic_surface_plane_x_and_plane_y_differ() -> None:
+    plane_x = compute_synthetic_surface(
+        None,
+        {
+            "surface": "plane_x",
+            "nu": "3",
+            "nv": "3",
+        },
+    ).body[0].payload
+
+    plane_y = compute_synthetic_surface(
+        None,
+        {
+            "surface": "plane_y",
+            "nu": "3",
+            "nv": "3",
+        },
+    ).body[0].payload
+
+    assert plane_x["energies"] != plane_y["energies"]
+
+
+
+def test_synthetic_plane_waves_are_oscillatory() -> None:
+    payload = compute_synthetic_surface(
+        None,
+        {
+            "surface": "plane_x",
+            "nu": "21",
+            "nv": "21",
+        },
+    ).body[0].payload
+
+    values = np.asarray(payload["energies"], dtype=float)[:, :, 0]
+
+    assert np.max(values) <= 1.0 + 1e-12
+    assert np.min(values) >= -1.0 - 1e-12
+    assert np.any(values > 0.5)
+    assert np.any(values < -0.5)
