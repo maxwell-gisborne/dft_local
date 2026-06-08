@@ -532,7 +532,7 @@ function bandSurfaceMeshData(payload, band) {
 
 /**
  * @param {{x:number, y:number, z:number}} point
- * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
  * @returns {{x:number, y:number}}
  */
 function projectBandSurfacePoint(point, view) {
@@ -540,25 +540,29 @@ function projectBandSurfacePoint(point, view) {
   const yRange = view.ymax - view.ymin || 1.0;
   const zRange = view.zmax - view.zmin || 1.0;
 
-  const px0 = (point.x - view.xmin) / xRange - 0.5;
-  const py0 = (point.y - view.ymin) / yRange - 0.5;
+  const viewZoom = view.viewZoom ?? 1.0;
+  const px0 = ((point.x - view.xmin) / xRange - 0.5) * viewZoom;
+  const py0 = ((point.y - view.ymin) / yRange - 0.5) * viewZoom;
   const pz = ((point.z - view.zmin) / zRange) * (view.energyScale ?? 1.0);
   const theta = view.rotation ?? 0.0;
+  const pitch = view.pitch ?? 0.65;
   const c = Math.cos(theta);
   const s = Math.sin(theta);
   const px = c * px0 - s * py0 + 0.5;
   const py = s * px0 + c * py0 + 0.5;
+  const planarY = py * (view.height - 48) * Math.cos(pitch);
+  const energyY = 0.75 * pz * (view.height - 48) * Math.sin(pitch);
 
   return {
     x: 24 + px * (view.width - 48) + 0.22 * (py - 0.5) * (view.width - 48),
-    y: view.height - 24 - py * (view.height - 48) - 0.35 * pz * (view.height - 48),
+    y: view.height - 24 - planarY - energyY,
   };
 }
 
 /**
  * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, summary:{zmin:number|null, zmax:number|null}}} mesh
  * @param {{x:number, y:number}} pointer
- * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
  * @param {number} maxDistance
  * @returns {null | {vertex:{x:number, y:number, z:number, i:number, j:number, band:number}, sx:number, sy:number, distance:number}}
  */
@@ -582,7 +586,7 @@ function nearestBandSurfaceVertex(mesh, pointer, view, maxDistance = 20.0) {
 /**
  * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
  * @param {HTMLCanvasElement} canvas
- * @param {{energyScale?:number, rotation?:number, sliceAxis?:string|null, sliceValue?:number|null, payload?:JsonPayload|null}} options
+ * @param {{energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number, sliceAxis?:string|null, sliceValue?:number|null, payload?:JsonPayload|null, selectedKpoint?:Record<string, unknown>|null}} options
  * @returns {null | {xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}}
  */
 function drawBandSurfacePreview(mesh, canvas, options = {}) {
@@ -621,6 +625,8 @@ function drawBandSurfacePreview(mesh, canvas, options = {}) {
     height,
     energyScale: options.energyScale ?? 1.0,
     rotation: options.rotation ?? 0.0,
+    pitch: options.pitch ?? 0.65,
+    viewZoom: options.viewZoom ?? 1.0,
   };
 
   ctx.lineWidth = 0.6;
@@ -646,6 +652,7 @@ function drawBandSurfacePreview(mesh, canvas, options = {}) {
 
   drawBandSurfaceReferenceFrame(options.payload ?? null, ctx, view);
   drawBandSurfaceSliceGuide(mesh, ctx, view, options);
+  drawBandSurfaceSelectionMarker(mesh, ctx, view, options.selectedKpoint ?? null);
   ctx.globalAlpha = 1.0;
   return view;
 }
@@ -653,7 +660,7 @@ function drawBandSurfacePreview(mesh, canvas, options = {}) {
 /**
  * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
  * @param {CanvasRenderingContext2D} ctx
- * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
  * @param {{sliceAxis?:string|null, sliceValue?:number|null}} options
  */
 function drawBandSurfaceSliceGuide(mesh, ctx, view, options) {
@@ -704,7 +711,7 @@ function drawBandSurfaceSliceGuide(mesh, ctx, view, options) {
 /**
  * @param {Array<{x:number, y:number, z:number}>} points
  * @param {CanvasRenderingContext2D} ctx
- * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
  */
 function drawProjectedPolyline(points, ctx, view) {
   ctx.beginPath();
@@ -722,7 +729,7 @@ function drawProjectedPolyline(points, ctx, view) {
 /**
  * @param {JsonPayload | null} payload
  * @param {CanvasRenderingContext2D} ctx
- * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
  */
 function drawBandSurfaceReferenceFrame(payload, ctx, view) {
   ctx.save();
@@ -777,7 +784,7 @@ function drawArrow(ctx, a, b, label) {
 /**
  * @param {JsonPayload | null} payload
  * @param {CanvasRenderingContext2D} ctx
- * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
  */
 function drawBandSurfaceBzBoundary(payload, ctx, view) {
   const bz = /** @type {unknown[][] | undefined} */ (payload?.bz_hexagon);
@@ -809,7 +816,7 @@ function drawBandSurfaceBzBoundary(payload, ctx, view) {
 
 /**
  * @param {CanvasRenderingContext2D} ctx
- * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
  */
 function drawBandSurfaceSymmetryLabels(ctx, view) {
   const labels = [
@@ -831,6 +838,42 @@ function drawBandSurfaceSymmetryLabels(ctx, view) {
     ctx.fillText(String(label), p.x + 6, p.y - 6);
   }
 
+  ctx.restore();
+}
+
+
+/**
+ * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>}} mesh
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number, pitch?:number, viewZoom?:number}} view
+ * @param {null | Record<string, unknown>} selected
+ */
+function drawBandSurfaceSelectionMarker(mesh, ctx, view, selected) {
+  if (!selected) return;
+
+  const i = Number(selected.i);
+  const j = Number(selected.j);
+  const band = Number(selected.band);
+
+  const vertex = mesh.vertices.find((v) => v.i === i && v.j === j && v.band === band);
+  if (!vertex) return;
+
+  const p = projectBandSurfacePoint(vertex, view);
+
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.lineWidth = 2.5;
+  ctx.globalAlpha = 1.0;
+
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 7.0, 0, 2.0 * Math.PI);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, 3.0, 0, 2.0 * Math.PI);
+  ctx.fill();
+
+  ctx.fillText("selected", p.x + 10, p.y - 10);
   ctx.restore();
 }
 
@@ -1605,8 +1648,17 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.unsubscribers.push(onDftSignal("view-changed", (payload) => {
         const energyScale = Number(payload.detail.energyScale);
         const rotation = Number(payload.detail.rotation);
-        this.energyScale = Number.isFinite(energyScale) && energyScale > 0 ? energyScale : 1.0;
-        this.rotation = Number.isFinite(rotation) ? rotation : 0.0;
+        const pitch = Number(payload.detail.pitch);
+        const viewZoom = Number(payload.detail.viewZoom);
+        this.energyScale = Number.isFinite(energyScale) && energyScale > 0 ? energyScale : this.energyScale;
+        this.rotation = Number.isFinite(rotation) ? rotation : this.rotation;
+        this.pitch = Number.isFinite(pitch) ? Math.max(0.05, Math.min(1.45, pitch)) : this.pitch;
+        this.viewZoom = Number.isFinite(viewZoom) && viewZoom > 0 ? Math.max(0.2, Math.min(5.0, viewZoom)) : this.viewZoom;
+        this.render();
+      }));
+
+      this.unsubscribers.push(onDftSignal("selected-kpoint", (payload) => {
+        this.selectedKpoint = payload.detail;
         this.render();
       }));
 
@@ -1628,6 +1680,51 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         : `${this.sliceAxis}=${nice(this.sliceValue)}`;
 
       this.textContent = `band: ${band}; slice: ${slice}`;
+    }
+  }
+
+
+  class DftKPointReadout extends HTMLElement {
+    constructor() {
+      super();
+      /** @type {Array<() => void>} */
+      this.unsubscribers = [];
+      /** @type {null | Record<string, unknown>} */
+      this.selected = null;
+    }
+
+    connectedCallback() {
+      if (this.dataset.bound === "1") return;
+      this.dataset.bound = "1";
+
+      this.unsubscribers.push(onDftSignal("selected-kpoint", (payload) => {
+        this.selected = payload.detail;
+        this.render();
+      }));
+
+      this.render();
+    }
+
+    disconnectedCallback() {
+      for (const unsubscribe of this.unsubscribers) unsubscribe();
+      this.unsubscribers = [];
+      delete this.dataset.bound;
+    }
+
+    render() {
+      if (!this.selected) {
+        this.textContent = "selected k-point: none";
+        return;
+      }
+
+      const i = Number(this.selected.i);
+      const j = Number(this.selected.j);
+      const band = Number(this.selected.band);
+      const k1 = Number(this.selected.k1);
+      const k2 = Number(this.selected.k2);
+      const energy = Number(this.selected.energy);
+
+      this.textContent = `selected k-point: i=${i}, j=${j}, band=${band}, k1=${nice(k1)}, k2=${nice(k2)}, E=${nice(energy)}`;
     }
   }
 
@@ -1655,6 +1752,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.currentView = null;
       /** @type {null | {vertex:{x:number, y:number, z:number, i:number, j:number, band:number}, sx:number, sy:number, distance:number}} */
       this.hoverHit = null;
+      /** @type {number} */
+      this.pitch = 0.65;
+      /** @type {number} */
+      this.viewZoom = 1.0;
+      /** @type {null | Record<string, unknown>} */
+      this.selectedKpoint = null;
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
     }
@@ -1703,6 +1806,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         emitDftSignal("view-changed", {
           energyScale: this.energyScale,
           rotation,
+          pitch: this.pitch,
+          viewZoom: this.viewZoom,
         }, this);
       });
 
@@ -1723,6 +1828,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         emitDftSignal("view-changed", {
           energyScale,
           rotation: this.rotation,
+          pitch: this.pitch,
+          viewZoom: this.viewZoom,
         }, this);
       }, { passive: false });
 
@@ -1777,6 +1884,36 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       target.textContent = `hover: i=${v.i}, j=${v.j}, band=${v.band}, k1=${nice(v.x)}, k2=${nice(v.y)}, E=${nice(v.z)}`;
     }
 
+    bindSurfaceViewButtons() {
+      const emitView = (updates = {}) => {
+        emitDftSignal("view-changed", {
+          energyScale: this.energyScale,
+          rotation: this.rotation,
+          pitch: this.pitch,
+          viewZoom: this.viewZoom,
+          ...updates,
+        }, this);
+      };
+
+      const buttons = [
+        ["[data-dft-surface-rotate-left]", () => emitView({ rotation: this.rotation - 0.2 })],
+        ["[data-dft-surface-rotate-right]", () => emitView({ rotation: this.rotation + 0.2 })],
+        ["[data-dft-surface-pitch-up]", () => emitView({ pitch: this.pitch + 0.08 })],
+        ["[data-dft-surface-pitch-down]", () => emitView({ pitch: this.pitch - 0.08 })],
+        ["[data-dft-surface-zoom-in]", () => emitView({ viewZoom: this.viewZoom * 1.15 })],
+        ["[data-dft-surface-zoom-out]", () => emitView({ viewZoom: this.viewZoom / 1.15 })],
+        ["[data-dft-surface-reset]", () => emitView({ rotation: 0.0, pitch: 0.65, viewZoom: 1.0, energyScale: 1.0 })],
+      ];
+
+      for (const [selector, handler] of buttons) {
+        const button = this.querySelector(String(selector));
+        if (button instanceof HTMLButtonElement && button.dataset.bound !== "1") {
+          button.dataset.bound = "1";
+          button.addEventListener("click", /** @type {() => void} */ (handler));
+        }
+      }
+    }
+
     render() {
       const payload = readJsonPayload(this);
       const band = this.selectedBand === null || !Number.isFinite(this.selectedBand)
@@ -1814,7 +1951,18 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           <span>energy: ${energyText}</span>
           <span>energy scale: ${nice(this.energyScale)}</span>
           <span>rotation: ${nice(this.rotation)}</span>
+          <span>pitch: ${nice(this.pitch)}</span>
+          <span>zoom: ${nice(this.viewZoom)}</span>
           <span>reference: Γ/K/M, BZ boundary, k1/k2/E axes</span>
+          <div class="band-surface-view-controls">
+            <button type="button" data-dft-surface-rotate-left>rotate left</button>
+            <button type="button" data-dft-surface-rotate-right>rotate right</button>
+            <button type="button" data-dft-surface-pitch-up>pitch up</button>
+            <button type="button" data-dft-surface-pitch-down>pitch down</button>
+            <button type="button" data-dft-surface-zoom-in>zoom in</button>
+            <button type="button" data-dft-surface-zoom-out>zoom out</button>
+            <button type="button" data-dft-surface-reset>reset view</button>
+          </div>
           <span data-dft-surface-hover>hover: none</span>
           <canvas class="band-surface-preview" width="720" height="420"></canvas>
         </div>
@@ -1827,10 +1975,14 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         this.currentView = drawBandSurfacePreview(mesh, canvas, {
           energyScale: this.energyScale,
           rotation: this.rotation,
+          pitch: this.pitch,
+          viewZoom: this.viewZoom,
           sliceAxis: this.sliceAxis,
           sliceValue: this.sliceValue,
           payload,
+          selectedKpoint: this.selectedKpoint,
         });
+        this.bindSurfaceViewButtons();
         this.renderHoverReadout();
       }
     }
@@ -2341,6 +2493,10 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
     customElements.define("dft-band-readout", DftBandReadout);
   }
 
+  if (!customElements.get("dft-kpoint-readout")) {
+    customElements.define("dft-kpoint-readout", DftKPointReadout);
+  }
+
   if (!customElements.get("dft-band-surface-viewer")) {
     customElements.define("dft-band-surface-viewer", DftBandSurfaceViewer);
   }
@@ -2354,4 +2510,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

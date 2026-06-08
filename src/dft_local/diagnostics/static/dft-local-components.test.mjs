@@ -776,3 +776,40 @@ test("band surface hover selection policy exists", () => {
   assert.equal(source.includes('emitDftSignal("selected-kpoint"'), true);
   assert.equal(source.includes("data-dft-surface-hover"), true);
 });
+
+
+
+test("kpoint readout component policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("class DftKPointReadout extends HTMLElement"), true);
+  assert.equal(source.includes('customElements.define("dft-kpoint-readout"'), true);
+  assert.equal(source.includes('onDftSignal("selected-kpoint"'), true);
+  assert.equal(source.includes("selected k-point:"), true);
+});
+
+
+test("selected kpoint marker policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function drawBandSurfaceSelectionMarker"), true);
+  assert.equal(source.includes("selectedKpoint"), true);
+  assert.equal(source.includes('emitDftSignal("selected-kpoint"'), true);
+  assert.equal(source.includes('ctx.fillText("selected"'), true);
+});
+
+
+test("band surface explicit view controls policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("bindSurfaceViewButtons"), true);
+  assert.equal(source.includes("data-dft-surface-rotate-left"), true);
+  assert.equal(source.includes("data-dft-surface-rotate-right"), true);
+  assert.equal(source.includes("data-dft-surface-pitch-up"), true);
+  assert.equal(source.includes("data-dft-surface-pitch-down"), true);
+  assert.equal(source.includes("data-dft-surface-zoom-in"), true);
+  assert.equal(source.includes("data-dft-surface-zoom-out"), true);
+  assert.equal(source.includes("data-dft-surface-reset"), true);
+  assert.equal(source.includes("viewZoom"), true);
+  assert.equal(source.includes("pitch"), true);
+});
