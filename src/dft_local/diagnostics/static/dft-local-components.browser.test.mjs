@@ -47,6 +47,17 @@ async function serveDirectory(root) {
     close: () => new Promise((resolveClose) => server.close(() => resolveClose())),
   };
 }
+/**
+ * @param {import("@playwright/test").Page} page
+ * @param {string[]} errors
+ */
+async function debugSurfacePage(page, errors) {
+  const status = await page.locator("[data-dft-surface-status]").innerText().catch(() => "<missing status>");
+  const body = await page.locator("body").innerHTML().catch(() => "<missing body>");
+  return `errors=${JSON.stringify(errors)} status=${status} body=${body.slice(0, 1800)}`;
+}
+
+
 
 test("band surface viewer renders in a real browser", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-"));
@@ -125,7 +136,7 @@ test("band surface viewer renders in a real browser", async () => {
     await page.waitForSelector("[data-dft-three-surface]", { timeout: 10000 });
 
     const status = await page.locator("[data-dft-surface-status]").innerText();
-    assert.match(status, /band 0/);
+    assert.match(status, /band 0/, await debugSurfacePage(page, errors));
     assert.match(status, /vertices 9/);
     assert.match(status, /hex mask off/);
     assert.doesNotMatch(status, /no surface data/);
@@ -232,6 +243,141 @@ test("band surface hex mask toggle changes rendered status", async () => {
     assert.match(await status.innerText(), /triangles 0/);
   } finally {
     await browser.close();
+    await server.close();
+  }
+});
+
+
+
+test("band surface legend toggles bands", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-multiband-"));
+  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
+  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 1], [0, 1]],
+    k2: [[0, 0], [1, 1]],
+    energies: [
+      [[0, 10], [1, 11]],
+      [[2, 12], [3, 13]],
+    ],
+    bands: [0, 1],
+    nbands: 2,
+    selected_band: 0,
+  };
+
+  writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="application/json" id="surface-payload">${JSON.stringify(payload).replaceAll("</", "<\/")}</script>
+  <dft-band-surface-viewer data-source="surface-payload"></dft-band-surface-viewer>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+  const server = await serveDirectory(root);
+  const browser = await chromium.launch();
+  const page = await browser.newPage();
+
+  try {
+    await page.goto(server.url);
+    await page.waitForSelector("dft-band-surface-viewer .band-surface-viewer-three-only", { timeout: 10000 });
+
+    await page.waitForFunction(() => {
+      const status = document.querySelector("[data-dft-surface-status]")?.textContent || "";
+      const legend = document.querySelector("[data-dft-surface-legend]")?.textContent || "";
+      return status.includes("visible 2") && legend.includes("band 0") && legend.includes("band 1");
+    }, { timeout: 10000 });
+
+    await page.locator("[data-dft-surface-legend] button", { hasText: "band 1" }).click();
+
+    await page.waitForFunction(() => {
+      const status = document.querySelector("[data-dft-surface-status]")?.textContent || "";
+      const hidden = document.querySelector("[data-dft-surface-legend] .band-surface-legend-item-hidden")?.textContent || "";
+      return status.includes("visible 1") && status.includes("hidden 1") && hidden.includes("band 1");
+    }, { timeout: 10000 });
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+});
+
+
+
+test("band surface legend does not allow hiding every band", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-legend-last-"));
+  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
+  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 1], [0, 1]],
+    k2: [[0, 0], [1, 1]],
+    energies: [
+      [[0, 10], [1, 11]],
+      [[2, 12], [3, 13]],
+    ],
+    bands: [0, 1],
+    nbands: 2,
+    selected_band: 0,
+  };
+
+  writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="application/json" id="surface-payload">${JSON.stringify(payload).replaceAll("</", "<\\/")}</script>
+  <dft-band-surface-viewer data-source="surface-payload"></dft-band-surface-viewer>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+  const server = await serveDirectory(root);
+  const browserInstance = await chromium.launch();
+  const page = await browserInstance.newPage();
+
+  try {
+    await page.goto(server.url);
+    await page.waitForSelector("dft-band-surface-viewer .band-surface-viewer-three-only", { timeout: 10000 });
+
+    await page.waitForFunction(() => {
+      const status = document.querySelector("[data-dft-surface-status]")?.textContent || "";
+      return status.includes("visible 2");
+    }, { timeout: 10000 });
+
+    await page.locator("[data-dft-surface-legend] button", { hasText: "band 1" }).click();
+
+    await page.waitForFunction(() => {
+      const status = document.querySelector("[data-dft-surface-status]")?.textContent || "";
+      return status.includes("visible 1") && status.includes("hidden 1");
+    }, { timeout: 10000 });
+
+    const remaining = page.locator("[data-dft-surface-legend] button:not(.band-surface-legend-item-hidden)");
+    await expect(remaining).toBeDisabled();
+  } finally {
+    await browserInstance.close();
     await server.close();
   }
 });

@@ -36,8 +36,6 @@ def test_group_resolved_overview_renders() -> None:
     assert "Selected energy-ordered band" in html
     assert "Band trace contributions" in html
     assert "sum bands - compact" in html
-    assert "<dft-band-controls>" in html
-    assert "<dft-band-readout>" in html
     assert "<dft-kpoint-readout>" in html
     assert "id='band_surface_payload'" in html
     assert "<dft-band-surface-viewer data-source='band_surface_payload'>" in html

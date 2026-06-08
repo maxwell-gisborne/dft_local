@@ -19,6 +19,9 @@ import {
   bandSurfaceTriangles,
   bandSurfaceMeshData,
   bandSurfaceMeshDataWithMask,
+  visibleBandIndices,
+  bandSurfaceColor,
+  allBandIndices,
   bandSurfaceSummary,
   projectBandSurfacePoint,
   nearestBandSurfaceVertex,
@@ -542,8 +545,7 @@ test("band surface viewer reads payload policy", () => {
 
   assert.equal(source.includes("this.payload = readJsonPayload("), true);
   assert.equal(source.includes("bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon)"), true);
-  assert.equal(source.includes("vertexInsideVisibleHexagon(payload, vertex)"), true);
-  assert.equal(source.includes("this.updateSurface();"), true);
+  assert.equal(source.includes("this.requestSurfaceUpdate();"), true);
 });
 
 
@@ -1022,3 +1024,58 @@ test("band surface preserves camera across data updates", () => {
   assert.equal(source.includes("resetCameraIfNeeded(data)"), true);
 });
 
+
+
+
+test("visibleBandIndices hides legend-toggled bands", () => {
+  const payload = { bands: [0, 1, 2, 3], nbands: 4, selected_band: 1 };
+
+  assert.deepEqual(allBandIndices(payload), [0, 1, 2, 3]);
+  assert.deepEqual(visibleBandIndices(payload, new Set()), [0, 1, 2, 3]);
+  assert.deepEqual(visibleBandIndices(payload, new Set([1, 3])), [0, 2]);
+});
+
+
+test("bandSurfaceColor is stable by band index", () => {
+  assert.equal(bandSurfaceColor(0), bandSurfaceColor(10));
+  assert.notEqual(bandSurfaceColor(0), bandSurfaceColor(1));
+});
+
+
+test("band surface multi-band render policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("visibleBandIndices(this.payload, this.hiddenBands)"), true);
+  assert.equal(source.includes("this.currentBandMeshes"), true);
+  assert.equal(source.includes("bandSurfaceColor(item.band)"), true);
+  assert.equal(source.includes("data-dft-surface-legend"), true);
+  assert.equal(source.includes("band-surface-legend-item-hidden"), true);
+  assert.equal(source.includes("this.hiddenBands.add(band)"), true);
+  assert.equal(source.includes("this.hiddenBands.delete(band)"), true);
+  assert.equal(source.includes("#808080"), true);
+  assert.equal(source.includes("band-surface-legend-item-hidden"), true);
+  assert.equal(source.includes("this.hiddenBands.add(band)"), true);
+  assert.equal(source.includes("this.hiddenBands.delete(band)"), true);
+  assert.equal(source.includes("#808080"), true);
+});
+
+
+
+test("band surface no longer has band visibility multichoice", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("data-dft-band-visibility"), false);
+  assert.equal(source.includes("data-dft-band-start"), false);
+  assert.equal(source.includes("data-dft-band-end"), false);
+});
+
+
+
+test("band surface legend keeps one band visible policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("At least one band must remain visible"), true);
+  assert.equal(source.includes("button.disabled = isLastVisible"), true);
+  assert.equal(source.includes("visible.length <= 1"), true);
+  assert.equal(source.includes("no visible bands"), true);
+});

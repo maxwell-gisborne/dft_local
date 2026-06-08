@@ -790,6 +790,78 @@ function bandSurfaceMeshData(payload, band) {
  *   summary:{count:number, zmin:number|null, zmax:number|null}
  * }}
  */
+/**
+ * @param {number} band
+ * @returns {number}
+ */
+function bandSurfaceColor(band) {
+  const palette = [
+    0x4e79a7,
+    0xf28e2b,
+    0xe15759,
+    0x76b7b2,
+    0x59a14f,
+    0xedc949,
+    0xaf7aa1,
+    0xff9da7,
+    0x9c755f,
+    0xbab0ab,
+  ];
+
+  return palette[Math.abs(Math.trunc(band)) % palette.length];
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @returns {number[]}
+ */
+function allBandIndices(payload) {
+  const bands = Array.isArray(payload?.bands)
+    ? payload.bands.map((band) => Number(band)).filter((band) => Number.isInteger(band))
+    : [];
+
+  const nbands = Number(payload?.nbands ?? bands.length);
+  const fallback = Number.isInteger(nbands) && nbands > 0
+    ? Array.from({ length: nbands }, (_, band) => band)
+    : bands;
+
+  return bands.length > 0 ? bands : fallback;
+}
+
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {Set<number>} hiddenBands
+ * @returns {number[]}
+ */
+function visibleBandIndices(payload, hiddenBands) {
+  const bands = Array.isArray(payload?.bands)
+    ? payload.bands.map((band) => Number(band)).filter((band) => Number.isInteger(band))
+    : [];
+
+  const nbands = Number(payload?.nbands ?? bands.length);
+  const fallback = Number.isInteger(nbands) && nbands > 0
+    ? Array.from({ length: nbands }, (_, band) => band)
+    : bands;
+
+  const available = bands.length > 0 ? bands : fallback;
+
+  return available.filter((band) => !hiddenBands.has(band));
+}
+
+
+
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {number} band
+ * @param {boolean} useMask
+ * @returns {{
+ *   vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>,
+ *   triangles:Array<[number, number, number]>,
+ *   summary:{count:number, zmin:number|null, zmax:number|null}
+ * }}
+ */
 function bandSurfaceMeshDataWithMask(payload, band, useMask) {
   const rawVertices = bandSurfaceVertices(payload, band);
   const rawTriangles = bandSurfaceTriangles(payload, false);
@@ -2076,6 +2148,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.maskToHexagon = false;
       /** @type {boolean} */
       this.hasInitialCamera = false;
+      /** @type {Set<number>} */
+      this.hiddenBands = new Set();
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
 
@@ -2083,11 +2157,15 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.payload = null;
       /** @type {null | ReturnType<typeof bandSurfaceMeshData>} */
       this.currentMesh = null;
+      /** @type {Array<{band:number, mesh:ReturnType<typeof bandSurfaceMeshData>}>} */
+      this.currentBandMeshes = [];
 
       /** @type {HTMLElement | null} */
       this.statusEl = null;
       /** @type {HTMLElement | null} */
       this.hoverEl = null;
+      /** @type {HTMLElement | null} */
+      this.legendEl = null;
       /** @type {HTMLElement | null} */
       this.threeHost = null;
 
@@ -2103,10 +2181,10 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.camera = null;
       /** @type {any} */
       this.controls = null;
-      /** @type {any} */
-      this.surface = null;
-      /** @type {any} */
-      this.wire = null;
+      /** @type {any[]} */
+      this.surfaceMeshes = [];
+      /** @type {any[]} */
+      this.wireMeshes = [];
       /** @type {any} */
       this.selectedMarker = null;
       /** @type {number | null} */
@@ -2122,7 +2200,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       this.unsubscribers.push(onDftSignal("selected-band", (payload) => {
         this.selectedBand = Number(payload.detail.band);
-        this.updateSurface();
+        this.requestSurfaceUpdate();
       }));
 
       this.unsubscribers.push(onDftSignal("slice-changed", (payload) => {
@@ -2137,7 +2215,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         this.updateStatus();
       }));
 
-      this.updateSurface();
+      this.requestSurfaceUpdate();
     }
 
     disconnectedCallback() {
@@ -2151,10 +2229,13 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.innerHTML = `
         <div class="band-surface-viewer-three-only">
           <div class="band-surface-status" data-dft-surface-status></div>
-          <label class="band-surface-mask-toggle">
-            <input type="checkbox" data-dft-mask-to-hexagon>
-            mask to hexagon
-          </label>
+          <div class="band-surface-controls">
+            <label class="band-surface-mask-toggle">
+              <input type="checkbox" data-dft-mask-to-hexagon>
+              mask to hexagon
+            </label>
+          </div>
+          <div class="band-surface-legend" data-dft-surface-legend></div>
           <div class="band-surface-hover" data-dft-surface-hover>hover: none</div>
           <div class="band-surface-three" data-dft-three-surface style="width:100%; min-height:560px;"></div>
           <p class="band-surface-help">three.js controls: left drag rotate, wheel zoom, right drag pan.</p>
@@ -2163,6 +2244,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       this.statusEl = this.querySelector("[data-dft-surface-status]");
       this.hoverEl = this.querySelector("[data-dft-surface-hover]");
+      this.legendEl = this.querySelector("[data-dft-surface-legend]");
       this.threeHost = this.querySelector("[data-dft-three-surface]");
       this.bindMaskToggle();
     }
@@ -2176,14 +2258,14 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       input.dataset.bound = "1";
       const update = () => {
         this.maskToHexagon = input.checked;
-        this.updateSurface();
+        this.requestSurfaceUpdate();
       };
 
       input.addEventListener("input", update);
       input.addEventListener("change", update);
     }
 
-    selectedBandIndex() {
+selectedBandIndex() {
       if (this.selectedBand !== null && Number.isFinite(this.selectedBand)) {
         return this.selectedBand;
       }
@@ -2281,10 +2363,88 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.scene = null;
       this.camera = null;
       this.controls = null;
-      this.surface = null;
-      this.wire = null;
+      this.surfaceMeshes = [];
+      this.wireMeshes = [];
       this.selectedMarker = null;
       this.hasInitialCamera = false;
+    }
+
+    clearBandSurfaceMeshes() {
+      if (!this.scene) return;
+
+      for (const mesh of this.surfaceMeshes) this.scene.remove(mesh);
+      for (const mesh of this.wireMeshes) this.scene.remove(mesh);
+
+      this.surfaceMeshes = [];
+      this.wireMeshes = [];
+    }
+
+    updateLegend() {
+      if (!this.legendEl) return;
+
+      const bands = allBandIndices(this.payload);
+      if (bands.length === 0) {
+        this.legendEl.textContent = "bands: none";
+        return;
+      }
+
+      this.legendEl.replaceChildren();
+
+      for (const band of bands) {
+        const hidden = this.hiddenBands.has(band);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = hidden
+          ? "band-surface-legend-item band-surface-legend-item-hidden"
+          : "band-surface-legend-item";
+        button.dataset.band = String(band);
+        button.style.marginRight = "0.4rem";
+        const visible = visibleBandIndices(this.payload, this.hiddenBands);
+        const isLastVisible = !hidden && visible.length <= 1;
+        button.disabled = isLastVisible;
+        button.title = isLastVisible ? "At least one band must remain visible" : "";
+        button.style.opacity = hidden ? "0.55" : "1.0";
+        button.textContent = `band ${band}`;
+
+        const swatch = document.createElement("span");
+        swatch.className = "band-surface-legend-swatch";
+        swatch.style.display = "inline-block";
+        swatch.style.width = "0.9em";
+        swatch.style.height = "0.9em";
+        swatch.style.marginRight = "0.35em";
+        swatch.style.verticalAlign = "-0.1em";
+        swatch.style.background = hidden
+          ? "#808080"
+          : `#${bandSurfaceColor(band).toString(16).padStart(6, "0")}`;
+
+        button.prepend(swatch);
+        button.addEventListener("click", () => {
+          if (this.hiddenBands.has(band)) {
+            this.hiddenBands.delete(band);
+          } else {
+            const visible = visibleBandIndices(this.payload, this.hiddenBands);
+            if (visible.length <= 1 && visible.includes(band)) {
+              return;
+            }
+            this.hiddenBands.add(band);
+          }
+          this.requestSurfaceUpdate();
+        });
+
+        this.legendEl.appendChild(button);
+      }
+    }
+
+
+
+    requestSurfaceUpdate() {
+      void this.updateSurface().catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        if (this.statusEl) {
+          this.statusEl.textContent = `surface update failed: ${message}`;
+        }
+        throw error;
+      });
     }
 
     async updateSurface() {
@@ -2293,14 +2453,28 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         this.maskToHexagon = maskInput.checked;
       }
 
-      const band = this.selectedBandIndex();
-      const mesh = bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon);
-      this.currentMesh = mesh;
+      const visibleBands = visibleBandIndices(this.payload, this.hiddenBands);
+
+      this.currentBandMeshes = visibleBands.map((band) => ({
+        band,
+        mesh: bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon),
+      }));
+      this.currentMesh = this.currentBandMeshes[0]?.mesh ?? null;
 
       this.updateStatus();
+      this.updateLegend();
 
-      if (mesh.vertices.length === 0 || mesh.triangles.length === 0) {
-        if (this.threeHost) this.threeHost.textContent = "no surface data";
+      const drawable = this.currentBandMeshes.filter((item) => (
+        item.mesh.vertices.length > 0 && item.mesh.triangles.length > 0
+      ));
+
+      if (drawable.length === 0) {
+        this.clearBandSurfaceMeshes();
+        this.updateLegend();
+        if (this.statusEl) {
+          const allBands = allBandIndices(this.payload);
+          this.statusEl.textContent = `visible 0; hidden ${this.hiddenBands.size}; bands ${allBands.length}; no visible bands`;
+        }
         return;
       }
 
@@ -2308,40 +2482,53 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       if (!this.THREE || !this.scene || !this.camera || !this.controls) return;
 
       const THREE = this.THREE;
-      const data = threeBandSurfaceGeometryData(mesh);
+      this.clearBandSurfaceMeshes();
 
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
-      geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
-      geometry.computeVertexNormals();
+      let firstData = null;
 
-      if (this.surface) this.scene.remove(this.surface);
-      if (this.wire) this.scene.remove(this.wire);
+      for (const item of drawable) {
+        const data = threeBandSurfaceGeometryData(item.mesh);
+        if (!firstData) firstData = data;
 
-      const material = new THREE.MeshStandardMaterial({
-        side: THREE.DoubleSide,
-        transparent: true,
-        opacity: 0.82,
-        roughness: 0.72,
-        metalness: 0.0,
-      });
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
+        geometry.setIndex(new THREE.BufferAttribute(data.indices, 1));
+        geometry.computeVertexNormals();
 
-      const wireMaterial = new THREE.MeshBasicMaterial({
-        wireframe: true,
-        transparent: true,
-        opacity: 0.22,
-      });
+        const color = bandSurfaceColor(item.band);
+        const material = new THREE.MeshStandardMaterial({
+          color,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: drawable.length === 1 ? 0.82 : 0.52,
+          roughness: 0.72,
+          metalness: 0.0,
+        });
 
-      this.surface = new THREE.Mesh(geometry, material);
-      this.wire = new THREE.Mesh(geometry, wireMaterial);
+        const wireMaterial = new THREE.MeshBasicMaterial({
+          color,
+          wireframe: true,
+          transparent: true,
+          opacity: drawable.length === 1 ? 0.22 : 0.30,
+        });
 
-      this.scene.add(this.surface);
-      this.scene.add(this.wire);
+        const surface = new THREE.Mesh(geometry, material);
+        const wire = new THREE.Mesh(geometry, wireMaterial);
 
-      this.addReferenceObjects(data);
-      this.resetCameraIfNeeded(data);
+        this.surfaceMeshes.push(surface);
+        this.wireMeshes.push(wire);
+        this.scene.add(surface);
+        this.scene.add(wire);
+      }
+
+      if (firstData) {
+        this.addReferenceObjects(firstData);
+        this.resetCameraIfNeeded(firstData);
+      }
+
       this.updateSelectedMarker();
     }
+
 
     /**
      * @param {{center:{x:number,y:number,z:number}, radius:number}} data
@@ -2459,6 +2646,9 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
     updateStatus() {
       const mesh = this.currentMesh;
       const band = this.selectedBandIndex();
+      const visibleCount = this.currentBandMeshes.length;
+      const totalVertices = this.currentBandMeshes.reduce((sum, item) => sum + item.mesh.vertices.length, 0);
+      const totalTriangles = this.currentBandMeshes.reduce((sum, item) => sum + item.mesh.triangles.length, 0);
       const bands = /** @type {unknown[] | undefined} */ (this.payload?.bands);
       const nbands = Number(this.payload?.nbands ?? NaN);
       const nu = Number(this.payload?.nu ?? NaN);
@@ -2477,7 +2667,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       if (this.statusEl) {
         const maskText = this.maskToHexagon ? "hex mask on" : "hex mask off";
-        this.statusEl.textContent = `band ${band}; grid ${gridText}; bands ${bandsText}; vertices ${mesh?.summary.count ?? 0}; triangles ${mesh?.triangles.length ?? 0}; energy ${energyText}; slice ${slice}; ${maskText}`;
+        const hiddenCount = this.hiddenBands.size;
+        this.statusEl.textContent = `band ${band}; visible ${visibleCount}; hidden ${hiddenCount}; grid ${gridText}; bands ${bandsText}; vertices ${totalVertices}; triangles ${totalTriangles}; energy ${energyText}; slice ${slice}; ${maskText}`;
       }
     }
 
@@ -2520,7 +2711,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
      * @param {number} maxDistance
      */
     pickNearestVertex(event, maxDistance = 0.08) {
-      if (!this.currentMesh || !this.renderer || !this.camera || !this.THREE) return null;
+      if (this.currentBandMeshes.length === 0 || !this.renderer || !this.camera || !this.THREE) return null;
 
       const rect = this.renderer.domElement.getBoundingClientRect();
       const pointer = {
@@ -2531,14 +2722,17 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       let best = null;
       let bestDistance = maxDistance;
 
-      for (const vertex of this.currentMesh.vertices) {
-        const p = new this.THREE.Vector3(vertex.x, vertex.z, vertex.y);
-        p.project(this.camera);
+      for (const item of this.currentBandMeshes) {
+        for (const vertex of item.mesh.vertices) {
+          const display = bandBasisToCartesian(vertex.x, vertex.y);
+          const p = new this.THREE.Vector3(display.x, vertex.z, display.y);
+          p.project(this.camera);
 
-        const distance = Math.hypot(pointer.x - p.x, pointer.y - p.y);
-        if (distance <= bestDistance) {
-          bestDistance = distance;
-          best = { vertex, distance };
+          const distance = Math.hypot(pointer.x - p.x, pointer.y - p.y);
+          if (distance <= bestDistance) {
+            bestDistance = distance;
+            best = { vertex, distance };
+          }
         }
       }
 
@@ -2546,7 +2740,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
     }
 
     updateSelectedMarker() {
-      if (!this.THREE || !this.scene || !this.currentMesh) return;
+      if (!this.THREE || !this.scene || this.currentBandMeshes.length === 0) return;
 
       if (this.selectedMarker) {
         this.scene.remove(this.selectedMarker);
@@ -2559,15 +2753,20 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       const j = Number(this.selectedKpoint.j);
       const band = Number(this.selectedKpoint.band);
 
-      const vertex = this.currentMesh.vertices.find((v) => v.i === i && v.j === j && v.band === band);
+      let vertex = null;
+      for (const item of this.currentBandMeshes) {
+        vertex = item.mesh.vertices.find((v) => v.i === i && v.j === j && v.band === band) ?? null;
+        if (vertex) break;
+      }
       if (!vertex) return;
 
       const THREE = this.THREE;
+      const display = bandBasisToCartesian(vertex.x, vertex.y);
       const geometry = new THREE.SphereGeometry(0.035 * Math.max(1, Math.abs(vertex.z) ** 0.2), 16, 16);
-      const material = new THREE.MeshBasicMaterial();
+      const material = new THREE.MeshBasicMaterial({ color: bandSurfaceColor(vertex.band) });
 
       this.selectedMarker = new THREE.Mesh(geometry, material);
-      this.selectedMarker.position.set(vertex.x, vertex.z, vertex.y);
+      this.selectedMarker.position.set(display.x, vertex.z, display.y);
       this.scene.add(this.selectedMarker);
     }
   }
@@ -3093,4 +3292,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
