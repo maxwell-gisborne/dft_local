@@ -103,6 +103,8 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     </select>
   </label>
   <label>slice <input data-dft-slice-value type='range' min='0' max='1' step='0.01' value='0.5'></label>
+  <label>energy scale <input data-dft-energy-scale type='range' min='0.1' max='5' step='0.1' value='1'></label>
+  <label>rotation <input data-dft-rotation type='range' min='-3.14159' max='3.14159' step='0.01' value='0'></label>
 </dft-band-controls>
 <dft-band-readout></dft-band-readout>
 <script type='application/json' id='band_surface_payload'>{surface_payload}</script>

@@ -531,6 +531,99 @@ function bandSurfaceMeshData(payload, band) {
 
 
 /**
+ * @param {{x:number, y:number, z:number}} point
+ * @param {{xmin:number, xmax:number, ymin:number, ymax:number, zmin:number, zmax:number, width:number, height:number, energyScale?:number, rotation?:number}} view
+ * @returns {{x:number, y:number}}
+ */
+function projectBandSurfacePoint(point, view) {
+  const xRange = view.xmax - view.xmin || 1.0;
+  const yRange = view.ymax - view.ymin || 1.0;
+  const zRange = view.zmax - view.zmin || 1.0;
+
+  const px0 = (point.x - view.xmin) / xRange - 0.5;
+  const py0 = (point.y - view.ymin) / yRange - 0.5;
+  const pz = ((point.z - view.zmin) / zRange) * (view.energyScale ?? 1.0);
+  const theta = view.rotation ?? 0.0;
+  const c = Math.cos(theta);
+  const s = Math.sin(theta);
+  const px = c * px0 - s * py0 + 0.5;
+  const py = s * px0 + c * py0 + 0.5;
+
+  return {
+    x: 24 + px * (view.width - 48) + 0.22 * (py - 0.5) * (view.width - 48),
+    y: view.height - 24 - py * (view.height - 48) - 0.35 * pz * (view.height - 48),
+  };
+}
+
+/**
+ * @param {{vertices:Array<{x:number, y:number, z:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
+ * @param {HTMLCanvasElement} canvas
+ * @param {{energyScale?:number, rotation?:number}} options
+ */
+function drawBandSurfacePreview(mesh, canvas, options = {}) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+
+  if (mesh.vertices.length === 0) {
+    ctx.fillText("no surface data", 16, 24);
+    return;
+  }
+
+  let xmin = Infinity;
+  let xmax = -Infinity;
+  let ymin = Infinity;
+  let ymax = -Infinity;
+
+  for (const v of mesh.vertices) {
+    xmin = Math.min(xmin, v.x);
+    xmax = Math.max(xmax, v.x);
+    ymin = Math.min(ymin, v.y);
+    ymax = Math.max(ymax, v.y);
+  }
+
+  const view = {
+    xmin,
+    xmax,
+    ymin,
+    ymax,
+    zmin: mesh.summary.zmin ?? 0.0,
+    zmax: mesh.summary.zmax ?? 1.0,
+    width,
+    height,
+    energyScale: options.energyScale ?? 1.0,
+    rotation: options.rotation ?? 0.0,
+  };
+
+  ctx.lineWidth = 0.6;
+  ctx.globalAlpha = 0.45;
+
+  for (const tri of mesh.triangles) {
+    const a = mesh.vertices[tri[0]];
+    const b = mesh.vertices[tri[1]];
+    const c = mesh.vertices[tri[2]];
+    if (!a || !b || !c) continue;
+
+    const pa = projectBandSurfacePoint(a, view);
+    const pb = projectBandSurfacePoint(b, view);
+    const pc = projectBandSurfacePoint(c, view);
+
+    ctx.beginPath();
+    ctx.moveTo(pa.x, pa.y);
+    ctx.lineTo(pb.x, pb.y);
+    ctx.lineTo(pc.x, pc.y);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1.0;
+}
+
+
+/**
  * @param {GraphPayload} payload
  * @param {number} angle
  * @returns {GraphPayload}
@@ -1222,6 +1315,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       const bandInput = this.querySelector("[data-dft-band]");
       const sliceAxisInput = this.querySelector("[data-dft-slice-axis]");
       const sliceValueInput = this.querySelector("[data-dft-slice-value]");
+      const energyScaleInput = this.querySelector("[data-dft-energy-scale]");
+      const rotationInput = this.querySelector("[data-dft-rotation]");
 
       if (bandInput) {
         bandInput.addEventListener("change", () => {
@@ -1245,6 +1340,22 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       if (sliceAxisInput) sliceAxisInput.addEventListener("change", emitSlice);
       if (sliceValueInput) sliceValueInput.addEventListener("input", emitSlice);
       if (sliceValueInput) sliceValueInput.addEventListener("change", emitSlice);
+
+      const emitView = () => {
+        const energyScale = energyScaleInput
+          ? Number(/** @type {HTMLInputElement | HTMLSelectElement} */ (energyScaleInput).value)
+          : 1.0;
+        const rotation = rotationInput
+          ? Number(/** @type {HTMLInputElement | HTMLSelectElement} */ (rotationInput).value)
+          : 0.0;
+
+        emitDftSignal("view-changed", { energyScale, rotation }, this);
+      };
+
+      if (energyScaleInput) energyScaleInput.addEventListener("input", emitView);
+      if (energyScaleInput) energyScaleInput.addEventListener("change", emitView);
+      if (rotationInput) rotationInput.addEventListener("input", emitView);
+      if (rotationInput) rotationInput.addEventListener("change", emitView);
     }
   }
 
@@ -1258,6 +1369,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.sliceAxis = null;
       /** @type {number | null} */
       this.sliceValue = null;
+      /** @type {number} */
+      this.energyScale = 1.0;
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
     }
@@ -1274,6 +1387,14 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.unsubscribers.push(onDftSignal("slice-changed", (payload) => {
         this.sliceAxis = String(payload.detail.axis ?? "");
         this.sliceValue = Number(payload.detail.value);
+        this.render();
+      }));
+
+      this.unsubscribers.push(onDftSignal("view-changed", (payload) => {
+        const energyScale = Number(payload.detail.energyScale);
+        const rotation = Number(payload.detail.rotation);
+        this.energyScale = Number.isFinite(energyScale) && energyScale > 0 ? energyScale : 1.0;
+        this.rotation = Number.isFinite(rotation) ? rotation : 0.0;
         this.render();
       }));
 
@@ -1308,6 +1429,10 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.sliceAxis = null;
       /** @type {number | null} */
       this.sliceValue = null;
+      /** @type {number} */
+      this.energyScale = 1.0;
+      /** @type {number} */
+      this.rotation = 0.0;
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
     }
@@ -1371,8 +1496,16 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           <span>vertices: ${mesh.summary.count}</span>
           <span>triangles: ${mesh.triangles.length}</span>
           <span>energy: ${energyText}</span>
+          <span>energy scale: ${nice(this.energyScale)}</span>
+          <span>rotation: ${nice(this.rotation)}</span>
+          <canvas class="band-surface-preview" width="720" height="420"></canvas>
         </div>
       `;
+
+      const canvas = this.querySelector("canvas.band-surface-preview");
+      if (canvas instanceof HTMLCanvasElement) {
+        drawBandSurfacePreview(mesh, canvas, { energyScale: this.energyScale, rotation: this.rotation });
+      }
     }
   }
 
@@ -1894,4 +2027,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, projectBandSurfacePoint, drawBandSurfacePreview, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

@@ -19,6 +19,7 @@ import {
   bandSurfaceTriangles,
   bandSurfaceMeshData,
   bandSurfaceSummary,
+  projectBandSurfacePoint,
   nearestPathPoint,
   selectedPathHits,
   nearestPointByX,
@@ -624,4 +625,57 @@ test("bandSurfaceSummary reports count and energy range", () => {
     zmin: -1.0,
     zmax: 3.0,
   });
+});
+
+
+
+test("band surface projection maps finite points into canvas", () => {
+  const point = { x: 0.5, y: 0.5, z: 0.5 };
+  const projected = projectBandSurfacePoint(point, {
+    xmin: 0,
+    xmax: 1,
+    ymin: 0,
+    ymax: 1,
+    zmin: 0,
+    zmax: 1,
+    width: 100,
+    height: 100,
+  });
+
+  assert.equal(Number.isFinite(projected.x), true);
+  assert.equal(Number.isFinite(projected.y), true);
+});
+
+
+test("band surface viewer canvas policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function drawBandSurfacePreview"), true);
+  assert.equal(source.includes('canvas class="band-surface-preview"'), true);
+  assert.equal(source.includes("drawBandSurfacePreview(mesh, canvas"), true);
+});
+
+
+
+test("energy scale signal policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("data-dft-energy-scale"), true);
+  assert.equal(source.includes('emitDftSignal("view-changed"'), true);
+  assert.equal(source.includes('onDftSignal("view-changed"'), true);
+  assert.equal(source.includes("energyScale"), true);
+  assert.equal(source.includes("drawBandSurfacePreview(mesh, canvas, { energyScale: this.energyScale"), true);
+});
+
+
+
+test("surface rotation signal policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("data-dft-rotation"), true);
+  assert.equal(source.includes("rotationInput"), true);
+  assert.equal(source.includes("this.rotation"), true);
+  assert.equal(source.includes("rotation: this.rotation"), true);
+  assert.equal(source.includes("Math.cos(theta)"), true);
+  assert.equal(source.includes("Math.sin(theta)"), true);
 });
