@@ -125,6 +125,13 @@ class MarkdownBlock:
 
 
 @dataclass(frozen=True, slots=True)
+class HtmlBlock:
+    id: str
+    title: UserString
+    html: str
+
+
+@dataclass(frozen=True, slots=True)
 class TableRow:
     """One table row, optionally linked to a selectable diagnostic entity."""
 

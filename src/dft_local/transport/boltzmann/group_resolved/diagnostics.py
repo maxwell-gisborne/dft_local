@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import numpy as np
 
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
     DiagnosticSpec,
+    HtmlBlock,
     InputSpec,
     DiagnosticSection,
     Table,
@@ -59,6 +61,15 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
 
     band = max(0, min(band, resolved.sigma_band.shape[0] - 1))
     residual = resolved.sigma - calc.sigma
+    surface_payload = json.dumps(
+        {
+            "kind": "band-surface-preview",
+            "nu": nu,
+            "nv": nv,
+            "nbands": int(resolved.sigma_band.shape[0]),
+            "selected_band": band,
+        }
+    )
 
     return DiagnosticResult(
         title="Group-resolved Boltzmann conductivity",
@@ -73,6 +84,33 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             Card("||sum bands - compact||", f"{np.linalg.norm(residual):.3e}", "ok"),
         ),
         sections=(
+            DiagnosticSection(
+                id="interactive_band_controls",
+                title="Interactive band controls",
+                description="Reusable signal components used by later band surface and conductivity views.",
+                body=(
+                    HtmlBlock(
+                        id="group_resolved_controls",
+                        title="Band controls",
+                        html=f"""
+<dft-band-controls>
+  <label>band <input data-dft-band type='number' min='0' max='{resolved.sigma_band.shape[0] - 1}' value='{band}'></label>
+  <label>slice axis
+    <select data-dft-slice-axis>
+      <option value='u'>u</option>
+      <option value='v'>v</option>
+      <option value='energy'>energy</option>
+    </select>
+  </label>
+  <label>slice <input data-dft-slice-value type='range' min='0' max='1' step='0.01' value='0.5'></label>
+</dft-band-controls>
+<dft-band-readout></dft-band-readout>
+<script type='application/json' id='band_surface_payload'>{surface_payload}</script>
+<dft-band-surface-viewer data-source='band_surface_payload'></dft-band-surface-viewer>
+""",
+                    ),
+                ),
+            ),
             DiagnosticSection(
                 id="selected_band_tensor",
                 title=f"Selected energy-ordered band {band}",

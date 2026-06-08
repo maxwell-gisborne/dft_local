@@ -8,7 +8,7 @@ from typing import Any
 import math
 import json
 
-from dft_local.diagnostics.models import DiagnosticSection, MarkdownBlock, DiagnosticResult, Graph2D, TypstMathBlock, Card, Table
+from dft_local.diagnostics.models import DiagnosticSection, HtmlBlock, MarkdownBlock, DiagnosticResult, Graph2D, TypstMathBlock, Card, Table
 from dft_local.diagnostics.typst import TypstRenderError, render_typst_error, render_typst_math_to_svg
 from dft_local.diagnostics.user_strings import RichText, TypstMath, rich
 from dft_local.core.units import DisplayQuantity
@@ -300,6 +300,15 @@ def render_typst_math_block(block: TypstMathBlock) -> str:
     )
 
 
+def render_html_block(block: HtmlBlock) -> str:
+    return (
+        f"<section id='{escape(block.id)}' class='html-block'>"
+        f"<h2>{render_user_string(block.title)}</h2>"
+        + block.html
+        + "</section>"
+    )
+
+
 def render_markdown_block(block: MarkdownBlock) -> str:
     return (
         f"<section id='{escape(block.id)}' class='markdown-block'>"
@@ -413,6 +422,26 @@ def render_matrix(matrix) -> str:
     return "".join(parts)
 
 
+def render_webgl_view(view) -> str:
+    payload = json.dumps(view.payload).replace("</", "<\\/")
+    data_id = f"data-{view.id}"
+
+    if view.renderer == "region_surface":
+        component = "dft-band-surface-viewer"
+    elif view.renderer == "graphene_viewer":
+        component = "dft-graphene-viewer"
+    else:
+        raise ValueError(f"Unknown WebGL renderer: {view.renderer}")
+
+    return (
+        f"<section class='webgl-panel'><h2>{render_user_string(view.title)}</h2>"
+        f"<p>{render_user_string(view.description)}</p>"
+        f"<script type='application/json' id='{escape(data_id)}'>{payload}</script>"
+        f"<{component} data-source='{escape(data_id)}'></{component}>"
+        "</section>"
+    )
+
+
 def render_graph(graph: Graph2D) -> str:
     payload = json.dumps(graph.payload()).replace("</", "<\\/")
     data_id = f"data-{graph.id}"
@@ -434,6 +463,9 @@ def render_document_block(block: Any) -> str:
 
     if isinstance(block, TypstMathBlock):
         return render_typst_math_block(block)
+
+    if isinstance(block, HtmlBlock):
+        return render_html_block(block)
 
     if isinstance(block, MarkdownBlock):
         return "<div class='markdown-math-group'>" + render_markdown_block(block) + "</div>"
@@ -559,6 +591,9 @@ def render_result(result: DiagnosticResult) -> str:
             parts.append("</tr>")
 
         parts.append("</tbody></table></section>")
+
+    for view in result.webgl:
+        parts.append(render_webgl_view(view))
 
     for graph in result.graphs:
         parts.append(render_graph(graph))

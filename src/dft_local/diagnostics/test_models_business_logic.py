@@ -360,3 +360,34 @@ def test_render_display_quantity_in_table_cell() -> None:
     assert "display-quantity" in html
     assert "data-unit='J'" in html
     assert "display-unit" in html
+
+
+
+def test_webgl_view_renders_band_surface_component() -> None:
+    from dft_local.diagnostics.models import DiagnosticResult, WebGLView
+    from dft_local.diagnostics.render import render_result
+
+    result = DiagnosticResult(
+        title="Surface",
+        summary="Band surface payload.",
+        webgl=(
+            WebGLView(
+                id="surface",
+                title="Band surface",
+                description="Solved region.",
+                renderer="region_surface",
+                payload={
+                    "nu": 2,
+                    "nv": 2,
+                    "nbands": 1,
+                    "energies": [[[0.0], [1.0]], [[2.0], [3.0]]],
+                },
+            ),
+        ),
+    )
+
+    html = render_result(result)
+
+    assert "id='data-surface'" in html
+    assert "<dft-band-surface-viewer data-source='data-surface'></dft-band-surface-viewer>" in html
+    assert "\"nbands\": 1" in html

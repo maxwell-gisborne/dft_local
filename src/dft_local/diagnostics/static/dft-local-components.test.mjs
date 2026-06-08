@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 
 import {
   nice,
+  readJsonPayload,
   graphBounds,
   zoomView,
   panView,
@@ -14,10 +15,15 @@ import {
   kBasisToCartesian,
   rotatePoint,
   kspacePayloadToCartesian,
+  bandSurfaceVertices,
+  bandSurfaceTriangles,
+  bandSurfaceMeshData,
+  bandSurfaceSummary,
   nearestPathPoint,
   selectedPathHits,
   nearestPointByX,
   makeGraphSvg,
+  createDftSignalBus,
   isSelectionFrozen,
   emitSelectionFreeze,
   selectedSteps,
@@ -432,4 +438,190 @@ test("kspace hexagon remains regular after screen projection", () => {
     maxLength / minLength < 1.000000001,
     `screen-projected hexagon side lengths are not regular: ${sideLengths.join(", ")}`
   );
+});
+
+
+
+test("generic signal bus publishes named detail payloads", () => {
+  const bus = createDftSignalBus();
+  /** @type {Array<{name:string, detail:Record<string, unknown>, source:unknown}>} */
+  const received = [];
+
+  const unsubscribe = bus.on("selected-band", (payload) => received.push(payload));
+  const emitted = bus.emit("selected-band", { band: 3 }, "unit-test");
+
+  assert.deepEqual(emitted, {
+    name: "selected-band",
+    detail: { band: 3 },
+    source: "unit-test",
+  });
+  assert.deepEqual(received, [emitted]);
+
+  unsubscribe();
+  bus.emit("selected-band", { band: 4 }, "unit-test");
+
+  assert.deepEqual(received, [emitted]);
+});
+
+
+test("generic signal bus keeps signal names isolated", () => {
+  const bus = createDftSignalBus();
+  /** @type {number[]} */
+  const selectedBands = [];
+  /** @type {number[]} */
+  const selectedSlices = [];
+
+  bus.on("selected-band", (payload) => selectedBands.push(Number(payload.detail.band)));
+  bus.on("slice-changed", (payload) => selectedSlices.push(Number(payload.detail.value)));
+
+  bus.emit("selected-band", { band: 2 });
+  bus.emit("slice-changed", { axis: "u", value: 0.25 });
+
+  assert.deepEqual(selectedBands, [2]);
+  assert.deepEqual(selectedSlices, [0.25]);
+});
+
+
+
+test("band controls component policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("class DftBandControls extends HTMLElement"), true);
+  assert.equal(source.includes('customElements.define("dft-band-controls"'), true);
+  assert.equal(source.includes('emitDftSignal("selected-band"'), true);
+  assert.equal(source.includes('emitDftSignal("slice-changed"'), true);
+  assert.equal(source.includes("data-dft-band"), true);
+  assert.equal(source.includes("data-dft-slice-axis"), true);
+  assert.equal(source.includes("data-dft-slice-value"), true);
+});
+
+
+
+test("band readout component listens to signal policy", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("class DftBandReadout extends HTMLElement"), true);
+  assert.equal(source.includes('customElements.define("dft-band-readout"'), true);
+  assert.equal(source.includes('onDftSignal("selected-band"'), true);
+  assert.equal(source.includes('onDftSignal("slice-changed"'), true);
+  assert.equal(source.includes("disconnectedCallback()"), true);
+});
+
+
+
+test("band surface viewer signal listener policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("class DftBandSurfaceViewer extends HTMLElement"), true);
+  assert.equal(source.includes('customElements.define("dft-band-surface-viewer"'), true);
+  assert.equal(source.includes('onDftSignal("selected-band"'), true);
+  assert.equal(source.includes('onDftSignal("slice-changed"'), true);
+  assert.equal(source.includes("band-surface-viewer-stub"), true);
+});
+
+
+
+test("generic json payload reader policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function readJsonPayload(host)"), true);
+  assert.equal(source.includes("return /** @type {GraphPayload | null} */ (readJsonPayload(host));"), true);
+});
+
+
+test("band surface viewer reads payload policy", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("const payload = readJsonPayload(this);"), true);
+  assert.equal(source.includes("payload?.nbands"), true);
+  assert.equal(source.includes("payload?.nu"), true);
+  assert.equal(source.includes("payload?.nv"), true);
+});
+
+
+
+test("bandSurfaceVertices extracts selected band samples", () => {
+  const payload = {
+    k1: [[0, 1], [2, 3]],
+    k2: [[10, 11], [12, 13]],
+    energies: [
+      [[0.0, 10.0], [1.0, 11.0]],
+      [[2.0, 12.0], [3.0, 13.0]],
+    ],
+  };
+
+  assert.deepEqual(bandSurfaceVertices(payload, 1), [
+    { x: 0, y: 10, z: 10, i: 0, j: 0, band: 1 },
+    { x: 1, y: 11, z: 11, i: 0, j: 1, band: 1 },
+    { x: 2, y: 12, z: 12, i: 1, j: 0, band: 1 },
+    { x: 3, y: 13, z: 13, i: 1, j: 1, band: 1 },
+  ]);
+});
+
+
+test("bandSurfaceTriangles builds two triangles per unmasked cell", () => {
+  const payload = { nu: 2, nv: 3 };
+
+  assert.deepEqual(bandSurfaceTriangles(payload), [
+    [0, 3, 1],
+    [3, 4, 1],
+    [1, 4, 2],
+    [4, 5, 2],
+  ]);
+});
+
+
+test("bandSurfaceTriangles skips masked triangle corners", () => {
+  const payload = {
+    nu: 2,
+    nv: 2,
+    mask: [
+      [true, true],
+      [false, true],
+    ],
+  };
+
+  assert.deepEqual(bandSurfaceTriangles(payload), []);
+});
+
+
+test("bandSurfaceMeshData bundles vertices triangles and summary", () => {
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 1], [2, 3]],
+    k2: [[10, 11], [12, 13]],
+    energies: [
+      [[0.0], [1.0]],
+      [[2.0], [3.0]],
+    ],
+  };
+
+  const mesh = bandSurfaceMeshData(payload, 0);
+
+  assert.equal(mesh.vertices.length, 4);
+  assert.deepEqual(mesh.triangles, [
+    [0, 2, 1],
+    [2, 3, 1],
+  ]);
+  assert.deepEqual(mesh.summary, {
+    count: 4,
+    zmin: 0.0,
+    zmax: 3.0,
+  });
+});
+
+
+test("bandSurfaceSummary reports count and energy range", () => {
+  const payload = {
+    k1: [[0, 1]],
+    k2: [[0, 0]],
+    energies: [[[3.0], [-1.0]]],
+  };
+
+  assert.deepEqual(bandSurfaceSummary(payload, 0), {
+    count: 2,
+    zmin: -1.0,
+    zmax: 3.0,
+  });
 });

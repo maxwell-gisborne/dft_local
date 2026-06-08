@@ -15,8 +15,9 @@ from dft_local.diagnostics.models import (
     InputSpec,
     Table,
     TableRow,
+    WebGLView,
 )
-from dft_local.transport.bands.core import LocalPath, bz_hexagon_vertices
+from dft_local.transport.bands.core import LocalPath, LocalRegion, bz_hexagon_vertices
 
 
 KERNEL_OPTIONS = (
@@ -393,6 +394,55 @@ def compute_band_path(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     )
 
 
+def compute_region_surface(ctx, inputs: dict[str, object]) -> DiagnosticResult:
+    kernel_choice = str(inputs["kernel"])
+    matching_strategy = str(inputs["matching"])
+    nu = int(inputs["nu"])
+    nv = int(inputs["nv"])
+
+    KH, KS = ctx.kernels(kernel_choice)
+
+    region = LocalRegion.from_parallelogram(
+        KH,
+        KS,
+        origin=(-np.pi, -np.pi),
+        edge_u=(2.0 * np.pi, 0.0),
+        edge_v=(0.0, 2.0 * np.pi),
+        nu=nu,
+        nv=nv,
+        name=f"central square ({kernel_choice})",
+        unit_context=ctx.state.data.working_unit_context,
+        matching_strategy=matching_strategy,
+    ).solve(fix_gauge=False)
+
+    payload = region.payload()
+    energies = np.asarray(region.energies, dtype=float) * ctx.state.data.energy_conversion_disk_to_working
+    payload["energies"] = energies.tolist()
+    payload["energy_min"] = float(np.min(energies))
+    payload["energy_max"] = float(np.max(energies))
+    payload["energy_unit"] = ctx.state.data.working_unit_context.energy.symbol
+
+    return DiagnosticResult(
+        title="Band region surface",
+        summary="Solved LocalRegion payload for reusable band surface viewer.",
+        cards=(
+            Card("kernel", kernel_choice, "ok"),
+            Card("matching", matching_strategy, "ok"),
+            Card("grid", f"{nu}×{nv}", "ok"),
+            Card("bands", energies.shape[2], "ok"),
+        ),
+        webgl=(
+            WebGLView(
+                id="band_region_surface",
+                title="Band surface viewer",
+                description="Real LocalRegion.payload(region) data for E_n(k1,k2).",
+                renderer="region_surface",
+                payload=payload,
+            ),
+        ),
+    )
+
+
 def diagnostics() -> list[DiagnosticSpec]:
     return [
         DiagnosticSpec(
@@ -445,6 +495,50 @@ def diagnostics() -> list[DiagnosticSpec]:
                 ),
             ),
             compute=compute_band_path,
+            tier="real_data",
+        ),
+        DiagnosticSpec(
+            id="transport.bands.region_surface",
+            group="transport",
+            title="Band region surface",
+            description="Render a solved LocalRegion as a reusable band surface payload.",
+            inputs=(
+                InputSpec(
+                    "kernel",
+                    "Kernel",
+                    "select",
+                    "average_star",
+                    options=KERNEL_OPTIONS,
+                    help="Kernel variant used to form H(k) and S(k).",
+                ),
+                InputSpec(
+                    "matching",
+                    "Matching strategy",
+                    "select",
+                    "energy_order",
+                    options=MATCHING_OPTIONS,
+                    help="Band labelling/matching method.",
+                ),
+                InputSpec(
+                    "nu",
+                    "nu",
+                    "int",
+                    9,
+                    min_value=3,
+                    max_value=40,
+                    help="Grid points along u.",
+                ),
+                InputSpec(
+                    "nv",
+                    "nv",
+                    "int",
+                    9,
+                    min_value=3,
+                    max_value=40,
+                    help="Grid points along v.",
+                ),
+            ),
+            compute=compute_region_surface,
             tier="real_data",
         ),
     ]

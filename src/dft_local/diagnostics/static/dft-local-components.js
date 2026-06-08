@@ -4,8 +4,11 @@
  * @typedef {{x:number, y:number, entity_id?:string|null, label?:string, meta?:Record<string, unknown>}} GraphPoint
  * @typedef {{name:string, kind:"line"|"points"|"line_points", points:GraphPoint[]}} GraphSeries
  * @typedef {{id:string, title:string, x_label:string, y_label:string, series:GraphSeries[]}} GraphPayload
+ * @typedef {Record<string, unknown>} JsonPayload
  * @typedef {{xmin:number, xmax:number, ymin:number, ymax:number}} GraphView
  * @typedef {{series:string, x:number, y:number, sx:number, sy:number, step?:number|null, pathX?:number|null, label?:string|null}} CursorHit
+ * @typedef {{name:string, detail:Record<string, unknown>, source:unknown}} DftSignalPayload
+ * @typedef {(payload:DftSignalPayload) => void} DftSignalListener
  */
 
 /**
@@ -20,11 +23,101 @@ function nice(value) {
   return value.toPrecision(4).replace(/\.?0+$/, "");
 }
 
+const DFT_SIGNAL_EVENT = "dft-local-signal";
+
+/**
+ * @param {EventTarget | null} target
+ */
+function createDftSignalBus(target = null) {
+  /** @type {Map<string, Set<DftSignalListener>>} */
+  const listeners = new Map();
+
+  /**
+   * @param {string} name
+   * @returns {Set<DftSignalListener>}
+   */
+  function listenersFor(name) {
+    const key = String(name);
+    if (!listeners.has(key)) listeners.set(key, new Set());
+    return /** @type {Set<DftSignalListener>} */ (listeners.get(key));
+  }
+
+  /**
+   * @param {string} name
+   * @param {DftSignalListener} listener
+   * @returns {() => void}
+   */
+  function on(name, listener) {
+    if (typeof listener !== "function") {
+      throw new TypeError("signal listener must be a function");
+    }
+
+    const bucket = listenersFor(name);
+    bucket.add(listener);
+
+    return () => {
+      bucket.delete(listener);
+      if (bucket.size === 0) listeners.delete(String(name));
+    };
+  }
+
+  /**
+   * @param {string} name
+   * @param {Record<string, unknown>} detail
+   * @param {unknown} source
+   * @returns {DftSignalPayload}
+   */
+  function emit(name, detail = {}, source = null) {
+    const key = String(name);
+    const payload = { name: key, detail, source };
+
+    for (const listener of Array.from(listenersFor(key))) {
+      listener(payload);
+    }
+
+    if (target && typeof CustomEvent !== "undefined") {
+      target.dispatchEvent(new CustomEvent(DFT_SIGNAL_EVENT, {
+        detail: payload,
+        bubbles: true,
+        composed: true,
+      }));
+    }
+
+    return payload;
+  }
+
+  return { on, emit };
+}
+
+const dftSignals = createDftSignalBus(
+  typeof window === "undefined" ? null : window,
+);
+
+/**
+ * @param {string} name
+ * @param {Record<string, unknown>} detail
+ * @param {unknown} source
+ * @returns {DftSignalPayload}
+ */
+function emitDftSignal(name, detail = {}, source = null) {
+  return dftSignals.emit(name, detail, source);
+}
+
+/**
+ * @param {string} name
+ * @param {DftSignalListener} listener
+ * @returns {() => void}
+ */
+function onDftSignal(name, listener) {
+  return dftSignals.on(name, listener);
+}
+
+
 /**
  * @param {Element} host
- * @returns {GraphPayload | null}
+ * @returns {JsonPayload | null}
  */
-function readGraphPayload(host) {
+function readJsonPayload(host) {
   const source = host.getAttribute("data-source");
   if (!source) return null;
 
@@ -32,10 +125,22 @@ function readGraphPayload(host) {
   if (!script) return null;
 
   try {
-    return /** @type {GraphPayload} */ (JSON.parse(script.textContent || ""));
+    return /** @type {Record<string, unknown>} */ (JSON.parse(script.textContent || ""));
   } catch {
     return null;
   }
+}
+
+/**
+ * @param {Element} host
+ * @returns {GraphPayload | null}
+ */
+/**
+ * @param {Element} host
+ * @returns {GraphPayload | null}
+ */
+function readGraphPayload(host) {
+  return /** @type {GraphPayload | null} */ (readJsonPayload(host));
 }
 
 /**
@@ -294,14 +399,150 @@ function rotatePoint(x, y, angle) {
  * @param {number} angle
  * @returns {GraphPayload}
  */
+/**
+ * @param {JsonPayload | null} payload
+ * @param {number} band
+ * @returns {Array<{x:number, y:number, z:number, i:number, j:number, band:number}>}
+ */
+function bandSurfaceVertices(payload, band) {
+  if (!payload) return [];
+
+  const k1 = /** @type {unknown[][] | undefined} */ (payload.k1);
+  const k2 = /** @type {unknown[][] | undefined} */ (payload.k2);
+  const energies = /** @type {unknown[][][] | undefined} */ (payload.energies);
+
+  if (!Array.isArray(k1) || !Array.isArray(k2) || !Array.isArray(energies)) return [];
+
+  const vertices = [];
+
+  for (let i = 0; i < energies.length; i += 1) {
+    const row = energies[i];
+    if (!Array.isArray(row)) continue;
+
+    for (let j = 0; j < row.length; j += 1) {
+      const energyBands = row[j];
+      if (!Array.isArray(energyBands)) continue;
+
+      const x = Number(k1[i]?.[j]);
+      const y = Number(k2[i]?.[j]);
+      const z = Number(energyBands[band]);
+
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+
+      vertices.push({ x, y, z, i, j, band });
+    }
+  }
+
+  return vertices;
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @returns {Array<[number, number, number]>}
+ */
+function bandSurfaceTriangles(payload) {
+  if (!payload) return [];
+
+  const nu = Number(payload.nu);
+  const nv = Number(payload.nv);
+  const mask = /** @type {unknown[][] | undefined} */ (payload.mask);
+
+  if (!Number.isInteger(nu) || !Number.isInteger(nv) || nu < 2 || nv < 2) return [];
+
+  /**
+   * @param {number} i
+   * @param {number} j
+   */
+  function vertexIndex(i, j) {
+    return i * nv + j;
+  }
+
+  /**
+   * @param {number} i
+   * @param {number} j
+   */
+  function enabled(i, j) {
+    if (!Array.isArray(mask)) return true;
+    return Boolean(mask[i]?.[j]);
+  }
+
+  /** @type {Array<[number, number, number]>} */
+  const triangles = [];
+
+  for (let i = 0; i < nu - 1; i += 1) {
+    for (let j = 0; j < nv - 1; j += 1) {
+      const a = enabled(i, j);
+      const b = enabled(i + 1, j);
+      const c = enabled(i, j + 1);
+      const d = enabled(i + 1, j + 1);
+
+      if (a && b && c) {
+        triangles.push([vertexIndex(i, j), vertexIndex(i + 1, j), vertexIndex(i, j + 1)]);
+      }
+
+      if (b && d && c) {
+        triangles.push([vertexIndex(i + 1, j), vertexIndex(i + 1, j + 1), vertexIndex(i, j + 1)]);
+      }
+    }
+  }
+
+  return triangles;
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {number} band
+ * @returns {{count:number, zmin:number|null, zmax:number|null}}
+ */
+function bandSurfaceSummary(payload, band) {
+  const vertices = bandSurfaceVertices(payload, band);
+
+  if (vertices.length === 0) {
+    return { count: 0, zmin: null, zmax: null };
+  }
+
+  let zmin = Infinity;
+  let zmax = -Infinity;
+
+  for (const vertex of vertices) {
+    zmin = Math.min(zmin, vertex.z);
+    zmax = Math.max(zmax, vertex.z);
+  }
+
+  return { count: vertices.length, zmin, zmax };
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {number} band
+ * @returns {{
+ *   vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>,
+ *   triangles:Array<[number, number, number]>,
+ *   summary:{count:number, zmin:number|null, zmax:number|null}
+ * }}
+ */
+function bandSurfaceMeshData(payload, band) {
+  const vertices = bandSurfaceVertices(payload, band);
+  const triangles = bandSurfaceTriangles(payload);
+  const summary = bandSurfaceSummary(payload, band);
+
+  return { vertices, triangles, summary };
+}
+
+
+/**
+ * @param {GraphPayload} payload
+ * @param {number} angle
+ * @returns {GraphPayload}
+ */
 function kspacePayloadToCartesian(payload, angle = 0) {
   return {
     ...payload,
     x_label: "k Cartesian x",
     y_label: "k Cartesian y",
-    series: payload.series.map((series) => ({
+    series: payload.series.map((/** @type {GraphSeries} */ series) => ({
       ...series,
-      points: series.points.map((point) => {
+      points: series.points.map((/** @type {GraphPoint} */ point) => {
         const cart = kBasisToCartesian(point.x, point.y);
         const rotated = rotatePoint(cart.x, cart.y, angle);
         return { ...point, x: rotated.x, y: rotated.y };
@@ -358,12 +599,12 @@ export function projectedKspaceHexagonSideLengths(payload, options = { kspace: t
   const activeView = options.kspace ? equalPixelAspectView(bounds, innerW, innerH) : bounds;
   const { sx, sy } = graphProjector(activeView, margin, innerW, innerH);
 
-  const points = displayPayload.series[0].points.slice(0, 6).map((point) => ({
+  const points = displayPayload.series[0].points.slice(0, 6).map((/** @type {GraphPoint} */ point) => ({
     x: sx(point.x),
     y: sy(point.y),
   }));
 
-  return points.map((point, index) => {
+  return points.map((/** @type {{x:number, y:number}} */ point, /** @type {number} */ index) => {
     const next = points[(index + 1) % points.length];
     return Math.hypot(point.x - next.x, point.y - next.y);
   });
@@ -973,6 +1214,169 @@ if (typeof document !== "undefined") {
 }
 
 if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined") {
+  class DftBandControls extends HTMLElement {
+    connectedCallback() {
+      if (this.dataset.bound === "1") return;
+      this.dataset.bound = "1";
+
+      const bandInput = this.querySelector("[data-dft-band]");
+      const sliceAxisInput = this.querySelector("[data-dft-slice-axis]");
+      const sliceValueInput = this.querySelector("[data-dft-slice-value]");
+
+      if (bandInput) {
+        bandInput.addEventListener("change", () => {
+          emitDftSignal("selected-band", {
+            band: Number(/** @type {HTMLInputElement | HTMLSelectElement} */ (bandInput).value),
+          }, this);
+        });
+      }
+
+      const emitSlice = () => {
+        const axis = sliceAxisInput
+          ? String(/** @type {HTMLInputElement | HTMLSelectElement} */ (sliceAxisInput).value)
+          : "u";
+        const value = sliceValueInput
+          ? Number(/** @type {HTMLInputElement | HTMLSelectElement} */ (sliceValueInput).value)
+          : 0.0;
+
+        emitDftSignal("slice-changed", { axis, value }, this);
+      };
+
+      if (sliceAxisInput) sliceAxisInput.addEventListener("change", emitSlice);
+      if (sliceValueInput) sliceValueInput.addEventListener("input", emitSlice);
+      if (sliceValueInput) sliceValueInput.addEventListener("change", emitSlice);
+    }
+  }
+
+
+  class DftBandReadout extends HTMLElement {
+    constructor() {
+      super();
+      /** @type {number | null} */
+      this.selectedBand = null;
+      /** @type {string | null} */
+      this.sliceAxis = null;
+      /** @type {number | null} */
+      this.sliceValue = null;
+      /** @type {Array<() => void>} */
+      this.unsubscribers = [];
+    }
+
+    connectedCallback() {
+      if (this.dataset.bound === "1") return;
+      this.dataset.bound = "1";
+
+      this.unsubscribers.push(onDftSignal("selected-band", (payload) => {
+        this.selectedBand = Number(payload.detail.band);
+        this.render();
+      }));
+
+      this.unsubscribers.push(onDftSignal("slice-changed", (payload) => {
+        this.sliceAxis = String(payload.detail.axis ?? "");
+        this.sliceValue = Number(payload.detail.value);
+        this.render();
+      }));
+
+      this.render();
+    }
+
+    disconnectedCallback() {
+      for (const unsubscribe of this.unsubscribers) unsubscribe();
+      this.unsubscribers = [];
+      delete this.dataset.bound;
+    }
+
+    render() {
+      const band = this.selectedBand === null || !Number.isFinite(this.selectedBand)
+        ? "none"
+        : String(this.selectedBand);
+      const slice = this.sliceAxis === null || this.sliceValue === null || !Number.isFinite(this.sliceValue)
+        ? "none"
+        : `${this.sliceAxis}=${nice(this.sliceValue)}`;
+
+      this.textContent = `band: ${band}; slice: ${slice}`;
+    }
+  }
+
+
+  class DftBandSurfaceViewer extends HTMLElement {
+    constructor() {
+      super();
+      /** @type {number | null} */
+      this.selectedBand = null;
+      /** @type {string | null} */
+      this.sliceAxis = null;
+      /** @type {number | null} */
+      this.sliceValue = null;
+      /** @type {Array<() => void>} */
+      this.unsubscribers = [];
+    }
+
+    connectedCallback() {
+      if (this.dataset.bound === "1") return;
+      this.dataset.bound = "1";
+
+      this.unsubscribers.push(onDftSignal("selected-band", (payload) => {
+        this.selectedBand = Number(payload.detail.band);
+        this.render();
+      }));
+
+      this.unsubscribers.push(onDftSignal("slice-changed", (payload) => {
+        this.sliceAxis = String(payload.detail.axis ?? "");
+        this.sliceValue = Number(payload.detail.value);
+        this.render();
+      }));
+
+      this.render();
+    }
+
+    disconnectedCallback() {
+      for (const unsubscribe of this.unsubscribers) unsubscribe();
+      this.unsubscribers = [];
+      delete this.dataset.bound;
+    }
+
+    render() {
+      const payload = readJsonPayload(this);
+      const band = this.selectedBand === null || !Number.isFinite(this.selectedBand)
+        ? "none"
+        : String(this.selectedBand);
+      const slice = this.sliceAxis === null || this.sliceValue === null || !Number.isFinite(this.sliceValue)
+        ? "none"
+        : `${this.sliceAxis}=${nice(this.sliceValue)}`;
+
+      const nbands = Number(payload?.nbands ?? NaN);
+      const bands = /** @type {unknown[] | undefined} */ (payload?.bands);
+      const nu = Number(payload?.nu ?? NaN);
+      const nv = Number(payload?.nv ?? NaN);
+      const gridText = Number.isFinite(nu) && Number.isFinite(nv) ? `${nu}×${nv}` : "unknown";
+      const bandsText = Number.isFinite(nbands)
+        ? String(nbands)
+        : Array.isArray(bands) ? String(bands.length) : "unknown";
+      const summaryBand = this.selectedBand === null || !Number.isFinite(this.selectedBand)
+        ? Number(payload?.selected_band ?? 0)
+        : this.selectedBand;
+      const mesh = bandSurfaceMeshData(payload, summaryBand);
+      const energyText = mesh.summary.zmin === null || mesh.summary.zmax === null
+        ? "unknown"
+        : `${nice(mesh.summary.zmin)} to ${nice(mesh.summary.zmax)}`;
+
+      this.innerHTML = `
+        <div class="band-surface-viewer-stub">
+          <strong>Band surface viewer</strong>
+          <span>grid: ${gridText}</span>
+          <span>bands: ${bandsText}</span>
+          <span>band: ${band}</span>
+          <span>slice: ${slice}</span>
+          <span>vertices: ${mesh.summary.count}</span>
+          <span>triangles: ${mesh.triangles.length}</span>
+          <span>energy: ${energyText}</span>
+        </div>
+      `;
+    }
+  }
+
+
   class DftLineGraph extends HTMLElement {
     constructor() {
       super();
@@ -1250,6 +1654,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.displayPayload = kspacePayloadToCartesian(this.payload, this.rotation);
 
       if (resetView) {
+        if (this.displayPayload === null) return;
         this.view = equalAspectView(graphBounds(this.displayPayload));
       }
     }
@@ -1468,6 +1873,18 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
     }
   }
 
+  if (!customElements.get("dft-band-controls")) {
+    customElements.define("dft-band-controls", DftBandControls);
+  }
+
+  if (!customElements.get("dft-band-readout")) {
+    customElements.define("dft-band-readout", DftBandReadout);
+  }
+
+  if (!customElements.get("dft-band-surface-viewer")) {
+    customElements.define("dft-band-surface-viewer", DftBandSurfaceViewer);
+  }
+
   if (!customElements.get("dft-line-graph")) {
     customElements.define("dft-line-graph", DftLineGraph);
   }
@@ -1477,4 +1894,4 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
   }
 }
 
-export {nice, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, plotFractionsFromPointer, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceSummary, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
