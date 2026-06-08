@@ -332,6 +332,36 @@ def render_card(card) -> str:
     )
 
 
+def dom_safe_id(value: object) -> str:
+    text = str(value)
+    text = re.sub(r"[^a-zA-Z0-9_-]+", "-", text).strip("-")
+    return text or "block"
+
+
+def render_block_shell(block_id: object, kind: str, html: str) -> str:
+    safe_id = dom_safe_id(block_id)
+    return (
+        f"<section id='dft-block-{escape(safe_id)}'"
+        f" data-dft-block='{escape(str(block_id))}'"
+        f" data-dft-block-kind='{escape(kind)}'>"
+        f"{html}"
+        "</section>"
+    )
+
+
+def render_json_model(model_id: object, payload: object) -> str:
+    safe_id = dom_safe_id(model_id)
+    payload_json = json.dumps(payload).replace("</", "<\\/")
+    return (
+        f"<script type='application/json'"
+        f" id='dft-model-{escape(safe_id)}'"
+        f" data-dft-model='{escape(str(model_id))}'>"
+        f"{payload_json}"
+        "</script>"
+    )
+
+
+
 def render_table(table) -> str:
     has_step = "step" in table.headers
     step_index = table.headers.index("step") if has_step else -1
@@ -396,8 +426,8 @@ def render_table(table) -> str:
             parts.append(f"<td>{render_display_value(cell)}</td>")
         parts.append("</tr>")
 
-    parts.append("</tbody></table></div></section>")
-    return "".join(parts)
+    parts.append("</tbody></table></div>")
+    return render_block_shell(table.id, "stateful-html", "".join(parts))
 
 
 def render_matrix(matrix) -> str:
@@ -418,13 +448,14 @@ def render_matrix(matrix) -> str:
             parts.append(f"<td>{render_display_value(cells.get((i, j)))}</td>")
         parts.append("</tr>")
 
-    parts.append("</tbody></table></section>")
-    return "".join(parts)
+    parts.append("</tbody></table>")
+    return render_block_shell(matrix.id, "static-html", "".join(parts))
 
 
 def render_webgl_view(view) -> str:
-    payload = json.dumps(view.payload).replace("</", "<\\/")
-    data_id = f"data-{view.id}"
+    data_id = f"dft-model-{dom_safe_id(view.id)}"
+
+    model = render_json_model(view.id, view.payload)
 
     if view.renderer == "region_surface":
         component = "dft-band-surface-viewer"
@@ -433,29 +464,31 @@ def render_webgl_view(view) -> str:
     else:
         raise ValueError(f"Unknown WebGL renderer: {view.renderer}")
 
-    return (
-        f"<section class='webgl-panel'><h2>{render_user_string(view.title)}</h2>"
+    html = (
+        f"<div class='webgl-panel'><h2>{render_user_string(view.title)}</h2>"
         f"<p>{render_user_string(view.description)}</p>"
-        f"<script type='application/json' id='{escape(data_id)}'>{payload}</script>"
-        f"<{component} data-source='{escape(data_id)}'></{component}>"
-        "</section>"
+        f"<{component} data-source='{escape(data_id)}' data-dft-model='{escape(data_id)}'></{component}>"
+        "</div>"
     )
+
+    return render_block_shell(view.id, "json-rendered", model + html)
 
 
 def render_graph(graph: Graph2D) -> str:
-    payload = json.dumps(graph.payload()).replace("</", "<\\/")
-    data_id = f"data-{graph.id}"
+    data_id = f"dft-model-{dom_safe_id(graph.id)}"
+    model = render_json_model(graph.id, graph.payload())
     component = "dft-kspace-plot" if "kspace" in graph.id else "dft-line-graph"
 
-    return (
-        f"<section class='graph-panel'><h2>{render_user_string(graph.title)}</h2>"
+    html = (
+        f"<div class='graph-panel'><h2>{render_user_string(graph.title)}</h2>"
         f"<p>{render_user_string(graph.description)}</p>"
-        f"<script type='application/json' id='{escape(data_id)}'>{payload}</script>"
-        f"<{component} data-source='{escape(data_id)}'>"
+        f"<{component} data-source='{escape(data_id)}' data-dft-model='{escape(data_id)}'>"
         f"{_render_graph_svg(graph)}"
         f"</{component}>"
-        "</section>"
+        "</div>"
     )
+
+    return render_block_shell(graph.id, "json-rendered", model + html)
 
 
 def render_document_block(block: Any) -> str:

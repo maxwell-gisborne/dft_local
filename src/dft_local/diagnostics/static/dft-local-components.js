@@ -2252,10 +2252,10 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
     bindMaskToggle() {
       const input = this.querySelector("[data-dft-mask-to-hexagon]");
       if (!(input instanceof HTMLInputElement)) return;
-      if (input.dataset.bound === "1") return;
+      if (input.dataset.maskBound === "1") return;
 
       input.checked = this.maskToHexagon;
-      input.dataset.bound = "1";
+      input.dataset.maskBound = "1";
       const update = () => {
         this.maskToHexagon = input.checked;
         this.requestSurfaceUpdate();
@@ -2453,6 +2453,8 @@ selectedBandIndex() {
         this.maskToHexagon = maskInput.checked;
       }
 
+      this.dataset.hexMask = this.maskToHexagon ? "on" : "off";
+
       const visibleBands = visibleBandIndices(this.payload, this.hiddenBands);
 
       this.currentBandMeshes = visibleBands.map((band) => ({
@@ -2473,7 +2475,8 @@ selectedBandIndex() {
         this.updateLegend();
         if (this.statusEl) {
           const allBands = allBandIndices(this.payload);
-          this.statusEl.textContent = `visible 0; hidden ${this.hiddenBands.size}; bands ${allBands.length}; no visible bands`;
+          const maskText = this.maskToHexagon ? "hex mask on" : "hex mask off";
+          this.statusEl.textContent = `visible 0; hidden ${this.hiddenBands.size}; bands ${allBands.length}; no visible bands; ${maskText}`;
         }
         return;
       }

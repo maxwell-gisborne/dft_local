@@ -1079,3 +1079,11 @@ test("band surface legend keeps one band visible policy exists", () => {
   assert.equal(source.includes("visible.length <= 1"), true);
   assert.equal(source.includes("no visible bands"), true);
 });
+
+
+
+test("band surface no visible bands status keeps mask state", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("no visible bands; ${maskText}"), true);
+});

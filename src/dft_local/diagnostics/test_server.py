@@ -108,10 +108,16 @@ def test_band_path_page_mounts_graph_components() -> None:
     )
 
     assert "src='/static/dft-local-components.js'" in html
-    assert "<script type='application/json' id='data-kspace_path'>" in html
-    assert "<script type='application/json' id='data-band_path'>" in html
-    assert "<dft-kspace-plot data-source='data-kspace_path'>" in html
-    assert "<dft-line-graph data-source='data-band_path'>" in html
+    assert "id='dft-model-kspace_path'" in html
+    assert "data-dft-model='kspace_path'" in html
+    assert "id='dft-model-band_path'" in html
+    assert "data-dft-model='band_path'" in html
+    assert "<dft-kspace-plot" in html
+    assert "data-source='dft-model-kspace_path'" in html
+    assert "data-dft-model='dft-model-kspace_path'" in html
+    assert "<dft-line-graph" in html
+    assert "data-source='dft-model-band_path'" in html
+    assert "data-dft-model='dft-model-band_path'" in html
     assert "<svg" in html
 
 
@@ -133,7 +139,7 @@ def test_graph_json_payload_is_parseable_by_browser_component() -> None:
     )
 
     match = re.search(
-        r"<script type='application/json' id='data-band_path'>(.*?)</script>",
+        r"<script type='application/json' id='dft-model-band_path'[^>]*>(.*?)</script>",
         html,
         re.S,
     )
@@ -249,7 +255,7 @@ def test_kspace_hexagon_payload_renders_regular_on_screen() -> None:
     )
 
     match = re.search(
-        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        r"<script type='application/json' id='([^']+)'[^>]*>\s*(\{.*?\})\s*</script>",
         html,
         flags=re.S,
     )
@@ -257,7 +263,7 @@ def test_kspace_hexagon_payload_renders_regular_on_screen() -> None:
 
     payloads = []
     for _source_id, raw_json in re.findall(
-        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        r"<script type='application/json' id='([^']+)'[^>]*>\s*(\{.*?\})\s*</script>",
         html,
         flags=re.S,
     ):
@@ -380,7 +386,7 @@ def test_kspace_hexagon_path_points_lie_on_hexagon_perimeter() -> None:
 
     payload = None
     for _source_id, raw_json in re.findall(
-        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        r"<script type='application/json' id='([^']+)'[^>]*>\s*(\{.*?\})\s*</script>",
         html,
         flags=re.S,
     ):
@@ -475,7 +481,7 @@ def obsolete_test_kspace_reference_m_lies_on_hexagon_boundary() -> None:
 
     payload = None
     for _source_id, raw_json in re.findall(
-        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        r"<script type='application/json' id='([^']+)'[^>]*>\s*(\{.*?\})\s*</script>",
         html,
         flags=re.S,
     ):
@@ -562,7 +568,7 @@ def test_kspace_reference_markers_lie_on_selected_path() -> None:
 
     payload = None
     for _source_id, raw_json in re.findall(
-        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        r"<script type='application/json' id='([^']+)'[^>]*>\s*(\{.*?\})\s*</script>",
         html,
         flags=re.S,
     ):
@@ -608,7 +614,7 @@ def test_gamma_k_m_rendered_path_m_lies_on_hexagon_edge() -> None:
 
     payload = None
     for _source_id, raw_json in re.findall(
-        r"<script type='application/json' id='([^']+)'>\s*(\{.*?\})\s*</script>",
+        r"<script type='application/json' id='([^']+)'[^>]*>\s*(\{.*?\})\s*</script>",
         html,
         flags=re.S,
     ):
@@ -880,3 +886,31 @@ def test_diagnostic_page_includes_three_import_map() -> None:
 
     assert 'type="importmap"' in html
     assert '"three": "https://unpkg.com/three@0.160.0/build/three.module.js"' in html
+
+
+
+def test_diagnostic_blocks_have_stable_block_shells() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    html = app.diagnostic_page(
+        "transport.bands.synthetic_surface",
+        {
+            "surface": "gaussian",
+            "nu": "5",
+            "nv": "5",
+        },
+    )
+
+    assert "data-dft-block=" in html
+    assert "data-dft-block-kind=" in html
+    assert "data-dft-block-kind='json-rendered'" in html
+    assert "data-dft-model=" in html
+    assert "id='dft-model-" in html
+
+
+def test_table_blocks_are_stateful_html_blocks() -> None:
+    app = DiagnosticApp()
+    html = app.diagnostic_page("transport.boltzmann.calculation.overview", {})
+
+    assert "data-dft-block-kind='stateful-html'" in html

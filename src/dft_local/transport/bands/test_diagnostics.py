@@ -99,8 +99,10 @@ def test_band_region_surface_diagnostic_renders_webgl_payload() -> None:
     html = render_result(result)
 
     assert "Band region surface" in html
-    assert "id='data-band_region_surface'" in html
-    assert "<dft-band-surface-viewer data-source='data-band_region_surface'></dft-band-surface-viewer>" in html
+    assert "id='dft-model-band_region_surface'" in html
+    assert "<dft-band-surface-viewer" in html
+    assert "data-source='dft-model-band_region_surface'" in html
+    assert "data-dft-model='dft-model-band_region_surface'" in html
     assert '"energies"' in html
     assert '"nbands"' in html or '"bands"' in html
 
