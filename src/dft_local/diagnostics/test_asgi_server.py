@@ -64,3 +64,23 @@ def test_static_component_js_is_served() -> None:
     assert start["status"] == 200
     assert (b"content-type", b"text/javascript; charset=utf-8") in start["headers"]
     assert "customElements.define" in body
+
+
+
+def test_asgi_diagnostic_run_returns_datastar_sse() -> None:
+    app = DiagnosticASGI(ctx=None)
+
+    messages = run_asgi_request(
+        app,
+        "/d-run/transport.boltzmann.calculation.overview",
+    )
+
+    start = messages[0]
+    body = messages[1]["body"].decode("utf-8")
+
+    assert start["status"] == 200
+    assert (b"content-type", b"text/event-stream; charset=utf-8") in start["headers"]
+    assert "event: datastar-patch-elements" in body
+    assert "event: datastar-execute-script" in body
+    assert "window.captureDftTableState" in body
+    assert "window.restoreDftTableState" in body
