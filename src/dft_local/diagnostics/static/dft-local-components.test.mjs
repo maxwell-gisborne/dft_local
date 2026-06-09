@@ -809,8 +809,10 @@ test("band surface threejs orbit controls policy exists", () => {
 test("band surface orbit control interaction policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
-  assert.equal(source.includes("controls.enableDamping = true"), true);
+  assert.equal(source.includes("controls.enableDamping = false"), true);
   assert.equal(source.includes("controls.screenSpacePanning = true"), true);
+  assert.equal(source.includes("controls.addEventListener(\"change\""), true);
+  assert.equal(source.includes("renderThreeOnce"), true);
   assert.equal(source.includes("handlePointerMove(event)"), true);
   assert.equal(source.includes("handleClick(event)"), true);
   assert.equal(source.includes("pickNearestVertex(event"), true);

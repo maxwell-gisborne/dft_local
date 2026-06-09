@@ -7,7 +7,7 @@
 /**
  * @typedef {{x:number, y:number, entity_id?:string|null, label?:string, meta?:Record<string, unknown>}} GraphPoint
  * @typedef {{name:string, kind:"line"|"points"|"line_points", points:GraphPoint[]}} GraphSeries
- * @typedef {{id:string, title:string, x_label:string, y_label:string, series:GraphSeries[]}} GraphPayload
+ * @typedef {{id:string, title:string, x_label:string, y_label:string, series:GraphSeries[], static?:boolean}} GraphPayload
  * @typedef {Record<string, unknown>} JsonPayload
  * @typedef {{xmin:number, xmax:number, ymin:number, ymax:number}} GraphView
  * @typedef {{series:string, x:number, y:number, sx:number, sy:number, step?:number|null, pathX?:number|null, label?:string|null}} CursorHit
@@ -2696,6 +2696,20 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.selectedMarker = null;
       /** @type {number | null} */
       this.animationFrame = null;
+      /** @type {number | null} */
+      this.surfaceUpdateFrame = null;
+      /** @type {boolean} */
+      this.surfaceUpdateRunning = false;
+      /** @type {boolean} */
+      this.surfaceUpdatePending = false;
+      /** @type {boolean} */
+      this.cameraDragActive = false;
+      /** @type {number | null} */
+      this.resizeFrame = null;
+      /** @type {number} */
+      this.lastThreeWidth = 0;
+      /** @type {number} */
+      this.lastThreeHeight = 0;
     }
 
     connectedCallback() {
@@ -2816,6 +2830,14 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.legendEl = this.querySelector("[data-dft-surface-legend]");
       this.threeHost = this.querySelector("[data-dft-three-surface]");
       this.bindViewControls();
+      this.isolateRenderRegions();
+      const slicePlot = this.querySelector("[data-dft-slice-plot]");
+      if (slicePlot instanceof HTMLElement) {
+        slicePlot.style.pointerEvents = "none";
+        slicePlot.style.userSelect = "none";
+        slicePlot.style.contain = "layout paint style";
+      }
+
       this.bindSliceControls();
       this.bindSliceDetails();
       this.bindMaskToggle();
@@ -2896,6 +2918,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       };
 
       const emit = () => {
+        if (this.cameraDragActive) return;
+
         if (axisInput instanceof HTMLSelectElement) {
           this.sliceAxis = axisInput.value;
         }
@@ -2944,6 +2968,28 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       updateRangeForAxis();
       emit();
+    }
+
+    isolateRenderRegions() {
+      const threeHost = this.querySelector("[data-dft-three-surface]");
+      const slicePanel = this.querySelector("[data-dft-slice-panel]");
+      const slicePlot = this.querySelector("[data-dft-slice-plot]");
+
+      if (threeHost instanceof HTMLElement) {
+        threeHost.style.contain = "layout paint style";
+        threeHost.style.isolation = "isolate";
+        threeHost.style.transform = "translateZ(0)";
+      }
+
+      if (slicePanel instanceof HTMLElement) {
+        slicePanel.style.contain = "layout paint style";
+      }
+
+      if (slicePlot instanceof HTMLElement) {
+        slicePlot.style.contain = "layout paint style";
+        slicePlot.style.contentVisibility = "auto";
+        slicePlot.style.containIntrinsicSize = "480px 320px";
+      }
     }
 
     bindSliceDetails() {
@@ -2995,9 +3041,13 @@ selectedBandIndex() {
 
       const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
       renderer.setSize(width, height);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
       renderer.domElement.style.width = "100%";
       renderer.domElement.style.height = `${height}px`;
+      renderer.domElement.style.display = "block";
+      renderer.domElement.style.contain = "strict";
+      renderer.domElement.style.willChange = "transform";
+      renderer.domElement.style.transform = "translateZ(0)";
 
       this.threeHost.replaceChildren(renderer.domElement);
 
@@ -3005,9 +3055,13 @@ selectedBandIndex() {
       const camera = new THREE.PerspectiveCamera(45, width / height, 0.001, 100000);
       const controls = new OrbitControls(camera, renderer.domElement);
 
-      controls.enableDamping = true;
-      controls.dampingFactor = 0.08;
+      controls.enableDamping = false;
+      controls.dampingFactor = 0.0;
       controls.screenSpacePanning = true;
+
+      controls.addEventListener("change", () => {
+        this.renderThreeOnce();
+      });
 
       scene.add(new THREE.AmbientLight(0xffffff, 0.55));
 
@@ -3027,8 +3081,22 @@ selectedBandIndex() {
       this.resizeThreeSurface();
 
       if (this.resizeObserver) this.resizeObserver.disconnect();
-      this.resizeObserver = new ResizeObserver(() => this.resizeThreeSurface());
+      this.resizeObserver = new ResizeObserver(() => this.scheduleThreeResize());
       this.resizeObserver.observe(this.threeHost);
+
+      renderer.domElement.addEventListener("pointerdown", () => {
+        this.cameraDragActive = true;
+      });
+      const endCameraDrag = () => {
+        this.cameraDragActive = false;
+        if (this.surfaceUpdatePending) {
+          this.requestSurfaceUpdate();
+        }
+      };
+
+      window.addEventListener("pointerup", endCameraDrag);
+      window.addEventListener("pointercancel", endCameraDrag);
+      window.addEventListener("blur", endCameraDrag);
 
       renderer.domElement.addEventListener("pointermove", (/** @type {PointerEvent} */ event) => this.handlePointerMove(event));
       renderer.domElement.addEventListener("click", (/** @type {MouseEvent} */ event) => this.handleClick(event));
@@ -3037,11 +3105,22 @@ selectedBandIndex() {
     }
 
     startThreeLoop() {
-      if (!this.renderer || !this.scene || !this.camera || !this.controls) return;
+      this.renderThreeOnce();
+    }
 
-      this.controls.update();
+    renderThreeOnce() {
+      if (!this.renderer || !this.scene || !this.camera) return;
+
       this.renderer.render(this.scene, this.camera);
-      this.animationFrame = requestAnimationFrame(() => this.startThreeLoop());
+    }
+
+    scheduleThreeResize() {
+      if (this.resizeFrame !== null) return;
+
+      this.resizeFrame = requestAnimationFrame(() => {
+        this.resizeFrame = null;
+        this.resizeThreeSurface();
+      });
     }
 
     resizeThreeSurface() {
@@ -3051,15 +3130,33 @@ selectedBandIndex() {
       const width = Math.max(320, Math.floor(rect.width || this.threeHost.clientWidth || 720));
       const height = 560;
 
+      if (width === this.lastThreeWidth && height === this.lastThreeHeight) {
+        return;
+      }
+
+      this.lastThreeWidth = width;
+      this.lastThreeHeight = height;
+
       this.renderer.setSize(width, height, false);
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
+      this.renderThreeOnce();
     }
 
     disposeThree() {
       if (this.animationFrame !== null) {
         cancelAnimationFrame(this.animationFrame);
         this.animationFrame = null;
+      }
+
+      if (this.surfaceUpdateFrame !== null) {
+        cancelAnimationFrame(this.surfaceUpdateFrame);
+        this.surfaceUpdateFrame = null;
+      }
+
+      if (this.resizeFrame !== null) {
+        cancelAnimationFrame(this.resizeFrame);
+        this.resizeFrame = null;
       }
 
       if (this.resizeObserver) {
@@ -3182,12 +3279,34 @@ selectedBandIndex() {
 
 
     requestSurfaceUpdate() {
-      void this.updateSurface().catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        if (this.statusEl) {
-          this.statusEl.textContent = `surface update failed: ${message}`;
+      if (this.cameraDragActive) {
+        this.surfaceUpdatePending = true;
+        return;
+      }
+
+      this.surfaceUpdatePending = true;
+
+      if (this.surfaceUpdateFrame !== null || this.surfaceUpdateRunning) {
+        return;
+      }
+
+      this.surfaceUpdateFrame = requestAnimationFrame(async () => {
+        this.surfaceUpdateFrame = null;
+
+        if (!this.surfaceUpdatePending || this.surfaceUpdateRunning) return;
+
+        this.surfaceUpdatePending = false;
+        this.surfaceUpdateRunning = true;
+
+        try {
+          await this.updateSurface();
+        } finally {
+          this.surfaceUpdateRunning = false;
         }
-        throw error;
+
+        if (this.surfaceUpdatePending) {
+          this.requestSurfaceUpdate();
+        }
       });
     }
 
@@ -3579,6 +3698,7 @@ selectedBandIndex() {
 
       return {
         id: `band-surface-slice-${axis}`,
+        static: true,
         title: `Slice ${axis}=${nice(value)}`,
         x_label: label,
         y_label: "energy",
@@ -3623,6 +3743,7 @@ selectedBandIndex() {
 
       return {
         id: "band-surface-energy-slice-kspace",
+        static: true,
         title: `Energy slice E=${nice(value)}`,
         x_label: "k Cartesian x",
         y_label: "k Cartesian y",
@@ -3640,106 +3761,9 @@ selectedBandIndex() {
     }
 
     updateSliceOverlay() {
+      // The detailed intersections are shown in the slice panel below.
+      // Keep the 3D camera path clean: no per-slice 3D overlay geometry.
       this.clearSliceMeshes();
-
-      if (!this.THREE || !this.surfaceGroup) return;
-
-      const axis = this.sliceAxis ?? "u";
-      const value = Number(this.sliceValue ?? 0.0);
-
-      if (
-        axis !== "u"
-        && axis !== "v"
-        && axis !== "kx"
-        && axis !== "ky"
-        && axis !== "energy"
-      ) {
-        return;
-      }
-
-      const visibleBands = visibleBandIndices(this.payload, this.hiddenBands);
-      const segments = bandSurfaceSliceSegmentsForBands(
-        this.payload,
-        visibleBands,
-        axis,
-        value,
-        { useMask: this.maskToHexagon },
-      );
-
-      if (segments.length === 0) return;
-
-      const THREE = this.THREE;
-      const domain = bandSurfaceEnergyDomain(this.currentBandMeshes);
-      const radius = Math.max((domain?.kSpan ?? 1.0) * 0.006, 0.015);
-      const maxInstancesPerBand = 900;
-
-      /** @type {Map<number, Array<{start:any,end:any,length:number,quaternion:any}>>} */
-      const byBand = new Map();
-
-      for (const segment of segments) {
-        const band = Number(segment.band);
-        const start = new THREE.Vector3(
-          segment.a.kx,
-          segment.a.energy * this.energyUnitsToDisplayY,
-          segment.a.ky,
-        );
-        const end = new THREE.Vector3(
-          segment.b.kx,
-          segment.b.energy * this.energyUnitsToDisplayY,
-          segment.b.ky,
-        );
-        const delta = new THREE.Vector3().subVectors(end, start);
-        const length = delta.length();
-
-        if (!(length > 1e-12)) continue;
-
-        const quaternion = new THREE.Quaternion().setFromUnitVectors(
-          new THREE.Vector3(0, 1, 0),
-          delta.clone().normalize(),
-        );
-
-        if (!byBand.has(band)) byBand.set(band, []);
-        byBand.get(band)?.push({ start, end, length, quaternion });
-      }
-
-      for (const [band, items] of byBand.entries()) {
-        const stride = Math.max(1, Math.ceil(items.length / maxInstancesPerBand));
-        const kept = items.filter((_, index) => index % stride === 0);
-        if (kept.length === 0) continue;
-
-        const geometry = new THREE.CylinderGeometry(radius, radius, 1.0, 10, 1);
-        const material = new THREE.MeshBasicMaterial({
-          color: 0xff00ff,
-          transparent: true,
-          opacity: 1.0,
-          depthTest: false,
-          depthWrite: false,
-        });
-
-        const instanced = new THREE.InstancedMesh(geometry, material, kept.length);
-        const matrix = new THREE.Matrix4();
-        const midpoint = new THREE.Vector3();
-        const scale = new THREE.Vector3();
-
-        kept.forEach((item, index) => {
-          midpoint.copy(item.start).add(item.end).multiplyScalar(0.5);
-          scale.set(1.0, item.length, 1.0);
-          matrix.compose(midpoint, item.quaternion, scale);
-          instanced.setMatrixAt(index, matrix);
-        });
-
-        instanced.instanceMatrix.needsUpdate = true;
-        instanced.name = `band-surface-slice-band-${band}`;
-        instanced.userData.dftBand = band;
-        instanced.userData.dftSliceOverlay = true;
-        instanced.userData.dftSliceInstances = kept.length;
-        instanced.userData.dftSliceTotalSegments = items.length;
-        instanced.renderOrder = 1000;
-        instanced.visible = !this.hiddenBands.has(band);
-
-        this.sliceMeshes.push(instanced);
-        this.surfaceGroup.add(instanced);
-      }
     }
 
     updateStatus() {
@@ -3776,16 +3800,10 @@ selectedBandIndex() {
      * @param {PointerEvent} event
      */
     handlePointerMove(event) {
-      const hit = this.pickNearestVertex(event, 0.06);
-      if (!this.hoverEl) return;
-
-      if (!hit) {
-        this.hoverEl.textContent = "hover: none";
-        return;
-      }
-
-      const v = hit.vertex;
-      this.hoverEl.textContent = `hover: i=${v.i}, j=${v.j}, band=${v.band}, k1=${nice(v.x)}, k2=${nice(v.y)}, E=${nice(v.z)}`;
+      // Hover picking is too expensive for dense 3D band surfaces. Camera
+      // interaction and click selection remain active; detailed inspection
+      // should use the slice/plot panels instead.
+      this.hoverEl?.replaceChildren();
     }
 
     /**

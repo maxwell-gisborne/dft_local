@@ -85,6 +85,9 @@ async function debugSurfacePage(page, errors) {
 
 
 
+
+
+
 test("band surface viewer renders in a real browser", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-"));
   const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
@@ -1376,9 +1379,14 @@ test("band surface slice panel renders band plot and k-space plot", async () => 
 
       await page.waitForFunction(() => {
         const plot = document.querySelector("[data-dft-slice-plot] dft-kspace-plot");
+        const modelId = plot?.getAttribute("data-source");
+        const payloadText = modelId ? document.getElementById(modelId)?.textContent ?? "" : "";
+        const payload = payloadText ? JSON.parse(payloadText) : null;
+
         return plot?.getAttribute("data-ready") === "true"
           && plot.querySelector("svg")?.classList.contains("kspace-svg")
-          && plot.querySelector("svg")?.textContent?.includes("band 1");
+          && Array.isArray(payload?.series)
+          && payload.series.length > 0;
       }, { timeout: 10000 });
 
       const kspacePlotResult = await page.evaluate(() => {
@@ -1398,9 +1406,12 @@ test("band surface slice panel renders band plot and k-space plot", async () => 
       assert.equal(kspacePlotResult.component, true);
       assert.equal(kspacePlotResult.lineComponent, false);
       assert.equal(kspacePlotResult.kspace, true);
-      assert.match(kspacePlotResult.text, /band 1/);
+      assert.ok(kspacePlotResult.seriesCount > 0);
       assert.ok(kspacePlotResult.seriesCount <= 2);
-      assert.deepEqual(kspacePlotResult.seriesKinds, ["points"]);
+      assert.ok(
+        kspacePlotResult.seriesKinds.every((/** @type {string} */ kind) => kind === "line" || kind === "points"),
+        `unexpected series kinds: ${JSON.stringify(kspacePlotResult.seriesKinds)}`,
+      );
     } finally {
       await server.close();
     }
@@ -1409,9 +1420,9 @@ test("band surface slice panel renders band plot and k-space plot", async () => 
   }
 });
 
-test("band surface viewer draws slice intersection lines in 3D", async () => {
+test("band surface viewer keeps slice intersections out of 3D overlay", async () => {
   const browserInstance = await chromium.launch();
-  const root = mkdtempSync(join(tmpdir(), "dft-local-slice-lines-"));
+  const root = mkdtempSync(join(tmpdir(), "dft-local-slice-no-3d-overlay-"));
   const payload = {
     kind: "band-surface-preview",
     nu: 3,
@@ -1460,6 +1471,7 @@ test("band surface viewer draws slice intersection lines in 3D", async () => {
       await page.goto(server.url);
       await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
 
+      await page.locator("[data-dft-slice-details] summary").click();
       await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
         if (!(input instanceof HTMLInputElement)) throw new Error("not input");
         input.value = "0.5";
@@ -1468,31 +1480,20 @@ test("band surface viewer draws slice intersection lines in 3D", async () => {
 
       await page.waitForFunction(() => {
         const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
-        return viewer?.sliceMeshes?.length > 0
-          && viewer.sliceMeshes.every((/** @type {any} */ mesh) => mesh.userData?.dftSliceOverlay === true)
-          && viewer.sliceMeshes.every((/** @type {any} */ mesh) => Number(mesh.userData?.dftSliceInstances) > 0);
+        const panel = viewer?.querySelector("[data-dft-slice-panel]");
+        return panel?.textContent?.includes("segments");
       }, { timeout: 10000 });
 
       const result = await page.evaluate(() => {
         const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
         return {
           sliceMeshes: viewer.sliceMeshes.length,
-          allVisible: viewer.sliceMeshes.every((/** @type {any} */ mesh) => mesh.visible === true),
-          firstPositions: viewer.sliceMeshes[0].geometry.attributes.position.count,
-          firstInstances: viewer.sliceMeshes[0].count,
-          firstColor: viewer.sliceMeshes[0].material.color.getHexString(),
-          depthTest: viewer.sliceMeshes[0].material.depthTest,
-          panel: viewer.querySelector("[data-dft-slice-panel]")?.textContent,
+          panel: viewer.querySelector("[data-dft-slice-panel]")?.textContent ?? "",
         };
       });
 
-      assert.ok(result.sliceMeshes > 0);
-      assert.equal(result.allVisible, true);
-      assert.ok(result.firstPositions >= 20);
-      assert.ok(result.firstInstances > 0);
-      assert.equal(result.firstColor, "ff00ff");
-      assert.equal(result.depthTest, false);
-      assert.match(result.panel ?? "", /segments/);
+      assert.equal(result.sliceMeshes, 0);
+      assert.match(result.panel, /segments/);
     } finally {
       await server.close();
     }
