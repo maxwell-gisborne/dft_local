@@ -1184,6 +1184,416 @@ test("band surface energy zero slider shifts group transform without rebuilding 
 });
 
 
+
+
+
+test("band surface slice panel preserves graph component view state", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-slice-view-state-"));
+  const payload = {
+    kind: "band-surface-preview",
+    nu: 3,
+    nv: 3,
+    k1: [[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+    k2: [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
+    energies: [
+      [[0, 10], [1, 11], [2, 12]],
+      [[2, 12], [3, 13], [4, 14]],
+      [[4, 14], [5, 15], [6, 16]],
+    ],
+    mask: [[true, true, true], [true, true, true], [true, true, true]],
+    bands: [0, 1],
+    nbands: 2,
+    selected_band: 0,
+    energy_unit: "eV",
+  };
+
+  try {
+    writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(payload).replaceAll("</", "<\\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
+
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+      await page.locator("[data-dft-slice-details] summary").click().catch(async () => {
+        await page.locator("[data-dft-slice-details] summary").click();
+      });
+
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      await page.waitForFunction(() => {
+        const graph = /** @type {any} */ (document.querySelector("[data-dft-slice-plot] dft-line-graph"));
+        return graph?.getAttribute("data-ready") === "true";
+      }, { timeout: 10000 });
+
+      await page.evaluate(() => {
+        const graph = /** @type {any} */ (document.querySelector("[data-dft-slice-plot] dft-line-graph"));
+        graph.view = { xmin: 123, xmax: 456, ymin: -7, ymax: 8 };
+        /** @type {any} */ (window).__sliceGraphNode = graph;
+      });
+
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.7";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      await page.waitForTimeout(200);
+
+      const result = await page.evaluate(() => {
+        const graph = /** @type {any} */ (document.querySelector("[data-dft-slice-plot] dft-line-graph"));
+        return {
+          sameNode: graph === /** @type {any} */ (window).__sliceGraphNode,
+          view: graph.view,
+          ready: graph.getAttribute("data-ready"),
+        };
+      });
+
+      assert.equal(result.sameNode, true);
+      assert.equal(result.ready, "true");
+      assert.deepEqual(result.view, { xmin: 123, xmax: 456, ymin: -7, ymax: 8 });
+    } finally {
+      await server.close();
+    }
+  } finally {
+    await browserInstance.close();
+  }
+});
+
+test("band surface slice panel renders band plot and k-space plot", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-slice-plot-panel-"));
+  const payload = {
+    kind: "band-surface-preview",
+    nu: 3,
+    nv: 3,
+    k1: [[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+    k2: [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
+    energies: [
+      [[0, 10], [1, 11], [2, 12]],
+      [[2, 12], [3, 13], [4, 14]],
+      [[4, 14], [5, 15], [6, 16]],
+    ],
+    mask: [[true, true, true], [true, true, true], [true, true, true]],
+    bands: [0, 1],
+    nbands: 2,
+    selected_band: 0,
+    energy_unit: "eV",
+  };
+
+  try {
+    writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(payload).replaceAll("</", "<\\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
+
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      await page.locator("[data-dft-slice-details] summary").click();
+
+      await page.waitForFunction(() => {
+        const graph = document.querySelector("[data-dft-slice-plot] dft-line-graph");
+        return graph?.getAttribute("data-ready") === "true"
+          && graph.querySelector("svg")?.textContent?.includes("energy")
+          && graph.querySelector("svg")?.textContent?.includes("band 0");
+      }, { timeout: 10000 });
+
+      const bandPlotResult = await page.evaluate(() => ({
+        details: Boolean(document.querySelector("[data-dft-slice-details]")),
+        component: Boolean(document.querySelector("[data-dft-slice-plot] dft-line-graph")),
+        kspaceComponent: Boolean(document.querySelector("[data-dft-slice-plot] dft-kspace-plot")),
+        svg: Boolean(document.querySelector("[data-dft-slice-plot] dft-line-graph svg")),
+        text: document.querySelector("[data-dft-slice-plot]")?.textContent ?? "",
+      }));
+
+      assert.equal(bandPlotResult.details, true);
+      assert.equal(bandPlotResult.component, true);
+      assert.equal(bandPlotResult.kspaceComponent, false);
+      assert.equal(bandPlotResult.svg, true);
+      assert.match(bandPlotResult.text, /energy/);
+      assert.match(bandPlotResult.text, /band 0/);
+
+      await page.locator("[data-dft-view-slice-axis]").selectOption("energy");
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "12";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      await page.waitForFunction(() => {
+        const plot = document.querySelector("[data-dft-slice-plot] dft-kspace-plot");
+        return plot?.getAttribute("data-ready") === "true"
+          && plot.querySelector("svg")?.classList.contains("kspace-svg")
+          && plot.querySelector("svg")?.textContent?.includes("band 1");
+      }, { timeout: 10000 });
+
+      const kspacePlotResult = await page.evaluate(() => {
+        const modelId = document.querySelector("[data-dft-slice-plot] dft-kspace-plot")?.getAttribute("data-source");
+        const payloadText = modelId ? document.getElementById(modelId)?.textContent ?? "" : "";
+        const payload = payloadText ? JSON.parse(payloadText) : null;
+        return {
+          component: Boolean(document.querySelector("[data-dft-slice-plot] dft-kspace-plot")),
+          lineComponent: Boolean(document.querySelector("[data-dft-slice-plot] dft-line-graph")),
+          kspace: document.querySelector("[data-dft-slice-plot] dft-kspace-plot svg")?.classList.contains("kspace-svg") ?? false,
+          text: document.querySelector("[data-dft-slice-plot]")?.textContent ?? "",
+          seriesCount: payload?.series?.length ?? 0,
+          seriesKinds: payload?.series?.map((/** @type {any} */ series) => series.kind) ?? [],
+        };
+      });
+
+      assert.equal(kspacePlotResult.component, true);
+      assert.equal(kspacePlotResult.lineComponent, false);
+      assert.equal(kspacePlotResult.kspace, true);
+      assert.match(kspacePlotResult.text, /band 1/);
+      assert.ok(kspacePlotResult.seriesCount <= 2);
+      assert.deepEqual(kspacePlotResult.seriesKinds, ["points"]);
+    } finally {
+      await server.close();
+    }
+  } finally {
+    await browserInstance.close();
+  }
+});
+
+test("band surface viewer draws slice intersection lines in 3D", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-slice-lines-"));
+  const payload = {
+    kind: "band-surface-preview",
+    nu: 3,
+    nv: 3,
+    k1: [[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+    k2: [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
+    energies: [
+      [[0, 10], [1, 11], [2, 12]],
+      [[2, 12], [3, 13], [4, 14]],
+      [[4, 14], [5, 15], [6, 16]],
+    ],
+    mask: [[true, true, true], [true, true, true], [true, true, true]],
+    bands: [0, 1],
+    nbands: 2,
+    selected_band: 0,
+    energy_unit: "eV",
+  };
+
+  try {
+    writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(payload).replaceAll("</", "<\\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
+
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      await page.waitForFunction(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        return viewer?.sliceMeshes?.length > 0
+          && viewer.sliceMeshes.every((/** @type {any} */ mesh) => mesh.userData?.dftSliceOverlay === true)
+          && viewer.sliceMeshes.every((/** @type {any} */ mesh) => Number(mesh.userData?.dftSliceInstances) > 0);
+      }, { timeout: 10000 });
+
+      const result = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        return {
+          sliceMeshes: viewer.sliceMeshes.length,
+          allVisible: viewer.sliceMeshes.every((/** @type {any} */ mesh) => mesh.visible === true),
+          firstPositions: viewer.sliceMeshes[0].geometry.attributes.position.count,
+          firstInstances: viewer.sliceMeshes[0].count,
+          firstColor: viewer.sliceMeshes[0].material.color.getHexString(),
+          depthTest: viewer.sliceMeshes[0].material.depthTest,
+          panel: viewer.querySelector("[data-dft-slice-panel]")?.textContent,
+        };
+      });
+
+      assert.ok(result.sliceMeshes > 0);
+      assert.equal(result.allVisible, true);
+      assert.ok(result.firstPositions >= 20);
+      assert.ok(result.firstInstances > 0);
+      assert.equal(result.firstColor, "ff00ff");
+      assert.equal(result.depthTest, false);
+      assert.match(result.panel ?? "", /segments/);
+    } finally {
+      await server.close();
+    }
+  } finally {
+    await browserInstance.close();
+  }
+});
+
+test("band surface viewer shows slice intersection panel", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-slice-panel-"));
+  const payload = {
+    kind: "band-surface-preview",
+    nu: 3,
+    nv: 3,
+    k1: [[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+    k2: [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
+    energies: [
+      [[0, 10], [1, 11], [2, 12]],
+      [[2, 12], [3, 13], [4, 14]],
+      [[4, 14], [5, 15], [6, 16]],
+    ],
+    mask: [[true, true, true], [true, true, true], [true, true, true]],
+    bands: [0, 1],
+    nbands: 2,
+    selected_band: 0,
+    energy_unit: "eV",
+  };
+
+  try {
+    writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(payload).replaceAll("</", "<\\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
+
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      await page.waitForFunction(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        const panel = viewer?.querySelector("[data-dft-slice-panel]");
+        return viewer?.sliceAxis === "u"
+          && Math.abs(Number(viewer?.sliceValue) - 0.5) < 0.01
+          && panel?.textContent?.includes("slice u=")
+          && panel?.textContent?.includes("segments");
+      }, { timeout: 10000 });
+
+      let panelText = await page.locator("dft-band-surface-viewer [data-dft-slice-panel]").evaluate((node) => node.textContent ?? "");
+      assert.match(panelText, /slice u=/);
+      assert.match(panelText, /segments/);
+
+      await page.locator("[data-dft-view-slice-axis]").selectOption("energy");
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "12";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      await page.waitForFunction(() => {
+        const panel = document.querySelector("[data-dft-slice-panel]");
+        return panel?.textContent?.includes("slice energy=12");
+      }, { timeout: 10000 });
+
+      panelText = await page.locator("dft-band-surface-viewer [data-dft-slice-panel]").evaluate((node) => node.textContent ?? "");
+      assert.match(panelText, /slice energy=12/);
+      assert.match(panelText, /band 1/);
+    } finally {
+      await server.close();
+    }
+  } finally {
+    await browserInstance.close();
+  }
+});
+
+
 test("band surface view sliders respond to wheel and shift-wheel", async () => {
   const browserInstance = await chromium.launch();
   const root = mkdtempSync(join(tmpdir(), "dft-local-view-slider-wheel-"));
@@ -1454,6 +1864,124 @@ test("model patch observer refreshes component after script text mutation", asyn
       assert.match(result.status ?? "", /grid 5×5/);
       assert.match(result.status ?? "", /energy zero 0/);
       assert.match(result.status ?? "", /energy scale 1/);
+    } finally {
+      await server.close();
+    }
+  } finally {
+    await browserInstance.close();
+  }
+});
+
+
+/** 
+ * @param {string} diagnosticId
+ * @param {Record<string, string>} rawInputs
+ * @returns {string}
+ */
+function pythonDiagnosticPage(diagnosticId, rawInputs) {
+  const code = `
+import json
+from dft_local.diagnostics.server import DiagnosticApp, load_default_context
+
+diagnostic_id = ${JSON.stringify(diagnosticId)}
+raw_inputs = json.loads(${JSON.stringify(JSON.stringify(rawInputs))})
+
+ctx = load_default_context("test_run/run_dir/data")
+app = DiagnosticApp(ctx=ctx)
+print(app.diagnostic_page(diagnostic_id, raw_inputs), end="")
+`;
+  return execFileSync("python", ["-c", code], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+}
+
+test("real group-resolved DiagnosticApp page boots band surface viewer", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-real-group-page-"));
+  const pageHtml = pythonDiagnosticPage("transport.boltzmann.group_resolved.overview", {
+    kernel: "average_star",
+    nu: "5",
+    nv: "5",
+    band: "0",
+  });
+
+  assert.match(pageHtml, /<dft-band-surface-viewer/);
+  assert.match(pageHtml, /dft-model-group_resolved_band_surface/);
+
+  try {
+    writeFileSync(join(root, "index.html"), pageHtml);
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
+    /** @type {string[]} */
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() !== "error") return;
+      const text = message.text();
+
+      // Chromium may request /favicon.ico for a static test page.  That 404 is
+      // unrelated to component boot.
+      if (text.includes("Failed to load resource") && text.includes("404")) return;
+
+      errors.push(text);
+    });
+
+    try {
+      await page.route("**/static/dft-local-components.js", async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: "text/javascript",
+          body: readFileSync(join(root, "dft-local-components.js"), "utf8"),
+        });
+      });
+
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+      await page.waitForFunction(() => {
+        const viewer = document.querySelector("dft-band-surface-viewer");
+        return Boolean(
+          customElements.get("dft-band-surface-viewer")
+          && viewer
+          && /** @type {any} */ (viewer).payload
+          && /** @type {any} */ (viewer).payload.nu === 5
+          && /** @type {any} */ (viewer).payload.nv === 5
+          && /** @type {any} */ (viewer).payload.nbands === 8
+          && viewer.querySelector("canvas")
+          && viewer.querySelector("[data-dft-surface-status]")?.textContent?.includes("grid 5×5")
+        );
+      }, { timeout: 10000 });
+
+      const probe = await page.evaluate(() => {
+        const viewer = document.querySelector("dft-band-surface-viewer");
+        return {
+          viewer: Boolean(viewer),
+          defined: Boolean(customElements.get("dft-band-surface-viewer")),
+          payload: {
+            nu: /** @type {any} */ (viewer)?.payload?.nu,
+            nv: /** @type {any} */ (viewer)?.payload?.nv,
+            nbands: /** @type {any} */ (viewer)?.payload?.nbands,
+          },
+          hasCanvas: Boolean(viewer?.querySelector("canvas")),
+          status: viewer?.querySelector("[data-dft-surface-status]")?.textContent ?? "",
+          hasViewZero: Boolean(viewer?.querySelector("[data-dft-view-energy-zero]")),
+          hasViewScale: Boolean(viewer?.querySelector("[data-dft-view-energy-scale]")),
+        };
+      });
+
+      assert.deepEqual(probe.payload, { nu: 5, nv: 5, nbands: 8 });
+      assert.equal(probe.viewer, true);
+      assert.equal(probe.defined, true);
+      assert.equal(probe.hasCanvas, true);
+      assert.equal(probe.hasViewZero, true);
+      assert.equal(probe.hasViewScale, true);
+      assert.match(probe.status, /grid 5×5/);
+      assert.match(probe.status, /visible 8/);
+      assert.match(probe.status, /energy zero 0/);
+      assert.match(probe.status, /energy scale 1/);
+      assert.deepEqual(errors, []);
     } finally {
       await server.close();
     }

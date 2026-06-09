@@ -19,6 +19,8 @@ import {
   kspacePayloadToCartesian,
   bandSurfaceVertices,
   bandSurfaceTriangles,
+  bandSurfaceSliceSegments,
+  bandSurfaceSliceSegmentsForBands,
   bandSurfaceMeshData,
   bandSurfaceMeshDataWithMask,
   visibleBandIndices,
@@ -1188,4 +1190,84 @@ test("threeBandSurfaceGeometryData keeps zero energy at display zero", () => {
   assert.ok(geometry.positions[1] < 0);
   assert.equal(geometry.positions[4], 0);
   assert.ok(geometry.positions[7] > 0);
+});
+
+
+function simpleSlicePayload() {
+  return {
+    nu: 3,
+    nv: 3,
+    k1: [
+      [0, 1, 2],
+      [0, 1, 2],
+      [0, 1, 2],
+    ],
+    k2: [
+      [0, 0, 0],
+      [1, 1, 1],
+      [2, 2, 2],
+    ],
+    energies: [
+      [[0, 10], [1, 11], [2, 12]],
+      [[2, 12], [3, 13], [4, 14]],
+      [[4, 14], [5, 15], [6, 16]],
+    ],
+    mask: [
+      [true, true, true],
+      [true, true, true],
+      [true, true, true],
+    ],
+    bands: [0, 1],
+    nbands: 2,
+  };
+}
+
+test("bandSurfaceSliceSegments slices constant u planes", () => {
+  const segments = bandSurfaceSliceSegments(simpleSlicePayload(), 0, "u", 1, { useMask: false });
+
+  assert.ok(segments.length > 0);
+  assert.ok(segments.every((segment) => Math.abs(segment.a.u - 1) < 1e-9));
+  assert.ok(segments.every((segment) => Math.abs(segment.b.u - 1) < 1e-9));
+});
+
+test("bandSurfaceSliceSegments slices constant v planes", () => {
+  const segments = bandSurfaceSliceSegments(simpleSlicePayload(), 0, "v", 1, { useMask: false });
+
+  assert.ok(segments.length > 0);
+  assert.ok(segments.every((segment) => Math.abs(segment.a.v - 1) < 1e-9));
+  assert.ok(segments.every((segment) => Math.abs(segment.b.v - 1) < 1e-9));
+});
+
+test("bandSurfaceSliceSegments slices constant kx planes", () => {
+  const value = 0.5;
+  const segments = bandSurfaceSliceSegments(simpleSlicePayload(), 0, "kx", value, { useMask: false });
+
+  assert.ok(segments.length > 0);
+  assert.ok(segments.every((segment) => Math.abs(segment.a.kx - value) < 1e-9));
+  assert.ok(segments.every((segment) => Math.abs(segment.b.kx - value) < 1e-9));
+});
+
+test("bandSurfaceSliceSegments slices constant ky planes", () => {
+  const value = Math.sqrt(3) / 2;
+  const segments = bandSurfaceSliceSegments(simpleSlicePayload(), 0, "ky", value, { useMask: false });
+
+  assert.ok(segments.length > 0);
+  assert.ok(segments.every((segment) => Math.abs(segment.a.ky - value) < 1e-9));
+  assert.ok(segments.every((segment) => Math.abs(segment.b.ky - value) < 1e-9));
+});
+
+test("bandSurfaceSliceSegments slices constant energy planes", () => {
+  const segments = bandSurfaceSliceSegments(simpleSlicePayload(), 0, "energy", 3, { useMask: false });
+
+  assert.ok(segments.length > 0);
+  assert.ok(segments.every((segment) => Math.abs(segment.a.energy - 3) < 1e-9));
+  assert.ok(segments.every((segment) => Math.abs(segment.b.energy - 3) < 1e-9));
+});
+
+test("bandSurfaceSliceSegmentsForBands gathers slices for multiple bands", () => {
+  const segments = bandSurfaceSliceSegmentsForBands(simpleSlicePayload(), [0, 1], "u", 1, { useMask: false });
+  const bands = new Set(segments.map((segment) => segment.band));
+
+  assert.ok(bands.has(0));
+  assert.ok(bands.has(1));
 });

@@ -1032,6 +1032,202 @@ function bandSurfaceTriangles(payload, useMask = true) {
   return triangles;
 }
 
+
+/**
+ * @typedef {"u" | "v" | "kx" | "ky" | "energy"} BandSurfaceSliceAxis
+ */
+
+/**
+ * @typedef {{
+ *   x:number,
+ *   y:number,
+ *   z:number,
+ *   i:number,
+ *   j:number,
+ *   band:number
+ * }} BandSurfaceVertex
+ */
+
+/**
+ * @typedef {{
+ *   x:number,
+ *   y:number,
+ *   z:number,
+ *   u:number,
+ *   v:number,
+ *   kx:number,
+ *   ky:number,
+ *   energy:number,
+ *   band:number
+ * }} BandSurfaceSlicePoint
+ */
+
+/**
+ * @typedef {{
+ *   band:number,
+ *   axis:BandSurfaceSliceAxis,
+ *   value:number,
+ *   a:BandSurfaceSlicePoint,
+ *   b:BandSurfaceSlicePoint
+ * }} BandSurfaceSliceSegment
+ */
+
+/**
+ * @param {BandSurfaceVertex} vertex
+ * @param {BandSurfaceSliceAxis} axis
+ * @returns {number}
+ */
+function bandSurfaceSliceCoordinate(vertex, axis) {
+  if (axis === "u") return vertex.x;
+  if (axis === "v") return vertex.y;
+  if (axis === "energy") return vertex.z;
+
+  const p = bandBasisToCartesian(vertex.x, vertex.y);
+  return axis === "kx" ? p.x : p.y;
+}
+
+/**
+ * @param {BandSurfaceVertex} a
+ * @param {BandSurfaceVertex} b
+ * @param {number} t
+ * @returns {BandSurfaceSlicePoint}
+ */
+function interpolateBandSurfaceSlicePoint(a, b, t) {
+  const u = a.x + t * (b.x - a.x);
+  const v = a.y + t * (b.y - a.y);
+  const energy = a.z + t * (b.z - a.z);
+  const p = bandBasisToCartesian(u, v);
+
+  return {
+    x: u,
+    y: v,
+    z: energy,
+    u,
+    v,
+    kx: p.x,
+    ky: p.y,
+    energy,
+    band: a.band,
+  };
+}
+
+/**
+ * Intersect one band surface with a constant-u/v/kx/ky/energy plane.
+ *
+ * The return is line segments in the original physical coordinates.  It does
+ * not draw anything and does not know about three.js; the viewer can consume
+ * these segments for both 3D overlays and 2D slice displays.
+ *
+ * @param {JsonPayload | null} payload
+ * @param {number} band
+ * @param {BandSurfaceSliceAxis | string | null | undefined} axis
+ * @param {number} value
+ * @param {{useMask?:boolean, tolerance?:number}} options
+ * @returns {BandSurfaceSliceSegment[]}
+ */
+function bandSurfaceSliceSegments(payload, band, axis, value, options = {}) {
+  if (
+    axis !== "u"
+    && axis !== "v"
+    && axis !== "kx"
+    && axis !== "ky"
+    && axis !== "energy"
+  ) {
+    return [];
+  }
+
+  /** @type {BandSurfaceSliceAxis} */
+  const sliceAxis = axis;
+
+  if (!Number.isFinite(value)) return [];
+
+  const vertices = bandSurfaceVertices(payload, band);
+  const triangles = bandSurfaceTriangles(payload, options.useMask ?? true);
+  const tolerance = Number.isFinite(options.tolerance) ? Math.max(0, Number(options.tolerance)) : 1e-10;
+  /** @type {BandSurfaceSliceSegment[]} */
+  const segments = [];
+
+  /**
+   * @param {BandSurfaceVertex} a
+   * @param {BandSurfaceVertex} b
+   * @returns {BandSurfaceSlicePoint | null}
+   */
+  function edgeHit(a, b) {
+    const ca = bandSurfaceSliceCoordinate(a, sliceAxis);
+    const cb = bandSurfaceSliceCoordinate(b, sliceAxis);
+    const da = ca - value;
+    const db = cb - value;
+
+    if (Math.abs(da) <= tolerance && Math.abs(db) <= tolerance) {
+      return null;
+    }
+
+    if (Math.abs(da) <= tolerance) return interpolateBandSurfaceSlicePoint(a, b, 0.0);
+    if (Math.abs(db) <= tolerance) return interpolateBandSurfaceSlicePoint(a, b, 1.0);
+
+    if ((da < 0 && db > 0) || (da > 0 && db < 0)) {
+      return interpolateBandSurfaceSlicePoint(a, b, (value - ca) / (cb - ca));
+    }
+
+    return null;
+  }
+
+  /**
+   * @param {BandSurfaceSlicePoint[]} points
+   * @param {BandSurfaceSlicePoint} point
+   */
+  function pushUnique(points, point) {
+    for (const existing of points) {
+      if (
+        Math.abs(existing.u - point.u) <= tolerance
+        && Math.abs(existing.v - point.v) <= tolerance
+        && Math.abs(existing.energy - point.energy) <= tolerance
+      ) {
+        return;
+      }
+    }
+
+    points.push(point);
+  }
+
+  for (const triangle of triangles) {
+    const a = vertices[triangle[0]];
+    const b = vertices[triangle[1]];
+    const c = vertices[triangle[2]];
+    if (!a || !b || !c) continue;
+
+    /** @type {BandSurfaceSlicePoint[]} */
+    const hits = [];
+    for (const hit of [edgeHit(a, b), edgeHit(b, c), edgeHit(c, a)]) {
+      if (hit) pushUnique(hits, hit);
+    }
+
+    if (hits.length >= 2) {
+      segments.push({
+        band,
+        axis: sliceAxis,
+        value,
+        a: hits[0],
+        b: hits[1],
+      });
+    }
+  }
+
+  return segments;
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {number[]} bands
+ * @param {BandSurfaceSliceAxis | string | null | undefined} axis
+ * @param {number} value
+ * @param {{useMask?:boolean, tolerance?:number}} options
+ * @returns {BandSurfaceSliceSegment[]}
+ */
+function bandSurfaceSliceSegmentsForBands(payload, bands, axis, value, options = {}) {
+  return bands.flatMap((band) => bandSurfaceSliceSegments(payload, band, axis, value, options));
+}
+
 /**
  * @param {JsonPayload | null} payload
  * @param {number} band
@@ -2447,6 +2643,9 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       /** @type {number} */
       this.energyUnitsToDisplayY = 1.0;
 
+      /** @type {string} */
+      this.slicePlotModelId = `dft-slice-plot-model-${Math.random().toString(36).slice(2)}`;
+
       /** @type {JsonPayload | null} */
       this.payload = null;
       /** @type {null | ReturnType<typeof bandSurfaceMeshData>} */
@@ -2458,6 +2657,16 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.statusEl = null;
       /** @type {HTMLElement | null} */
       this.hoverEl = null;
+      /** @type {HTMLDetailsElement | null} */
+      this.sliceDetailsEl = null;
+      /** @type {HTMLElement | null} */
+      this.slicePanelEl = null;
+      /** @type {HTMLElement | null} */
+      this.slicePlotEl = null;
+      /** @type {{segments:BandSurfaceSliceSegment[], axis:string, value:number} | null} */
+      this.pendingSlicePlot = null;
+      /** @type {number | null} */
+      this.slicePlotTimer = null;
       /** @type {HTMLElement | null} */
       this.legendEl = null;
       /** @type {HTMLElement | null} */
@@ -2481,6 +2690,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.surfaceMeshes = [];
       /** @type {any[]} */
       this.wireMeshes = [];
+      /** @type {any[]} */
+      this.sliceMeshes = [];
       /** @type {any} */
       this.selectedMarker = null;
       /** @type {number | null} */
@@ -2566,6 +2777,20 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
               energy scale
               <input data-dft-view-energy-scale type="range" min="0.1" max="5" step="0.1" value="1">
             </label>
+            <label class="band-surface-view-control">
+              slice axis
+              <select data-dft-view-slice-axis>
+                <option value="u">u</option>
+                <option value="v">v</option>
+                <option value="kx">kx</option>
+                <option value="ky">ky</option>
+                <option value="energy">energy</option>
+              </select>
+            </label>
+            <label class="band-surface-view-control">
+              slice value
+              <input data-dft-view-slice-value type="range" min="-3.14159" max="3.14159" step="0.01" value="0">
+            </label>
             <label class="band-surface-mask-toggle">
               <input type="checkbox" data-dft-mask-to-hexagon>
               mask to hexagon
@@ -2574,15 +2799,25 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           <div class="band-surface-legend" data-dft-surface-legend></div>
           <div class="band-surface-hover" data-dft-surface-hover>hover: none</div>
           <div class="band-surface-three" data-dft-three-surface style="width:100%; min-height:560px;"></div>
+          <details class="band-surface-slice-details" data-dft-slice-details>
+            <summary>Slice intersection</summary>
+            <div class="band-surface-slice-panel" data-dft-slice-panel>slice: none</div>
+            <div class="band-surface-slice-plot" data-dft-slice-plot></div>
+          </details>
           <p class="band-surface-help">three.js controls: left drag rotate, wheel zoom, right drag pan.</p>
         </div>
       `;
 
       this.statusEl = this.querySelector("[data-dft-surface-status]");
       this.hoverEl = this.querySelector("[data-dft-surface-hover]");
+      this.sliceDetailsEl = /** @type {HTMLDetailsElement | null} */ (this.querySelector("[data-dft-slice-details]"));
+      this.slicePanelEl = this.querySelector("[data-dft-slice-panel]");
+      this.slicePlotEl = this.querySelector("[data-dft-slice-plot]");
       this.legendEl = this.querySelector("[data-dft-surface-legend]");
       this.threeHost = this.querySelector("[data-dft-three-surface]");
       this.bindViewControls();
+      this.bindSliceControls();
+      this.bindSliceDetails();
       this.bindMaskToggle();
     }
 
@@ -2636,6 +2871,89 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         scaleInput.addEventListener("change", emit);
         bindWheel(scaleInput);
       }
+    }
+
+    bindSliceControls() {
+      const axisInput = this.querySelector("[data-dft-view-slice-axis]");
+      const valueInput = this.querySelector("[data-dft-view-slice-value]");
+
+      const updateRangeForAxis = () => {
+        if (!(axisInput instanceof HTMLSelectElement)) return;
+        if (!(valueInput instanceof HTMLInputElement)) return;
+
+        const axis = axisInput.value;
+        if (axis === "energy") {
+          const domain = bandSurfaceEnergyDomain(this.currentBandMeshes);
+          valueInput.min = String(domain?.emin ?? -20);
+          valueInput.max = String(domain?.emax ?? 20);
+          valueInput.step = "0.1";
+          if (!Number.isFinite(Number(valueInput.value))) valueInput.value = "0";
+        } else {
+          valueInput.min = "-3.14159";
+          valueInput.max = "3.14159";
+          valueInput.step = "0.01";
+        }
+      };
+
+      const emit = () => {
+        if (axisInput instanceof HTMLSelectElement) {
+          this.sliceAxis = axisInput.value;
+        }
+
+        if (valueInput instanceof HTMLInputElement) {
+          const value = Number(valueInput.value);
+          this.sliceValue = Number.isFinite(value) ? value : 0.0;
+        }
+
+        updateRangeForAxis();
+        this.updateStatus();
+        this.updateSlicePanel();
+        this.updateSliceOverlay();
+      };
+
+      /** @param {Element | null} input */
+      const bindWheel = (input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+
+        input.addEventListener("wheel", (event) => {
+          event.preventDefault();
+
+          const step = Number(input.step) || 1.0;
+          const speed = event.shiftKey ? 10.0 : 1.0;
+          const direction = event.deltaY < 0 ? 1.0 : -1.0;
+          const min = Number.isFinite(Number(input.min)) ? Number(input.min) : -Infinity;
+          const max = Number.isFinite(Number(input.max)) ? Number(input.max) : Infinity;
+          const next = Math.max(min, Math.min(max, Number(input.value) + direction * step * speed));
+
+          input.value = String(next);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }, { passive: false });
+      };
+
+      if (axisInput instanceof HTMLSelectElement) {
+        axisInput.value = this.sliceAxis ?? "u";
+        axisInput.addEventListener("change", emit);
+      }
+
+      if (valueInput instanceof HTMLInputElement) {
+        valueInput.value = String(this.sliceValue ?? 0.0);
+        valueInput.addEventListener("input", emit);
+        valueInput.addEventListener("change", emit);
+        bindWheel(valueInput);
+      }
+
+      updateRangeForAxis();
+      emit();
+    }
+
+    bindSliceDetails() {
+      if (!(this.sliceDetailsEl instanceof HTMLDetailsElement)) return;
+
+      this.sliceDetailsEl.addEventListener("toggle", () => {
+        if (this.sliceDetailsEl?.open) {
+          this.flushSlicePlot();
+        }
+      });
     }
 
     bindMaskToggle() {
@@ -2759,6 +3077,7 @@ selectedBandIndex() {
       this.surfaceGroup = null;
       this.surfaceMeshes = [];
       this.wireMeshes = [];
+      this.sliceMeshes = [];
       this.selectedMarker = null;
       this.hasInitialCamera = false;
     }
@@ -2768,9 +3087,18 @@ selectedBandIndex() {
 
       for (const mesh of this.surfaceMeshes) this.surfaceGroup.remove(mesh);
       for (const mesh of this.wireMeshes) this.surfaceGroup.remove(mesh);
+      for (const mesh of this.sliceMeshes) this.surfaceGroup.remove(mesh);
 
       this.surfaceMeshes = [];
       this.wireMeshes = [];
+      this.sliceMeshes = [];
+    }
+
+    clearSliceMeshes() {
+      if (!this.surfaceGroup) return;
+
+      for (const mesh of this.sliceMeshes) this.surfaceGroup.remove(mesh);
+      this.sliceMeshes = [];
     }
 
     applyEnergyTransform() {
@@ -2780,6 +3108,7 @@ selectedBandIndex() {
       }
 
       this.updateStatus();
+      this.updateSlicePanel();
     }
 
     updateLegend() {
@@ -2846,6 +3175,8 @@ selectedBandIndex() {
 
       this.updateLegend();
       this.updateStatus();
+      this.updateSlicePanel();
+      this.updateSliceOverlay();
     }
 
 
@@ -2958,6 +3289,8 @@ selectedBandIndex() {
       }
 
       this.updateSelectedMarker();
+      this.updateSlicePanel();
+      this.updateSliceOverlay();
     }
 
 
@@ -3072,6 +3405,341 @@ selectedBandIndex() {
       this.controls.target.set(data.center.x, 0.0, data.center.z);
       this.controls.update();
       this.hasInitialCamera = true;
+    }
+
+    updateSlicePanel() {
+      if (!this.slicePanelEl) return;
+
+      const axis = this.sliceAxis ?? "u";
+      const value = Number(this.sliceValue ?? 0.0);
+
+      if (
+        axis !== "u"
+        && axis !== "v"
+        && axis !== "kx"
+        && axis !== "ky"
+        && axis !== "energy"
+      ) {
+        this.slicePanelEl.textContent = "slice: none";
+        this.updateSlicePlot([], axis, value);
+        return;
+      }
+
+      const visibleBands = visibleBandIndices(this.payload, this.hiddenBands);
+      const segments = bandSurfaceSliceSegmentsForBands(
+        this.payload,
+        visibleBands,
+        axis,
+        value,
+        { useMask: this.maskToHexagon },
+      );
+
+      if (segments.length === 0) {
+        this.slicePanelEl.textContent = `slice ${axis}=${nice(value)}: no intersections`;
+        this.updateSlicePlot([], axis, value);
+        return;
+      }
+
+      const counts = new Map();
+      for (const segment of segments) {
+        counts.set(segment.band, (counts.get(segment.band) ?? 0) + 1);
+      }
+
+      const countText = Array.from(counts.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([band, count]) => `band ${band}: ${count}`)
+        .join("; ");
+
+      this.slicePanelEl.textContent = `slice ${axis}=${nice(value)}: ${segments.length} segments; ${countText}`;
+      this.updateSlicePlot(segments, axis, value);
+    }
+
+    /**
+     * @param {BandSurfaceSliceSegment[]} segments
+     * @param {string} axis
+     * @param {number} value
+     */
+    updateSlicePlot(segments, axis, value) {
+      this.pendingSlicePlot = { segments, axis, value };
+
+      if (!this.sliceDetailsEl?.open) {
+        if (this.slicePlotEl) {
+          this.slicePlotEl.textContent = segments.length === 0
+            ? "Open to display slice plot."
+            : `Open to display ${segments.length} slice segments.`;
+        }
+        return;
+      }
+
+      if (this.slicePlotTimer !== null) {
+        window.clearTimeout(this.slicePlotTimer);
+      }
+
+      this.slicePlotTimer = window.setTimeout(() => {
+        this.slicePlotTimer = null;
+        this.flushSlicePlot();
+      }, 80);
+    }
+
+    flushSlicePlot() {
+      if (!this.slicePlotEl || !this.pendingSlicePlot) return;
+
+      const { segments, axis, value } = this.pendingSlicePlot;
+
+      if (segments.length === 0) {
+        this.slicePlotEl.textContent = "No slice curve to display.";
+        return;
+      }
+
+      const payload = axis === "energy"
+        ? this.sliceKspaceGraphPayload(segments, value)
+        : this.sliceBandGraphPayload(segments, axis, value);
+
+      const componentTag = axis === "energy" ? "dft-kspace-plot" : "dft-line-graph";
+      const componentKind = axis === "energy" ? "kspace" : "line";
+
+      const existingScript = this.slicePlotEl.querySelector(`#${CSS.escape(this.slicePlotModelId)}`);
+      /** @type {HTMLScriptElement} */
+      let script = existingScript instanceof HTMLScriptElement
+        ? existingScript
+        : document.createElement("script");
+
+      if (!script.isConnected) {
+        script.type = "application/json";
+        script.id = this.slicePlotModelId;
+        script.dataset.dftModel = this.slicePlotModelId;
+      }
+
+      script.textContent = JSON.stringify(payload);
+
+      const existingComponent = this.slicePlotEl.querySelector(componentTag);
+      const activeComponent = existingComponent instanceof HTMLElement
+        && existingComponent.tagName.toLowerCase() === componentTag
+        ? existingComponent
+        : document.createElement(componentTag);
+
+      activeComponent.setAttribute("data-source", this.slicePlotModelId);
+      activeComponent.setAttribute("data-dft-model", this.slicePlotModelId);
+      activeComponent.setAttribute("data-dft-slice-component", componentKind);
+
+      if (!activeComponent.isConnected) {
+        this.slicePlotEl.replaceChildren(script, activeComponent);
+        return;
+      }
+
+      if (!script.isConnected) {
+        this.slicePlotEl.prepend(script);
+      }
+
+      if (typeof /** @type {any} */ (activeComponent).updateModel === "function") {
+        /** @type {any} */ (activeComponent).updateModel(payload);
+      }
+    }
+
+    /**
+     * @param {BandSurfaceSliceSegment[]} segments
+     * @param {string} axis
+     * @param {number} value
+     * @returns {GraphPayload}
+     */
+    sliceBandGraphPayload(segments, axis, value) {
+      const label = axis === "u"
+        ? "v"
+        : axis === "v"
+          ? "u"
+          : axis === "kx"
+            ? "ky"
+            : "kx";
+
+      const key = axis === "u"
+        ? "v"
+        : axis === "v"
+          ? "u"
+          : axis === "kx"
+            ? "ky"
+            : "kx";
+
+      /** @type {Map<number, GraphPoint[]>} */
+      const byBand = new Map();
+
+      for (const segment of segments) {
+        if (!byBand.has(segment.band)) byBand.set(segment.band, []);
+        const points = byBand.get(segment.band);
+        if (!points) continue;
+
+        for (const point of [segment.a, segment.b]) {
+          points.push({
+            x: Number(point[key]),
+            y: point.energy,
+            label: `band ${segment.band}`,
+            meta: { band: segment.band },
+          });
+        }
+      }
+
+      return {
+        id: `band-surface-slice-${axis}`,
+        title: `Slice ${axis}=${nice(value)}`,
+        x_label: label,
+        y_label: "energy",
+        series: Array.from(byBand.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map(([band, points]) => ({
+            name: `band ${band}`,
+            kind: "line",
+            points: points
+              .filter((/** @type {GraphPoint} */ point) => Number.isFinite(point.x) && Number.isFinite(point.y))
+              .sort((/** @type {GraphPoint} */ a, /** @type {GraphPoint} */ b) => a.x - b.x)
+              .filter((_, index, all) => index % Math.max(1, Math.ceil(all.length / 400)) === 0),
+          })),
+      };
+    }
+
+    /**
+     * @param {BandSurfaceSliceSegment[]} segments
+     * @param {number} value
+     * @returns {GraphPayload}
+     */
+    sliceKspaceGraphPayload(segments, value) {
+      /** @type {Map<number, GraphPoint[]>} */
+      const byBand = new Map();
+
+      for (const segment of segments) {
+        if (!byBand.has(segment.band)) byBand.set(segment.band, []);
+        const points = byBand.get(segment.band);
+        if (!points) continue;
+
+        for (const point of [segment.a, segment.b]) {
+          points.push({
+            x: point.kx,
+            y: point.ky,
+            label: `band ${segment.band}`,
+            meta: { band: segment.band },
+          });
+        }
+      }
+
+      const maxPointsPerBand = 250;
+
+      return {
+        id: "band-surface-energy-slice-kspace",
+        title: `Energy slice E=${nice(value)}`,
+        x_label: "k Cartesian x",
+        y_label: "k Cartesian y",
+        series: Array.from(byBand.entries())
+          .sort((a, b) => a[0] - b[0])
+          .map(([band, points]) => {
+            const stride = Math.max(1, Math.ceil(points.length / maxPointsPerBand));
+            return {
+              name: `band ${band}`,
+              kind: "points",
+              points: points.filter((_, index) => index % stride === 0),
+            };
+          }),
+      };
+    }
+
+    updateSliceOverlay() {
+      this.clearSliceMeshes();
+
+      if (!this.THREE || !this.surfaceGroup) return;
+
+      const axis = this.sliceAxis ?? "u";
+      const value = Number(this.sliceValue ?? 0.0);
+
+      if (
+        axis !== "u"
+        && axis !== "v"
+        && axis !== "kx"
+        && axis !== "ky"
+        && axis !== "energy"
+      ) {
+        return;
+      }
+
+      const visibleBands = visibleBandIndices(this.payload, this.hiddenBands);
+      const segments = bandSurfaceSliceSegmentsForBands(
+        this.payload,
+        visibleBands,
+        axis,
+        value,
+        { useMask: this.maskToHexagon },
+      );
+
+      if (segments.length === 0) return;
+
+      const THREE = this.THREE;
+      const domain = bandSurfaceEnergyDomain(this.currentBandMeshes);
+      const radius = Math.max((domain?.kSpan ?? 1.0) * 0.006, 0.015);
+      const maxInstancesPerBand = 900;
+
+      /** @type {Map<number, Array<{start:any,end:any,length:number,quaternion:any}>>} */
+      const byBand = new Map();
+
+      for (const segment of segments) {
+        const band = Number(segment.band);
+        const start = new THREE.Vector3(
+          segment.a.kx,
+          segment.a.energy * this.energyUnitsToDisplayY,
+          segment.a.ky,
+        );
+        const end = new THREE.Vector3(
+          segment.b.kx,
+          segment.b.energy * this.energyUnitsToDisplayY,
+          segment.b.ky,
+        );
+        const delta = new THREE.Vector3().subVectors(end, start);
+        const length = delta.length();
+
+        if (!(length > 1e-12)) continue;
+
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          delta.clone().normalize(),
+        );
+
+        if (!byBand.has(band)) byBand.set(band, []);
+        byBand.get(band)?.push({ start, end, length, quaternion });
+      }
+
+      for (const [band, items] of byBand.entries()) {
+        const stride = Math.max(1, Math.ceil(items.length / maxInstancesPerBand));
+        const kept = items.filter((_, index) => index % stride === 0);
+        if (kept.length === 0) continue;
+
+        const geometry = new THREE.CylinderGeometry(radius, radius, 1.0, 10, 1);
+        const material = new THREE.MeshBasicMaterial({
+          color: 0xff00ff,
+          transparent: true,
+          opacity: 1.0,
+          depthTest: false,
+          depthWrite: false,
+        });
+
+        const instanced = new THREE.InstancedMesh(geometry, material, kept.length);
+        const matrix = new THREE.Matrix4();
+        const midpoint = new THREE.Vector3();
+        const scale = new THREE.Vector3();
+
+        kept.forEach((item, index) => {
+          midpoint.copy(item.start).add(item.end).multiplyScalar(0.5);
+          scale.set(1.0, item.length, 1.0);
+          matrix.compose(midpoint, item.quaternion, scale);
+          instanced.setMatrixAt(index, matrix);
+        });
+
+        instanced.instanceMatrix.needsUpdate = true;
+        instanced.name = `band-surface-slice-band-${band}`;
+        instanced.userData.dftBand = band;
+        instanced.userData.dftSliceOverlay = true;
+        instanced.userData.dftSliceInstances = kept.length;
+        instanced.userData.dftSliceTotalSegments = items.length;
+        instanced.renderOrder = 1000;
+        instanced.visible = !this.hiddenBands.has(band);
+
+        this.sliceMeshes.push(instanced);
+        this.surfaceGroup.add(instanced);
+      }
     }
 
     updateStatus() {
@@ -3739,4 +4407,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
