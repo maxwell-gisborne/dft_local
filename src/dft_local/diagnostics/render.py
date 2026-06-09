@@ -362,6 +362,20 @@ def render_json_model(model_id: object, payload: object) -> str:
 
 
 
+def table_row_dom_id(table_id: object, row_index: int, row: object) -> str:
+    cells = getattr(row, "cells", ())
+    entity_id = getattr(row, "entity_id", None)
+
+    if entity_id is not None:
+        return f"{table_id}:{entity_id}"
+
+    if cells:
+        return f"{table_id}:row:{row_index}:{cells[0]}"
+
+    return f"{table_id}:row:{row_index}"
+
+
+
 def render_table(table) -> str:
     has_step = "step" in table.headers
     step_index = table.headers.index("step") if has_step else -1
@@ -384,7 +398,8 @@ def render_table(table) -> str:
             "</div>"
         )
 
-    parts.append("<div class='table-breakout' tabindex='0'><table><thead><tr>")
+    selectable_attr = " data-dft-selectable-table" if has_step else ""
+    parts.append(f"<div class='table-breakout' tabindex='0'><table data-dft-table='{escape(str(table.id))}'{selectable_attr}><thead><tr>")
     if has_step:
         parts.append("<th>select</th>")
 
@@ -392,13 +407,14 @@ def render_table(table) -> str:
         parts.append(f"<th>{render_user_string(header)}</th>")
     parts.append("</tr></thead><tbody>")
 
-    for row in table.rows:
+    for row_index, row in enumerate(table.rows):
+        row_id = table_row_dom_id(table.id, row_index, row)
         step_value = row.cells[step_index] if has_step else None
         x_value = row.cells[x_index] if x_index >= 0 else step_value
         energy_value = row.cells[energy_index] if energy_index >= 0 else ""
         row_label_value = row.cells[row_label_index] if row.cells else step_value
 
-        attrs = ""
+        attrs = f" data-dft-row-id='{escape(row_id)}'"
         if has_step:
             attrs = (
                 f" data-step='{escape(str(step_value))}'"
