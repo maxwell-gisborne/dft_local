@@ -1420,7 +1420,104 @@ test("band surface slice panel renders band plot and k-space plot", async () => 
   }
 });
 
-test("band surface viewer keeps slice intersections out of 3D overlay", async () => {
+
+test("band surface slice slider updates 3D plane immediately", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-slice-plane-live-"));
+  const payload = {
+    kind: "band-surface-preview",
+    nu: 3,
+    nv: 3,
+    k1: [[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+    k2: [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
+    energies: [
+      [[0, 10], [1, 11], [2, 12]],
+      [[2, 12], [3, 13], [4, 14]],
+      [[4, 14], [5, 15], [6, 16]],
+    ],
+    mask: [[true, true, true], [true, true, true], [true, true, true]],
+    bands: [0, 1],
+    nbands: 2,
+    selected_band: 0,
+    energy_unit: "eV",
+  };
+
+  try {
+    writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(payload).replaceAll("</", "<\\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
+
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+      await page.locator("[data-dft-slice-details] summary").click();
+
+      await page.waitForFunction(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        return viewer?.sliceMeshes?.length === 1;
+      }, { timeout: 10000 });
+
+      const before = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        return {
+          axis: viewer.sliceAxis,
+          value: viewer.sliceValue,
+          meshValue: viewer.sliceMeshes[0]?.userData?.dftSliceValue,
+          meshCount: viewer.sliceMeshes.length,
+        };
+      });
+
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.8";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      const after = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        return {
+          axis: viewer.sliceAxis,
+          value: viewer.sliceValue,
+          meshValue: viewer.sliceMeshes[0]?.userData?.dftSliceValue,
+          meshCount: viewer.sliceMeshes.length,
+        };
+      });
+
+      assert.equal(before.meshCount, 1);
+      assert.equal(after.meshCount, 1);
+      assert.ok(Math.abs(Number(after.value) - 0.8) < 0.01);
+      assert.ok(Math.abs(Number(after.meshValue) - 0.8) < 0.01);
+    } finally {
+      await server.close();
+    }
+  } finally {
+    await browserInstance.close();
+  }
+});
+
+
+test("band surface viewer draws cheap slice plane outline in 3D", async () => {
   const browserInstance = await chromium.launch();
   const root = mkdtempSync(join(tmpdir(), "dft-local-slice-no-3d-overlay-"));
   const payload = {
@@ -1492,7 +1589,7 @@ test("band surface viewer keeps slice intersections out of 3D overlay", async ()
         };
       });
 
-      assert.equal(result.sliceMeshes, 0);
+      assert.equal(result.sliceMeshes, 1);
       assert.match(result.panel, /segments/);
     } finally {
       await server.close();
@@ -1896,6 +1993,10 @@ print(app.diagnostic_page(diagnostic_id, raw_inputs), end="")
     encoding: "utf8",
   });
 }
+
+
+
+
 
 test("real group-resolved DiagnosticApp page boots band surface viewer", async () => {
   const browserInstance = await chromium.launch();

@@ -2728,6 +2728,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         this.sliceAxis = String(payload.detail.axis ?? "");
         this.sliceValue = Number(payload.detail.value);
         this.updateStatus();
+
+        // The 3D slice plane is a cheap outline, so keep it live with the
+        // shared slice controls. The detailed panel/plot can still debounce.
+        this.updateSliceOverlay();
+        this.renderThreeOnce();
+        this.updateSlicePanel();
       }));
 
       this.unsubscribers.push(onDftSignal("view-changed", (payload) => {
@@ -2743,6 +2749,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         }
 
         this.applyEnergyTransform();
+        this.updateSliceOverlay();
+        this.renderThreeOnce();
       }));
 
       this.unsubscribers.push(onDftSignal("selected-kpoint", (payload) => {
@@ -2833,7 +2841,6 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.isolateRenderRegions();
       const slicePlot = this.querySelector("[data-dft-slice-plot]");
       if (slicePlot instanceof HTMLElement) {
-        slicePlot.style.pointerEvents = "none";
         slicePlot.style.userSelect = "none";
         slicePlot.style.contain = "layout paint style";
       }
@@ -2931,8 +2938,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
         updateRangeForAxis();
         this.updateStatus();
-        this.updateSlicePanel();
+
+        // The 3D slice plane is only a cheap outline, so move it immediately.
+        // The detailed panel/plot intersections may still be debounced.
         this.updateSliceOverlay();
+        this.renderThreeOnce();
+        this.updateSlicePanel();
       };
 
       /** @param {Element | null} input */
@@ -2996,6 +3007,9 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       if (!(this.sliceDetailsEl instanceof HTMLDetailsElement)) return;
 
       this.sliceDetailsEl.addEventListener("toggle", () => {
+        this.updateSliceOverlay();
+        this.renderThreeOnce();
+
         if (this.sliceDetailsEl?.open) {
           this.flushSlicePlot();
         }
@@ -3761,9 +3775,118 @@ selectedBandIndex() {
     }
 
     updateSliceOverlay() {
-      // The detailed intersections are shown in the slice panel below.
-      // Keep the 3D camera path clean: no per-slice 3D overlay geometry.
       this.clearSliceMeshes();
+
+      if (!this.sliceDetailsEl?.open) return;
+      if (!this.THREE || !this.surfaceGroup) return;
+
+      const axis = this.sliceAxis ?? "u";
+      const value = Number(this.sliceValue ?? 0.0);
+      if (!["u", "v", "kx", "ky", "energy"].includes(axis)) return;
+
+      const THREE = this.THREE;
+      const domain = bandSurfaceEnergyDomain(this.currentBandMeshes);
+      const vertices = this.currentBandMeshes.flatMap((item) => item.mesh.vertices);
+      if (vertices.length === 0 || !domain) return;
+
+      const displayPoints = vertices.map((vertex) => bandBasisToCartesian(vertex.x, vertex.y));
+      const xmin = Math.min(...displayPoints.map((point) => point.x));
+      const xmax = Math.max(...displayPoints.map((point) => point.x));
+      const zmin = Math.min(...displayPoints.map((point) => point.y));
+      const zmax = Math.max(...displayPoints.map((point) => point.y));
+
+      const umin = Math.min(...vertices.map((vertex) => vertex.x));
+      const umax = Math.max(...vertices.map((vertex) => vertex.x));
+      const vmin = Math.min(...vertices.map((vertex) => vertex.y));
+      const vmax = Math.max(...vertices.map((vertex) => vertex.y));
+
+      const ePad = 0.08 * Math.max(domain.emax - domain.emin, 1e-12);
+      const ymin = (domain.emin - ePad) * this.energyUnitsToDisplayY;
+      const ymax = (domain.emax + ePad) * this.energyUnitsToDisplayY;
+
+      /** @type {any[]} */
+      let corners = [];
+
+      if (axis === "u") {
+        const x = Math.max(umin, Math.min(umax, value));
+        const a = bandBasisToCartesian(x, vmin);
+        const b = bandBasisToCartesian(x, vmax);
+        corners = [
+          new THREE.Vector3(a.x, ymin, a.y),
+          new THREE.Vector3(b.x, ymin, b.y),
+          new THREE.Vector3(b.x, ymax, b.y),
+          new THREE.Vector3(a.x, ymax, a.y),
+        ];
+      } else if (axis === "v") {
+        const y = Math.max(vmin, Math.min(vmax, value));
+        const a = bandBasisToCartesian(umin, y);
+        const b = bandBasisToCartesian(umax, y);
+        corners = [
+          new THREE.Vector3(a.x, ymin, a.y),
+          new THREE.Vector3(b.x, ymin, b.y),
+          new THREE.Vector3(b.x, ymax, b.y),
+          new THREE.Vector3(a.x, ymax, a.y),
+        ];
+      } else if (axis === "energy") {
+        const y = value * this.energyUnitsToDisplayY;
+        corners = [
+          new THREE.Vector3(xmin, y, zmin),
+          new THREE.Vector3(xmax, y, zmin),
+          new THREE.Vector3(xmax, y, zmax),
+          new THREE.Vector3(xmin, y, zmax),
+        ];
+      } else {
+        // For kx/ky, draw no 3D guide for now. The panel below remains exact.
+        return;
+      }
+
+      const center01 = corners[0].clone().lerp(corners[1], 0.5);
+      const center12 = corners[1].clone().lerp(corners[2], 0.5);
+      const center23 = corners[2].clone().lerp(corners[3], 0.5);
+      const center30 = corners[3].clone().lerp(corners[0], 0.5);
+
+      const edgePoints = [
+        // Border.
+        corners[0], corners[1],
+        corners[1], corners[2],
+        corners[2], corners[3],
+        corners[3], corners[0],
+
+        // Internal crosshair. This makes plane movement visible without
+        // needing to rotate the camera.
+        center01, center23,
+        center12, center30,
+
+        // Diagonals for extra depth/orientation cue.
+        corners[0], corners[2],
+        corners[1], corners[3],
+      ];
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setFromPoints(edgePoints);
+
+      const outline = new THREE.LineSegments(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: 0xff00ff,
+          transparent: true,
+          opacity: 0.95,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+
+      outline.name = `band-surface-slice-plane-outline-${axis}`;
+      outline.userData.dftSliceOverlay = true;
+      outline.userData.dftSlicePlane = true;
+      outline.userData.dftSliceAxis = axis;
+      outline.userData.dftSliceValue = value;
+      outline.renderOrder = 901;
+
+      this.sliceMeshes.push(outline);
+      this.surfaceGroup.add(outline);
+
+      this.renderThreeOnce();
     }
 
     updateStatus() {
