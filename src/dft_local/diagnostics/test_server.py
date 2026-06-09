@@ -934,7 +934,44 @@ def test_diagnostic_run_stream_returns_datastar_sse_patch() -> None:
     stream = app.diagnostic_run_stream("transport.boltzmann.calculation.overview", {})
 
     assert "event: datastar-patch-elements" in stream
-    assert "data: selector #diagnostic-result" in stream
-    assert "id='diagnostic-result'" in stream
     assert "event: datastar-execute-script" in stream
-    assert "dftRefreshModels" in stream
+    assert "window.captureDftTableState" in stream
+    assert "window.restoreDftTableState" in stream
+    assert "data: selector #dft-block-" in stream
+
+
+def test_datastar_run_stream_patches_json_models_not_components() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    stream = app.diagnostic_run_stream(
+        "transport.bands.synthetic_surface",
+        {
+            "surface": "gaussian",
+            "nu": "5",
+            "nv": "5",
+        },
+    )
+
+    assert "data: selector #dft-model-synthetic_band_surface" in stream
+    assert "window.dftRefreshModels?.(document)" in stream
+    assert "data: selector #diagnostic-result" not in stream
+
+
+def test_datastar_run_stream_preserves_stateful_table_state() -> None:
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    stream = app.diagnostic_run_stream(
+        "transport.bands.path",
+        {
+            "kernel": "average_star",
+            "matching": "energy_predict",
+            "path": "gamma_k_m_gamma",
+            "points_per_segment": "8",
+        },
+    )
+
+    assert "window.__dftTableState = window.captureDftTableState?.(document)" in stream
+    assert "window.restoreDftTableState?.(window.__dftTableState, document)" in stream
+    assert "data: selector #dft-block-" in stream

@@ -347,8 +347,8 @@ class DiagnosticApp:
         spec = self.specs[diagnostic_id]
         inputs = parse_inputs(spec, raw_inputs)
         result = spec.compute(self.ctx, inputs)
-        html = self.result_outlet(render_result(result))
-        return self.datastar_patch_element("#diagnostic-result", html)
+        html = render_result(result)
+        return self.datastar_patch_result_blocks(html)
 
     @staticmethod
     def result_outlet(html: str) -> str:
@@ -359,18 +359,107 @@ class DiagnosticApp:
         )
 
     @staticmethod
-    def datastar_patch_element(selector: str, html: str) -> str:
+    def datastar_patch_element(selector: str, html: str, *, mode: str = "outer") -> str:
         lines = [
             "event: datastar-patch-elements",
             f"data: selector {selector}",
-            "data: mode outer",
+            f"data: mode {mode}",
         ]
         lines.extend(f"data: elements {line}" for line in html.splitlines())
         lines.append("")
-        lines.append("event: datastar-execute-script")
-        lines.append("data: script window.dftRefreshModels?.(document)")
-        lines.append("")
         return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def datastar_execute_script(script: str) -> str:
+        lines = [
+            "event: datastar-execute-script",
+            f"data: script {script}",
+            "",
+        ]
+        return "\n".join(lines) + "\n"
+
+    @classmethod
+    def datastar_patch_result_blocks(cls, html: str) -> str:
+        """Return Datastar SSE patches for the rendered diagnostic result.
+
+        The renderer has already marked every important block with
+        data-dft-block-kind.  We patch by representation kind:
+
+        - json-rendered: patch only model islands, then refresh components.
+        - stateful-html: patch the HTML block, preserving table state.
+        - static-html: patch the HTML block.
+        """
+
+        blocks = cls.extract_dft_blocks(html)
+        if not blocks:
+            return (
+                cls.datastar_patch_element(
+                    "#diagnostic-result",
+                    cls.result_outlet(html),
+                )
+                + cls.datastar_execute_script("window.dftRefreshModels?.(document)")
+            )
+
+        stream = []
+        needs_model_refresh = False
+        needs_table_restore = False
+
+        for block in blocks:
+            block_id = block["id"]
+            kind = block["kind"]
+            block_html = block["html"]
+
+            if kind == "json-rendered":
+                for model_id, model_html in cls.extract_dft_models(block_html):
+                    stream.append(cls.datastar_patch_element(f"#{model_id}", model_html))
+                    needs_model_refresh = True
+            elif kind == "stateful-html":
+                needs_table_restore = True
+                stream.append(
+                    cls.datastar_execute_script(
+                        "window.__dftTableState = window.captureDftTableState?.(document)"
+                    )
+                )
+                stream.append(cls.datastar_patch_element(f"#dft-block-{block_id}", block_html))
+            else:
+                stream.append(cls.datastar_patch_element(f"#dft-block-{block_id}", block_html))
+
+        if needs_table_restore:
+            stream.append(
+                cls.datastar_execute_script(
+                    "window.restoreDftTableState?.(window.__dftTableState, document)"
+                )
+            )
+
+        if needs_model_refresh:
+            stream.append(cls.datastar_execute_script("window.dftRefreshModels?.(document)"))
+
+        return "".join(stream)
+
+    @staticmethod
+    def extract_dft_blocks(html: str) -> list[dict[str, str]]:
+        import re
+
+        pattern = re.compile(
+            r"(<section id='dft-block-([^']+)'[^>]*data-dft-block-kind='([^']+)'[^>]*>.*?</section>)",
+            re.S,
+        )
+
+        return [
+            {"html": match.group(1), "id": match.group(2), "kind": match.group(3)}
+            for match in pattern.finditer(html)
+        ]
+
+    @staticmethod
+    def extract_dft_models(html: str) -> list[tuple[str, str]]:
+        import re
+
+        pattern = re.compile(
+            r"(<script type='application/json' id='([^']+)'[^>]*>.*?</script>)",
+            re.S,
+        )
+
+        return [(match.group(2), match.group(1)) for match in pattern.finditer(html)]
 
     @staticmethod
     def form(spec: DiagnosticSpec, inputs: dict[str, object]) -> str:
