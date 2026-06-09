@@ -740,7 +740,8 @@ def test_tables_render_in_breakout_scroll_container() -> None:
     assert "class='diagnostic-table-section'" in html
     assert "class='table-breakout'" in html
     assert "tabindex='0'" in html
-    assert "<table>" in html
+    assert "<table" in html
+    assert "data-dft-table='wide_table'" in html
 
 
 def test_table_breakout_has_paper_background_without_table_row_override() -> None:
