@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import numpy as np
 
 from dft_local.diagnostics.models import (
@@ -11,6 +10,7 @@ from dft_local.diagnostics.models import (
     DiagnosticSpec,
     HtmlBlock,
     InputSpec,
+    WebGLView,
     DiagnosticSection,
     Table,
     TableRow,
@@ -63,35 +63,33 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     residual = resolved.sigma - calc.sigma
     assert calc.energies is not None
 
-    surface_payload = json.dumps(
-        {
-            "kind": "band-surface-preview",
-            "nu": nu,
-            "nv": nv,
-            "k1": np.asarray(k1, dtype=float).reshape(nu, nv).tolist(),
-            "k2": np.asarray(k2, dtype=float).reshape(nu, nv).tolist(),
-            "energies": np.asarray(calc.energies, dtype=float).reshape(
-                nu,
-                nv,
-                resolved.sigma_band.shape[0],
-            ).tolist(),
-            "mask": (
-                (np.abs(np.asarray(k1, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
-                & (np.abs(np.asarray(k2, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
-                & (
-                    np.abs(
-                        np.asarray(k1, dtype=float).reshape(nu, nv)
-                        - np.asarray(k2, dtype=float).reshape(nu, nv)
-                    )
-                    <= np.pi + 1e-12
+    surface_payload = {
+        "kind": "band-surface-preview",
+        "nu": nu,
+        "nv": nv,
+        "k1": np.asarray(k1, dtype=float).reshape(nu, nv).tolist(),
+        "k2": np.asarray(k2, dtype=float).reshape(nu, nv).tolist(),
+        "energies": np.asarray(calc.energies, dtype=float).reshape(
+            nu,
+            nv,
+            resolved.sigma_band.shape[0],
+        ).tolist(),
+        "mask": (
+            (np.abs(np.asarray(k1, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
+            & (np.abs(np.asarray(k2, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
+            & (
+                np.abs(
+                    np.asarray(k1, dtype=float).reshape(nu, nv)
+                    - np.asarray(k2, dtype=float).reshape(nu, nv)
                 )
-            ).tolist(),
-            "bands": list(range(int(resolved.sigma_band.shape[0]))),
-            "nbands": int(resolved.sigma_band.shape[0]),
-            "selected_band": band,
-            "energy_unit": calc.unit_context.energy.symbol,
-        }
-    )
+                <= np.pi + 1e-12
+            )
+        ).tolist(),
+        "bands": list(range(int(resolved.sigma_band.shape[0]))),
+        "nbands": int(resolved.sigma_band.shape[0]),
+        "selected_band": band,
+        "energy_unit": calc.unit_context.energy.symbol,
+    }
 
     return DiagnosticResult(
         title="Group-resolved Boltzmann conductivity",
@@ -129,9 +127,18 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
   <label>rotation <input data-dft-rotation type='range' min='-3.14159' max='3.14159' step='0.01' value='0'></label>
 </dft-band-controls>
 <dft-kpoint-readout></dft-kpoint-readout>
-<script type='application/json' id='band_surface_payload'>{surface_payload}</script>
-<dft-band-surface-viewer data-source='band_surface_payload'></dft-band-surface-viewer>
 """,
+                    ),
+                    WebGLView(
+                        id="group_resolved_band_surface",
+                        title="Band energy surface",
+                        description=(
+                            "Real band energies on the conductivity grid. "
+                            "This viewer is model-island backed, so Datastar reruns patch data without replacing the component."
+                        ),
+                        renderer="region_surface",
+                        payload=surface_payload,
+                        interaction_channel="group_resolved_band_surface",
                     ),
                 ),
             ),

@@ -927,7 +927,11 @@ def test_diagnostic_page_includes_datastar_dependency_and_result_outlet() -> Non
     assert "id='diagnostic-result'" in html
     assert "data-dft-diagnostic-result" in html
     assert "data-on:submit" in html
+    assert "window.dftDiagnosticRunStarted?.()" in html
     assert "/d-run/transport.boltzmann.calculation.overview" in html
+    assert "data-dft-run-button" in html
+    assert "data-dft-run-status" in html
+    assert "aria-live='polite'" in html
 
 
 def test_diagnostic_run_stream_returns_datastar_sse_patch() -> None:
@@ -939,6 +943,9 @@ def test_diagnostic_run_stream_returns_datastar_sse_patch() -> None:
     assert "window.captureDftTableState" in stream
     assert "window.restoreDftTableState" in stream
     assert "data: selector #dft-block-" in stream
+    assert "data: selector [data-dft-run-button]" in stream
+    assert "data: selector [data-dft-run-status]" in stream
+    assert ">updated</span>" in stream
 
 
 def test_datastar_run_stream_patches_json_models_not_components() -> None:

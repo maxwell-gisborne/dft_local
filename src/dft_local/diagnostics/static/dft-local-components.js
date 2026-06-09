@@ -513,11 +513,100 @@ function preserveDftTableState(replace, root = document) {
   restoreDftTableState(state, root);
 }
 
+/**
+ * @param {"idle" | "running" | "complete" | "error"} state
+ * @param {ParentNode} root
+ */
+function setDftDiagnosticRunState(state, root = document) {
+  const buttons = root.querySelectorAll("[data-dft-run-button]");
+  const statuses = root.querySelectorAll("[data-dft-run-status]");
+
+  const isRunning = state === "running";
+  const label = state === "running" ? "computing…" : state === "complete" ? "updated" : state === "error" ? "error" : "";
+
+  buttons.forEach((button) => {
+    if (button instanceof HTMLButtonElement) {
+      button.disabled = isRunning;
+      button.setAttribute("aria-busy", isRunning ? "true" : "false");
+    }
+  });
+
+  statuses.forEach((status) => {
+    status.textContent = label;
+  });
+}
+
+function dftDiagnosticRunStarted() {
+  setDftDiagnosticRunState("running");
+}
+
+function dftDiagnosticRunComplete() {
+  setDftDiagnosticRunState("complete");
+}
+
+/**
+ * Refresh model-backed components when Datastar morphs JSON model islands.
+ *
+ * Real Datastar handles patch-elements and patch-signals. It does not execute
+ * the older fake-test datastar-execute-script event, so model refresh must not
+ * depend on server-sent script execution.
+ *
+ * @param {ParentNode} root
+ * @returns {MutationObserver | null}
+ */
+function observeDftModelPatches(root = document) {
+  if (typeof MutationObserver === "undefined") return null;
+
+  const observer = new MutationObserver((mutations) => {
+    let shouldRefresh = false;
+
+    for (const mutation of mutations) {
+      const target = mutation.target;
+      const targetElement = target instanceof Element ? target : target.parentElement;
+
+      if (
+        targetElement instanceof HTMLScriptElement
+        && targetElement.matches("script[type='application/json'][data-dft-model]")
+      ) {
+        shouldRefresh = true;
+        break;
+      }
+
+      mutation.addedNodes.forEach((node) => {
+        if (!(node instanceof Element)) return;
+        if (
+          node.matches("script[type='application/json'][data-dft-model]")
+          || node.querySelector("script[type='application/json'][data-dft-model]")
+        ) {
+          shouldRefresh = true;
+        }
+      });
+
+      if (shouldRefresh) break;
+    }
+
+    if (shouldRefresh) refreshDftModels(root);
+  });
+
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+
+  return observer;
+}
+
 if (typeof window !== "undefined") {
   /** @type {DftWindow} */ (window).dftRefreshModels = refreshDftModels;
   /** @type {any} */ (window).captureDftTableState = captureDftTableState;
   /** @type {any} */ (window).restoreDftTableState = restoreDftTableState;
   /** @type {any} */ (window).preserveDftTableState = preserveDftTableState;
+  /** @type {any} */ (window).setDftDiagnosticRunState = setDftDiagnosticRunState;
+  /** @type {any} */ (window).dftDiagnosticRunStarted = dftDiagnosticRunStarted;
+  /** @type {any} */ (window).dftDiagnosticRunComplete = dftDiagnosticRunComplete;
+  /** @type {any} */ (window).observeDftModelPatches = observeDftModelPatches;
+  /** @type {any} */ (window).__dftModelPatchObserver = observeDftModelPatches(document);
 }
 
 /**
@@ -3485,4 +3574,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

@@ -37,8 +37,9 @@ def test_group_resolved_overview_renders() -> None:
     assert "Band trace contributions" in html
     assert "sum bands - compact" in html
     assert "<dft-kpoint-readout>" in html
-    assert "id='band_surface_payload'" in html
-    assert "<dft-band-surface-viewer data-source='band_surface_payload'>" in html
+    assert "id='dft-model-group_resolved_band_surface'" in html
+    assert "data-dft-model='group_resolved_band_surface'" in html
+    assert "<dft-band-surface-viewer data-source='dft-model-group_resolved_band_surface'" in html
 
 
 def test_group_resolved_result_contains_compact_invariant() -> None:
@@ -71,7 +72,7 @@ def test_group_resolved_surface_payload_contains_real_band_data() -> None:
     )
 
     match = re.search(
-        r"<script type='application/json' id='band_surface_payload'>(.*?)</script>",
+        r"<script type='application/json' id='dft-model-group_resolved_band_surface' data-dft-model='group_resolved_band_surface'>(.*?)</script>",
         html,
         re.S,
     )
@@ -89,3 +90,25 @@ def test_group_resolved_surface_payload_contains_real_band_data() -> None:
     assert len(payload["energies"][0]) == 3
     assert len(payload["energies"][0][0]) == payload["nbands"]
     assert any(not value for row in payload["mask"] for value in row)
+
+
+def test_group_resolved_datastar_stream_patches_surface_model() -> None:
+    from dft_local.diagnostics.server import DiagnosticApp, load_default_context
+
+    ctx = load_default_context("test_run/run_dir/data")
+    app = DiagnosticApp(ctx=ctx)
+
+    stream = app.diagnostic_run_stream(
+        "transport.boltzmann.group_resolved.overview",
+        {
+            "kernel": "average_star",
+            "nu": "3",
+            "nv": "3",
+            "band": "0",
+        },
+    )
+
+    assert "data: selector #dft-model-group_resolved_band_surface" in stream
+    assert '"nu": 3' in stream
+    assert '"nv": 3' in stream
+    assert "dft-block-group_resolved_band_surface" not in stream

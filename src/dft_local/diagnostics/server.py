@@ -348,7 +348,19 @@ class DiagnosticApp:
         inputs = parse_inputs(spec, raw_inputs)
         result = spec.compute(self.ctx, inputs)
         html = render_result(result)
-        return self.datastar_patch_result_blocks(html)
+        return (
+            self.datastar_patch_result_blocks(html)
+            + self.datastar_patch_element(
+                "[data-dft-run-button]",
+                "<button type='submit' data-dft-run-button aria-busy='false'>Run</button>",
+                mode="outer",
+            )
+            + self.datastar_patch_element(
+                "[data-dft-run-status]",
+                "<span data-dft-run-status aria-live='polite'>updated</span>",
+                mode="outer",
+            )
+        )
 
     @staticmethod
     def result_outlet(html: str) -> str:
@@ -503,10 +515,13 @@ class DiagnosticApp:
         action = f"/d-run/{quote(spec.id)}"
         return (
             f"<form method='get' action='/d/{escape(spec.id)}' "
-            f"data-on:submit=\"@get('{action}', {{contentType: 'form'}})\">"
+            f"data-on:submit=\"window.dftDiagnosticRunStarted?.(); @get('{action}', {{contentType: 'form'}})\">"
             "<p>"
             + "</p><p>".join(fields)
-            + "</p><button type='submit'>Run</button></form>"
+            + (
+                "</p><button type='submit' data-dft-run-button>Run</button>"
+                "<span data-dft-run-status aria-live='polite'></span></form>"
+            )
         )
 
 
