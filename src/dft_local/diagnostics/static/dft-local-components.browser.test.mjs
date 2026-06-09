@@ -1651,6 +1651,52 @@ test("band surface viewer draws cheap slice plane outline in 3D", async () => {
       assert.equal(vGuide.axis, "v");
       assert.equal(vGuide.hasFill, true);
 
+      await page.locator("[data-dft-view-slice-axis]").selectOption("kx");
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      const kxGuide = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        const guide = viewer.sliceMeshes[0];
+        return {
+          sliceMeshes: viewer.sliceMeshes.length,
+          childCount: guide?.children?.length ?? 0,
+          axis: guide?.userData?.dftSliceAxis,
+          hasFill: Boolean(guide?.children?.some((/** @type {any} */ child) => child.name?.includes("fill"))),
+        };
+      });
+
+      assert.equal(kxGuide.sliceMeshes, 1);
+      assert.ok(kxGuide.childCount >= 3);
+      assert.equal(kxGuide.axis, "kx");
+      assert.equal(kxGuide.hasFill, true);
+
+      await page.locator("[data-dft-view-slice-axis]").selectOption("ky");
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      const kyGuide = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        const guide = viewer.sliceMeshes[0];
+        return {
+          sliceMeshes: viewer.sliceMeshes.length,
+          childCount: guide?.children?.length ?? 0,
+          axis: guide?.userData?.dftSliceAxis,
+          hasFill: Boolean(guide?.children?.some((/** @type {any} */ child) => child.name?.includes("fill"))),
+        };
+      });
+
+      assert.equal(kyGuide.sliceMeshes, 1);
+      assert.ok(kyGuide.childCount >= 3);
+      assert.equal(kyGuide.axis, "ky");
+      assert.equal(kyGuide.hasFill, true);
+
       await page.locator("[data-dft-view-slice-axis]").selectOption("energy");
       await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
         if (!(input instanceof HTMLInputElement)) throw new Error("not input");

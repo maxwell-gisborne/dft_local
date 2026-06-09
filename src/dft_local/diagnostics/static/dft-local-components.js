@@ -3389,7 +3389,7 @@ selectedBandIndex() {
           color,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: drawable.length === 1 ? 0.82 : 0.52,
+          opacity: drawable.length === 1 ? 0.96 : 0.78,
           roughness: 0.72,
           metalness: 0.0,
         });
@@ -3398,7 +3398,7 @@ selectedBandIndex() {
           color,
           wireframe: true,
           transparent: true,
-          opacity: drawable.length === 1 ? 0.22 : 0.30,
+          opacity: drawable.length === 1 ? 0.10 : 0.14,
         });
 
         const surface = new THREE.Mesh(geometry, material);
@@ -3843,8 +3843,23 @@ selectedBandIndex() {
           new THREE.Vector3(xmax, y, zmax),
           new THREE.Vector3(xmin, y, zmax),
         ];
+      } else if (axis === "kx") {
+        const x = Math.max(xmin, Math.min(xmax, value));
+        corners = [
+          new THREE.Vector3(x, ymin, zmin),
+          new THREE.Vector3(x, ymin, zmax),
+          new THREE.Vector3(x, ymax, zmax),
+          new THREE.Vector3(x, ymax, zmin),
+        ];
+      } else if (axis === "ky") {
+        const z = Math.max(zmin, Math.min(zmax, value));
+        corners = [
+          new THREE.Vector3(xmin, ymin, z),
+          new THREE.Vector3(xmax, ymin, z),
+          new THREE.Vector3(xmax, ymax, z),
+          new THREE.Vector3(xmin, ymax, z),
+        ];
       } else {
-        // For kx/ky, draw no 3D guide for now. The panel below remains exact.
         return;
       }
 
@@ -3871,9 +3886,9 @@ selectedBandIndex() {
       const fill = new THREE.Mesh(
         fillGeometry,
         new THREE.MeshBasicMaterial({
-          color: 0xff00ff,
+          color: 0xb8bcc4,
           transparent: true,
-          opacity: 0.14,
+          opacity: 0.22,
           side: THREE.DoubleSide,
           depthTest: false,
           depthWrite: false,
@@ -3906,9 +3921,9 @@ selectedBandIndex() {
       const outline = new THREE.LineSegments(
         outlineGeometry,
         new THREE.LineBasicMaterial({
-          color: 0xff00ff,
+          color: 0xd6d9df,
           transparent: true,
-          opacity: 1.0,
+          opacity: 0.38,
           depthTest: false,
           depthWrite: false,
         }),
@@ -3921,7 +3936,9 @@ selectedBandIndex() {
       const marker = new THREE.Mesh(
         new THREE.SphereGeometry(markerRadius, 12, 12),
         new THREE.MeshBasicMaterial({
-          color: 0xffffff,
+          color: 0xfafcff,
+          transparent: true,
+          opacity: 0.95,
           depthTest: false,
           depthWrite: false,
         }),
