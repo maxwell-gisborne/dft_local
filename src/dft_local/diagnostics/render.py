@@ -1076,7 +1076,7 @@ details.diagnostic-section .diagnostic-paper details.diagnostic-section {
 
 DATASTAR_SCRIPT = (
     "  <script type='module' "
-    "src='https://cdn.jsdelivr.net/gh/starfederation/datastar@v1.0.2/bundles/datastar.js'>"
+    "src='/static/datastar.js'>"
     "</script>\n"
 )
 

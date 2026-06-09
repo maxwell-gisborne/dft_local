@@ -6,11 +6,17 @@
     "target": "ES2022",
     "module": "ES2022",
     "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "strict": true
   },
   "include": [
     "src/dft_local/diagnostics/static/*.js",
     "src/dft_local/diagnostics/static/*.mjs"
+  ],
+  "exclude": [
+    "src/dft_local/diagnostics/static/datastar.js"
   ]
 }

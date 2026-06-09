@@ -923,7 +923,7 @@ def test_diagnostic_page_includes_datastar_dependency_and_result_outlet() -> Non
     html = app.diagnostic_page("transport.boltzmann.calculation.overview", {})
 
     assert "datastar" in html.lower()
-    assert "datastar@v1.0.2/bundles/datastar.js" in html
+    assert "/static/datastar.js" in html
     assert "id='diagnostic-result'" in html
     assert "data-dft-diagnostic-result" in html
     assert "data-on:submit" in html
@@ -989,3 +989,19 @@ def test_datastar_table_state_is_captured_before_table_patches() -> None:
 
     assert capture_index < patch_index < restore_index
     assert stream.count("window.__dftTableState = window.captureDftTableState") == 1
+
+
+
+def test_static_datastar_js_is_served() -> None:
+    app = DiagnosticApp()
+    headers = {}
+
+    def start_response(status: str, response_headers: list[tuple[str, str]]) -> None:
+        headers["status"] = status
+        headers["headers"] = response_headers
+
+    body = b"".join(app({"PATH_INFO": "/static/datastar.js", "QUERY_STRING": ""}, start_response)).decode("utf-8")
+
+    assert headers["status"] == "200 OK"
+    assert ("Content-Type", "text/javascript; charset=utf-8") in headers["headers"]
+    assert "datastar" in body.lower()
