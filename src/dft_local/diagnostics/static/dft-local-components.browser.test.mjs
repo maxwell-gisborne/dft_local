@@ -1593,6 +1593,25 @@ test("band surface viewer draws cheap slice plane outline in 3D", async () => {
       await page.goto(server.url);
       await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
 
+      const closedControls = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        return {
+          axisCount: viewer.querySelectorAll("[data-dft-view-slice-axis]").length,
+          valueCount: viewer.querySelectorAll("[data-dft-view-slice-value]").length,
+          controlsInsideDetails: Boolean(viewer.querySelector("[data-dft-slice-details] [data-dft-slice-controls] [data-dft-view-slice-axis]")),
+          detailsOpen: Boolean(viewer.querySelector("[data-dft-slice-details]")?.open),
+          sliceMeshes: viewer.sliceMeshes.length,
+        };
+      });
+
+      assert.deepEqual(closedControls, {
+        axisCount: 1,
+        valueCount: 1,
+        controlsInsideDetails: true,
+        detailsOpen: false,
+        sliceMeshes: 0,
+      });
+
       await page.locator("[data-dft-slice-details] summary").click();
       await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
         if (!(input instanceof HTMLInputElement)) throw new Error("not input");
@@ -1777,6 +1796,7 @@ test("band surface viewer shows slice intersection panel", async () => {
     try {
       await page.goto(server.url);
       await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+      await page.locator("[data-dft-slice-details] summary").click();
       await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
         if (!(input instanceof HTMLInputElement)) throw new Error("not input");
         input.value = "0.5";

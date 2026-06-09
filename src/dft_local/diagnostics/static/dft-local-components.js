@@ -2799,20 +2799,6 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
               energy scale
               <input data-dft-view-energy-scale type="range" min="0.1" max="5" step="0.1" value="1">
             </label>
-            <label class="band-surface-view-control">
-              slice axis
-              <select data-dft-view-slice-axis>
-                <option value="u">u</option>
-                <option value="v">v</option>
-                <option value="kx">kx</option>
-                <option value="ky">ky</option>
-                <option value="energy">energy</option>
-              </select>
-            </label>
-            <label class="band-surface-view-control">
-              slice value
-              <input data-dft-view-slice-value type="range" min="-3.14159" max="3.14159" step="0.01" value="0">
-            </label>
             <label class="band-surface-mask-toggle">
               <input type="checkbox" data-dft-mask-to-hexagon>
               mask to hexagon
@@ -2823,6 +2809,22 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
           <div class="band-surface-three" data-dft-three-surface style="width:100%; min-height:560px;"></div>
           <details class="band-surface-slice-details" data-dft-slice-details>
             <summary>Slice intersection</summary>
+            <div class="band-surface-slice-controls" data-dft-slice-controls>
+              <label class="band-surface-view-control">
+                slice axis
+                <select data-dft-view-slice-axis>
+                  <option value="u">u</option>
+                  <option value="v">v</option>
+                  <option value="kx">kx</option>
+                  <option value="ky">ky</option>
+                  <option value="energy">energy</option>
+                </select>
+              </label>
+              <label class="band-surface-view-control">
+                slice value
+                <input data-dft-view-slice-value type="range" min="-3.14159" max="3.14159" step="0.01" value="0">
+              </label>
+            </div>
             <div class="band-surface-slice-panel" data-dft-slice-panel>slice: none</div>
             <div class="band-surface-slice-plot" data-dft-slice-plot></div>
           </details>
@@ -3785,7 +3787,10 @@ selectedBandIndex() {
     updateSliceOverlay() {
       this.clearSliceMeshes();
 
-      if (!this.sliceDetailsEl?.open) return;
+      if (!this.sliceDetailsEl?.open) {
+        this.renderThreeOnce();
+        return;
+      }
       if (!this.THREE || !this.surfaceGroup) return;
 
       const axis = this.sliceAxis ?? "u";
