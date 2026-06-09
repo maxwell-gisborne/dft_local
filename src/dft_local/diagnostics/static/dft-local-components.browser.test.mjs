@@ -816,3 +816,126 @@ test("real diagnostic rerun endpoint returns Datastar SSE", async () => {
     await server.close();
   }
 });
+
+
+
+test("server-produced Datastar SSE patches model island without replacing viewer", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-server-sse-"));
+  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
+  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+
+  const firstPayload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 1], [0, 1]],
+    k2: [[0, 0], [1, 1]],
+    energies: [[[0], [1]], [[2], [3]]],
+    bands: [0],
+    nbands: 1,
+    selected_band: 0,
+  };
+
+  const secondPayload = {
+    ...firstPayload,
+    energies: [[[30], [31]], [[32], [33]]],
+  };
+
+  const serverSse = [
+    "event: datastar-patch-elements",
+    "data: selector #dft-model-surface",
+    "data: mode outer",
+    `data: elements <script type='application/json' id='dft-model-surface' data-dft-model='surface'>${JSON.stringify(secondPayload).replaceAll("</", "<\\/")}</script>`,
+    "",
+    "event: datastar-execute-script",
+    "data: script window.dftRefreshModels?.(document)",
+    "",
+  ].join("\n");
+
+  writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(firstPayload).replaceAll("</", "<\\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+  const server = await serveDirectory(root);
+  const browserInstance = await chromium.launch();
+  const page = await browserInstance.newPage();
+
+  try {
+    await page.goto(server.url);
+    await page.waitForSelector("dft-band-surface-viewer .band-surface-viewer-three-only", { timeout: 10000 });
+
+    await page.evaluate(() => {
+      const viewer = document.querySelector("dft-band-surface-viewer");
+      if (!viewer) throw new Error("missing viewer");
+      /** @type {any} */ (window).__viewerBefore = viewer;
+    });
+
+    await page.evaluate((text) => {
+      const events = text.split("\n\n").filter(Boolean);
+
+      for (const eventText of events) {
+        const lines = eventText.split("\n");
+        const event = lines.find((line) => line.startsWith("event: "))?.slice("event: ".length);
+        const data = lines
+          .filter((line) => line.startsWith("data: "))
+          .map((line) => line.slice("data: ".length));
+
+        if (event === "datastar-patch-elements") {
+          const selector = data.find((line) => line.startsWith("selector "))?.slice("selector ".length);
+          const elements = data
+            .filter((line) => line.startsWith("elements "))
+            .map((line) => line.slice("elements ".length))
+            .join("\n");
+
+          if (!selector) throw new Error("missing selector");
+
+          const target = document.querySelector(selector);
+          const template = document.createElement("template");
+          template.innerHTML = elements.trim();
+          const replacement = template.content.firstElementChild;
+          if (target && replacement) target.replaceWith(replacement);
+        }
+
+        if (event === "datastar-execute-script") {
+          for (const script of data.filter((line) => line.startsWith("script ")).map((line) => line.slice("script ".length))) {
+            new Function(script)();
+          }
+        }
+      }
+    }, serverSse);
+
+    await page.waitForFunction(() => {
+      const viewer = document.querySelector("dft-band-surface-viewer");
+      return /** @type {any} */ (viewer)?.payload?.energies?.[0]?.[0]?.[0] === 30;
+    }, { timeout: 10000 });
+
+    const result = await page.evaluate(() => {
+      const viewer = document.querySelector("dft-band-surface-viewer");
+      return {
+        sameViewer: viewer === /** @type {any} */ (window).__viewerBefore,
+        payloadValue: /** @type {any} */ (viewer)?.payload?.energies?.[0]?.[0]?.[0],
+      };
+    });
+
+    assert.deepEqual(result, { sameViewer: true, payloadValue: 30 });
+  } finally {
+    await browserInstance.close();
+    await server.close();
+  }
+});
