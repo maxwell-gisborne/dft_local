@@ -1040,10 +1040,16 @@ test("band surface legend toggles mesh visibility without rebuilding meshes", as
       await page.evaluate(() => {
         const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
         viewer.__updateSurfaceCount = 0;
+        viewer.__renderThreeOnceCount = 0;
         const original = viewer.updateSurface.bind(viewer);
         viewer.updateSurface = async () => {
           viewer.__updateSurfaceCount += 1;
           return original();
+        };
+        const originalRender = viewer.renderThreeOnce.bind(viewer);
+        viewer.renderThreeOnce = () => {
+          viewer.__renderThreeOnceCount += 1;
+          return originalRender();
         };
       });
 
@@ -1060,6 +1066,7 @@ test("band surface legend toggles mesh visibility without rebuilding meshes", as
           .filter((/** @type {any} */ mesh) => Number(mesh.userData?.dftBand) === 1);
         return {
           rebuilds: viewer.__updateSurfaceCount,
+          renders: viewer.__renderThreeOnceCount,
           hidden: hiddenBandMeshes.every((mesh) => mesh.visible === false),
           visibleBand0: [...viewer.surfaceMeshes, ...viewer.wireMeshes]
             .filter((/** @type {any} */ mesh) => Number(mesh.userData?.dftBand) === 0)
@@ -1069,6 +1076,7 @@ test("band surface legend toggles mesh visibility without rebuilding meshes", as
       });
 
       assert.equal(result.rebuilds, 0);
+      assert.ok(result.renders > 0);
       assert.equal(result.hidden, true);
       assert.equal(result.visibleBand0, true);
       assert.match(result.status ?? "", /visible 1/);
@@ -1140,10 +1148,16 @@ test("band surface energy zero slider shifts group transform without rebuilding 
       const before = await page.evaluate(() => {
         const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
         viewer.__updateSurfaceCount = 0;
+        viewer.__renderThreeOnceCount = 0;
         const original = viewer.updateSurface.bind(viewer);
         viewer.updateSurface = async () => {
           viewer.__updateSurfaceCount += 1;
           return original();
+        };
+        const originalRender = viewer.renderThreeOnce.bind(viewer);
+        viewer.renderThreeOnce = () => {
+          viewer.__renderThreeOnceCount += 1;
+          return originalRender();
         };
         return {
           groupY: viewer.surfaceGroup.position.y,
@@ -1169,6 +1183,7 @@ test("band surface energy zero slider shifts group transform without rebuilding 
           vertexY: viewer.surfaceMeshes[0].geometry.attributes.position.array[1],
           energyZero: viewer.energyZero,
           rebuilds: viewer.__updateSurfaceCount,
+          renders: viewer.__renderThreeOnceCount,
           status: document.querySelector("[data-dft-surface-status]")?.textContent,
         };
       });
@@ -1177,6 +1192,7 @@ test("band surface energy zero slider shifts group transform without rebuilding 
       assert.equal(result.vertexY, before.vertexY);
       assert.equal(result.energyZero, 1);
       assert.equal(result.rebuilds, 0);
+      assert.ok(result.renders > 0);
       assert.match(result.status ?? "", /energy zero 1/);
     } finally {
       await server.close();
@@ -1480,11 +1496,18 @@ test("band surface slice slider updates 3D plane immediately", async () => {
 
       const before = await page.evaluate(() => {
         const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        viewer.__renderThreeOnceCount = 0;
+        const originalRender = viewer.renderThreeOnce.bind(viewer);
+        viewer.renderThreeOnce = () => {
+          viewer.__renderThreeOnceCount += 1;
+          return originalRender();
+        };
         return {
           axis: viewer.sliceAxis,
           value: viewer.sliceValue,
           meshValue: viewer.sliceMeshes[0]?.userData?.dftSliceValue,
           meshCount: viewer.sliceMeshes.length,
+          renders: viewer.__renderThreeOnceCount,
         };
       });
 
@@ -1501,6 +1524,7 @@ test("band surface slice slider updates 3D plane immediately", async () => {
           value: viewer.sliceValue,
           meshValue: viewer.sliceMeshes[0]?.userData?.dftSliceValue,
           meshCount: viewer.sliceMeshes.length,
+          renders: viewer.__renderThreeOnceCount,
         };
       });
 
@@ -1508,6 +1532,7 @@ test("band surface slice slider updates 3D plane immediately", async () => {
       assert.equal(after.meshCount, 1);
       assert.ok(Math.abs(Number(after.value) - 0.8) < 0.01);
       assert.ok(Math.abs(Number(after.meshValue) - 0.8) < 0.01);
+      assert.ok(after.renders > 0);
     } finally {
       await server.close();
     }
@@ -1834,10 +1859,16 @@ test("band surface energy scale slider updates group transform without rebuildin
       await page.evaluate(() => {
         const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
         viewer.__updateSurfaceCount = 0;
+        viewer.__renderThreeOnceCount = 0;
         const original = viewer.updateSurface.bind(viewer);
         viewer.updateSurface = async () => {
           viewer.__updateSurfaceCount += 1;
           return original();
+        };
+        const originalRender = viewer.renderThreeOnce.bind(viewer);
+        viewer.renderThreeOnce = () => {
+          viewer.__renderThreeOnceCount += 1;
+          return originalRender();
         };
       });
 
@@ -1857,12 +1888,14 @@ test("band surface energy scale slider updates group transform without rebuildin
         return {
           scale: viewer.surfaceGroup.scale.y,
           rebuilds: viewer.__updateSurfaceCount,
+          renders: viewer.__renderThreeOnceCount,
           status: document.querySelector("[data-dft-surface-status]")?.textContent,
         };
       });
 
       assert.equal(result.scale, 3);
       assert.equal(result.rebuilds, 0);
+      assert.ok(result.renders > 0);
       assert.match(result.status ?? "", /energy scale 3/);
     } finally {
       await server.close();

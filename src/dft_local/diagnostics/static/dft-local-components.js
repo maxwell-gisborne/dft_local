@@ -3289,6 +3289,7 @@ selectedBandIndex() {
       this.updateStatus();
       this.updateSlicePanel();
       this.updateSliceOverlay();
+      this.renderThreeOnce();
     }
 
 
@@ -3356,6 +3357,7 @@ selectedBandIndex() {
           const maskText = this.maskToHexagon ? "hex mask on" : "hex mask off";
           this.statusEl.textContent = `visible 0; hidden ${this.hiddenBands.size}; bands ${allBands.length}; no visible bands; ${maskText}`;
         }
+        this.renderThreeOnce();
         return;
       }
 
@@ -3989,12 +3991,18 @@ selectedBandIndex() {
     updateSelectedMarker() {
       if (!this.THREE || !this.scene || this.currentBandMeshes.length === 0) return;
 
+      let sceneMutated = false;
+
       if (this.selectedMarker) {
         this.scene.remove(this.selectedMarker);
         this.selectedMarker = null;
+        sceneMutated = true;
       }
 
-      if (!this.selectedKpoint) return;
+      if (!this.selectedKpoint) {
+        if (sceneMutated) this.renderThreeOnce();
+        return;
+      }
 
       const i = Number(this.selectedKpoint.i);
       const j = Number(this.selectedKpoint.j);
@@ -4005,7 +4013,10 @@ selectedBandIndex() {
         vertex = item.mesh.vertices.find((v) => v.i === i && v.j === j && v.band === band) ?? null;
         if (vertex) break;
       }
-      if (!vertex) return;
+      if (!vertex) {
+        if (sceneMutated) this.renderThreeOnce();
+        return;
+      }
 
       const THREE = this.THREE;
       const display = bandBasisToCartesian(vertex.x, vertex.y);
