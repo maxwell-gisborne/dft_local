@@ -264,9 +264,11 @@ function vertexInsideVisibleHexagon(payload, vertex) {
 
 /**
  * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
+ * @param {{emin:number, emax:number, kSpan?:number} | null} energyDomain
+ * @param {{energyScale?:number, energyZero?:number}} options
  * @returns {{positions:Float32Array, indices:Uint32Array, center:{x:number,y:number,z:number}, radius:number}}
  */
-function threeBandSurfaceGeometryData(mesh) {
+function threeBandSurfaceGeometryData(mesh, energyDomain = null, options = {}) {
   const positions = new Float32Array(mesh.vertices.length * 3);
   const indices = new Uint32Array(mesh.triangles.length * 3);
 
@@ -289,8 +291,19 @@ function threeBandSurfaceGeometryData(mesh) {
   });
 
   const kSpan = Math.max(kxmax - kxmin, kymax - kymin, 1.0);
-  const eSpan = Math.max(emax - emin, 1e-12);
-  const energyVisualHeight = 0.9 * kSpan;
+  /** @type {{emin?:number, emax?:number, kSpan?:number}} */
+  const domain = energyDomain ?? {};
+  const domainEmin = Number.isFinite(domain.emin) ? Number(domain.emin) : emin;
+  const domainEmax = Number.isFinite(domain.emax) ? Number(domain.emax) : emax;
+  const domainKSpan = Number.isFinite(domain.kSpan) && Number(domain.kSpan) > 0
+    ? Number(domain.kSpan)
+    : kSpan;
+  const eSpan = Math.max(domainEmax - domainEmin, 1e-12);
+  const energyZero = Number.isFinite(options.energyZero) ? Number(options.energyZero) : 0.0;
+  const energyScale = Number.isFinite(options.energyScale) && Number(options.energyScale) > 0
+    ? Number(options.energyScale)
+    : 1.0;
+  const energyVisualHeight = 0.9 * domainKSpan * energyScale;
 
   let xmin = Infinity;
   let xmax = -Infinity;
@@ -303,7 +316,7 @@ function threeBandSurfaceGeometryData(mesh) {
     const p = cartesian[i];
 
     const x = p.kx;
-    const y = ((p.energy - emin) / eSpan - 0.5) * energyVisualHeight;
+    const y = ((p.energy - energyZero) / eSpan) * energyVisualHeight;
     const z = p.ky;
 
     positions[3 * i + 0] = x;
@@ -339,6 +352,39 @@ function threeBandSurfaceGeometryData(mesh) {
   );
 
   return { positions, indices, center, radius };
+}
+
+/**
+ * @param {Array<{band:number, mesh:{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}}>} bandMeshes
+ * @returns {{emin:number, emax:number, kSpan:number} | null}
+ */
+function bandSurfaceEnergyDomain(bandMeshes) {
+  let kxmin = Infinity;
+  let kxmax = -Infinity;
+  let kymin = Infinity;
+  let kymax = -Infinity;
+  let emin = Infinity;
+  let emax = -Infinity;
+
+  for (const item of bandMeshes) {
+    for (const vertex of item.mesh.vertices) {
+      const p = bandBasisToCartesian(vertex.x, vertex.y);
+      kxmin = Math.min(kxmin, p.x);
+      kxmax = Math.max(kxmax, p.x);
+      kymin = Math.min(kymin, p.y);
+      kymax = Math.max(kymax, p.y);
+      emin = Math.min(emin, vertex.z);
+      emax = Math.max(emax, vertex.z);
+    }
+  }
+
+  if (!Number.isFinite(emin) || !Number.isFinite(emax)) return null;
+
+  return {
+    emin,
+    emax,
+    kSpan: Math.max(kxmax - kxmin, kymax - kymin, 1.0),
+  };
 }
 
 
@@ -2215,7 +2261,6 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       const bandInput = this.querySelector("[data-dft-band]");
       const sliceAxisInput = this.querySelector("[data-dft-slice-axis]");
       const sliceValueInput = this.querySelector("[data-dft-slice-value]");
-      const energyScaleInput = this.querySelector("[data-dft-energy-scale]");
       const rotationInput = this.querySelector("[data-dft-rotation]");
 
       if (bandInput) {
@@ -2242,18 +2287,13 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       if (sliceValueInput) sliceValueInput.addEventListener("change", emitSlice);
 
       const emitView = () => {
-        const energyScale = energyScaleInput
-          ? Number(/** @type {HTMLInputElement | HTMLSelectElement} */ (energyScaleInput).value)
-          : 1.0;
         const rotation = rotationInput
           ? Number(/** @type {HTMLInputElement | HTMLSelectElement} */ (rotationInput).value)
           : 0.0;
 
-        emitDftSignal("view-changed", { energyScale, rotation }, this);
+        emitDftSignal("view-changed", { rotation }, this);
       };
 
-      if (energyScaleInput) energyScaleInput.addEventListener("input", emitView);
-      if (energyScaleInput) energyScaleInput.addEventListener("change", emitView);
       if (rotationInput) rotationInput.addEventListener("input", emitView);
       if (rotationInput) rotationInput.addEventListener("change", emitView);
     }
@@ -2400,6 +2440,13 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       /** @type {Array<() => void>} */
       this.unsubscribers = [];
 
+      /** @type {number} */
+      this.energyScale = 1.0;
+      /** @type {number} */
+      this.energyZero = 0.0;
+      /** @type {number} */
+      this.energyUnitsToDisplayY = 1.0;
+
       /** @type {JsonPayload | null} */
       this.payload = null;
       /** @type {null | ReturnType<typeof bandSurfaceMeshData>} */
@@ -2428,6 +2475,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.camera = null;
       /** @type {any} */
       this.controls = null;
+      /** @type {any} */
+      this.surfaceGroup = null;
       /** @type {any[]} */
       this.surfaceMeshes = [];
       /** @type {any[]} */
@@ -2454,6 +2503,21 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         this.sliceAxis = String(payload.detail.axis ?? "");
         this.sliceValue = Number(payload.detail.value);
         this.updateStatus();
+      }));
+
+      this.unsubscribers.push(onDftSignal("view-changed", (payload) => {
+        const energyScale = Number(payload.detail.energyScale);
+        const energyZero = Number(payload.detail.energyZero);
+
+        if (Number.isFinite(energyScale) && energyScale > 0) {
+          this.energyScale = energyScale;
+        }
+
+        if (Number.isFinite(energyZero)) {
+          this.energyZero = energyZero;
+        }
+
+        this.applyEnergyTransform();
       }));
 
       this.unsubscribers.push(onDftSignal("selected-kpoint", (payload) => {
@@ -2494,6 +2558,14 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         <div class="band-surface-viewer-three-only">
           <div class="band-surface-status" data-dft-surface-status></div>
           <div class="band-surface-controls">
+            <label class="band-surface-view-control">
+              energy zero
+              <input data-dft-view-energy-zero type="range" min="-20" max="20" step="0.1" value="0">
+            </label>
+            <label class="band-surface-view-control">
+              energy scale
+              <input data-dft-view-energy-scale type="range" min="0.1" max="5" step="0.1" value="1">
+            </label>
             <label class="band-surface-mask-toggle">
               <input type="checkbox" data-dft-mask-to-hexagon>
               mask to hexagon
@@ -2510,7 +2582,60 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.hoverEl = this.querySelector("[data-dft-surface-hover]");
       this.legendEl = this.querySelector("[data-dft-surface-legend]");
       this.threeHost = this.querySelector("[data-dft-three-surface]");
+      this.bindViewControls();
       this.bindMaskToggle();
+    }
+
+    bindViewControls() {
+      const zeroInput = this.querySelector("[data-dft-view-energy-zero]");
+      const scaleInput = this.querySelector("[data-dft-view-energy-scale]");
+
+      const emit = () => {
+        if (zeroInput instanceof HTMLInputElement) {
+          const value = Number(zeroInput.value);
+          if (Number.isFinite(value)) this.energyZero = value;
+        }
+
+        if (scaleInput instanceof HTMLInputElement) {
+          const value = Number(scaleInput.value);
+          if (Number.isFinite(value) && value > 0) this.energyScale = value;
+        }
+
+        this.applyEnergyTransform();
+      };
+
+      /** @param {Element | null} input */
+      const bindWheel = (input) => {
+        if (!(input instanceof HTMLInputElement)) return;
+
+        input.addEventListener("wheel", (event) => {
+          event.preventDefault();
+
+          const step = Number(input.step) || 1.0;
+          const speed = event.shiftKey ? 10.0 : 1.0;
+          const direction = event.deltaY < 0 ? 1.0 : -1.0;
+          const min = Number.isFinite(Number(input.min)) ? Number(input.min) : -Infinity;
+          const max = Number.isFinite(Number(input.max)) ? Number(input.max) : Infinity;
+          const next = Math.max(min, Math.min(max, Number(input.value) + direction * step * speed));
+
+          input.value = String(next);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }, { passive: false });
+      };
+
+      if (zeroInput instanceof HTMLInputElement) {
+        zeroInput.value = String(this.energyZero);
+        zeroInput.addEventListener("input", emit);
+        zeroInput.addEventListener("change", emit);
+        bindWheel(zeroInput);
+      }
+
+      if (scaleInput instanceof HTMLInputElement) {
+        scaleInput.value = String(this.energyScale);
+        scaleInput.addEventListener("input", emit);
+        scaleInput.addEventListener("change", emit);
+        bindWheel(scaleInput);
+      }
     }
 
     bindMaskToggle() {
@@ -2572,6 +2697,10 @@ selectedBandIndex() {
       light.position.set(1, 2, 2);
       scene.add(light);
 
+      this.surfaceGroup = new THREE.Group();
+      this.surfaceGroup.name = "band-surface-energy-scale-group";
+      scene.add(this.surfaceGroup);
+
       this.renderer = renderer;
       this.scene = scene;
       this.camera = camera;
@@ -2627,6 +2756,7 @@ selectedBandIndex() {
       this.scene = null;
       this.camera = null;
       this.controls = null;
+      this.surfaceGroup = null;
       this.surfaceMeshes = [];
       this.wireMeshes = [];
       this.selectedMarker = null;
@@ -2634,13 +2764,22 @@ selectedBandIndex() {
     }
 
     clearBandSurfaceMeshes() {
-      if (!this.scene) return;
+      if (!this.surfaceGroup) return;
 
-      for (const mesh of this.surfaceMeshes) this.scene.remove(mesh);
-      for (const mesh of this.wireMeshes) this.scene.remove(mesh);
+      for (const mesh of this.surfaceMeshes) this.surfaceGroup.remove(mesh);
+      for (const mesh of this.wireMeshes) this.surfaceGroup.remove(mesh);
 
       this.surfaceMeshes = [];
       this.wireMeshes = [];
+    }
+
+    applyEnergyTransform() {
+      if (this.surfaceGroup) {
+        this.surfaceGroup.scale.set(1.0, this.energyScale, 1.0);
+        this.surfaceGroup.position.y = -this.energyZero * this.energyUnitsToDisplayY * this.energyScale;
+      }
+
+      this.updateStatus();
     }
 
     updateLegend() {
@@ -2692,11 +2831,21 @@ selectedBandIndex() {
             }
             this.hiddenBands.add(band);
           }
-          this.requestSurfaceUpdate();
+          this.applyBandVisibility();
         });
 
         this.legendEl.appendChild(button);
       }
+    }
+
+    applyBandVisibility() {
+      for (const mesh of [...this.surfaceMeshes, ...this.wireMeshes]) {
+        const band = Number(mesh.userData?.dftBand);
+        mesh.visible = !this.hiddenBands.has(band);
+      }
+
+      this.updateLegend();
+      this.updateStatus();
     }
 
 
@@ -2719,13 +2868,13 @@ selectedBandIndex() {
 
       this.dataset.hexMask = this.maskToHexagon ? "on" : "off";
 
-      const visibleBands = visibleBandIndices(this.payload, this.hiddenBands);
+      const bands = allBandIndices(this.payload);
 
-      this.currentBandMeshes = visibleBands.map((band) => ({
+      this.currentBandMeshes = bands.map((band) => ({
         band,
         mesh: bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon),
       }));
-      this.currentMesh = this.currentBandMeshes[0]?.mesh ?? null;
+      this.currentMesh = this.currentBandMeshes.find((item) => !this.hiddenBands.has(item.band))?.mesh ?? null;
 
       this.updateStatus();
       this.updateLegend();
@@ -2753,8 +2902,14 @@ selectedBandIndex() {
 
       let firstData = null;
 
+      const energyDomain = bandSurfaceEnergyDomain(drawable);
+      if (energyDomain) {
+        const eSpan = Math.max(energyDomain.emax - energyDomain.emin, 1e-12);
+        this.energyUnitsToDisplayY = (0.9 * energyDomain.kSpan) / eSpan;
+      }
+
       for (const item of drawable) {
-        const data = threeBandSurfaceGeometryData(item.mesh);
+        const data = threeBandSurfaceGeometryData(item.mesh, energyDomain, { energyZero: this.energyZero });
         if (!firstData) firstData = data;
 
         const geometry = new THREE.BufferGeometry();
@@ -2781,12 +2936,21 @@ selectedBandIndex() {
 
         const surface = new THREE.Mesh(geometry, material);
         const wire = new THREE.Mesh(geometry, wireMaterial);
+        surface.userData.dftBand = item.band;
+        wire.userData.dftBand = item.band;
+        surface.visible = !this.hiddenBands.has(item.band);
+        wire.visible = !this.hiddenBands.has(item.band);
 
         this.surfaceMeshes.push(surface);
         this.wireMeshes.push(wire);
-        this.scene.add(surface);
-        this.scene.add(wire);
+        if (this.surfaceGroup) {
+          this.surfaceGroup.add(surface);
+          this.surfaceGroup.add(wire);
+        }
       }
+
+      this.applyEnergyTransform();
+      this.applyBandVisibility();
 
       if (firstData) {
         this.addReferenceObjects(firstData);
@@ -2913,9 +3077,10 @@ selectedBandIndex() {
     updateStatus() {
       const mesh = this.currentMesh;
       const band = this.selectedBandIndex();
-      const visibleCount = this.currentBandMeshes.length;
-      const totalVertices = this.currentBandMeshes.reduce((sum, item) => sum + item.mesh.vertices.length, 0);
-      const totalTriangles = this.currentBandMeshes.reduce((sum, item) => sum + item.mesh.triangles.length, 0);
+      const visibleBandMeshes = this.currentBandMeshes.filter((item) => !this.hiddenBands.has(item.band));
+      const visibleCount = visibleBandMeshes.length;
+      const totalVertices = visibleBandMeshes.reduce((sum, item) => sum + item.mesh.vertices.length, 0);
+      const totalTriangles = visibleBandMeshes.reduce((sum, item) => sum + item.mesh.triangles.length, 0);
       const bands = /** @type {unknown[] | undefined} */ (this.payload?.bands);
       const nbands = Number(this.payload?.nbands ?? NaN);
       const nu = Number(this.payload?.nu ?? NaN);
@@ -2935,7 +3100,7 @@ selectedBandIndex() {
       if (this.statusEl) {
         const maskText = this.maskToHexagon ? "hex mask on" : "hex mask off";
         const hiddenCount = this.hiddenBands.size;
-        this.statusEl.textContent = `band ${band}; visible ${visibleCount}; hidden ${hiddenCount}; grid ${gridText}; bands ${bandsText}; vertices ${totalVertices}; triangles ${totalTriangles}; energy ${energyText}; slice ${slice}; ${maskText}`;
+        this.statusEl.textContent = `band ${band}; visible ${visibleCount}; hidden ${hiddenCount}; grid ${gridText}; bands ${bandsText}; vertices ${totalVertices}; triangles ${totalTriangles}; energy ${energyText}; energy zero ${nice(this.energyZero)}; energy scale ${nice(this.energyScale)}; slice ${slice}; ${maskText}`;
       }
     }
 
@@ -3574,4 +3739,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

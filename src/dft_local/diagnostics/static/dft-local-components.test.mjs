@@ -33,6 +33,7 @@ import {
   threeUvGridReferenceData,
   threeHexagonReferenceData,
   threeBandSurfaceGeometryData,
+  bandSurfaceEnergyDomain,
   nearestPathPoint,
   selectedPathHits,
   nearestPointByX,
@@ -1112,4 +1113,79 @@ test("generic model refresh source policy exists", () => {
   assert.equal(source.includes("function refreshDftModels"), true);
   assert.equal(source.includes("dftRefreshModels = refreshDftModels"), true);
   assert.equal(source.includes('typeof maybeUpdater.updateModel === "function"'), true);
+});
+
+
+test("band surface shared energy domain preserves inter-band offsets", () => {
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 1], [0, 1]],
+    k2: [[0, 0], [1, 1]],
+    energies: [
+      [[0, 10], [0, 10]],
+      [[0, 10], [0, 10]],
+    ],
+    mask: [[true, true], [true, true]],
+    bands: [0, 1],
+    nbands: 2,
+  };
+
+  const meshes = [
+    { band: 0, mesh: bandSurfaceMeshData(payload, 0) },
+    { band: 1, mesh: bandSurfaceMeshData(payload, 1) },
+  ];
+  const domain = bandSurfaceEnergyDomain(meshes);
+
+  assert.ok(domain);
+  assert.equal(domain.emin, 0);
+  assert.equal(domain.emax, 10);
+
+  const lower = threeBandSurfaceGeometryData(meshes[0].mesh, domain);
+  const upper = threeBandSurfaceGeometryData(meshes[1].mesh, domain);
+
+  const lowerY = lower.positions[1];
+  const upperY = upper.positions[1];
+
+  assert.ok(lowerY < upperY);
+});
+
+
+test("threeBandSurfaceGeometryData applies energy scale", () => {
+  const mesh = {
+    vertices: [
+      { x: 0, y: 0, z: 0, i: 0, j: 0, band: 0 },
+      { x: 1, y: 0, z: 1, i: 0, j: 1, band: 0 },
+      { x: 0, y: 1, z: 2, i: 1, j: 0, band: 0 },
+    ],
+    triangles: /** @type {[number, number, number][]} */ ([[0, 1, 2]]),
+    summary: { count: 3, zmin: 0, zmax: 2 },
+  };
+
+  const normal = threeBandSurfaceGeometryData(mesh, null, { energyScale: 1 });
+  const stretched = threeBandSurfaceGeometryData(mesh, null, { energyScale: 2 });
+
+  const normalHeight = normal.positions[7] - normal.positions[1];
+  const stretchedHeight = stretched.positions[7] - stretched.positions[1];
+
+  assert.ok(stretchedHeight > normalHeight * 1.9);
+});
+
+
+test("threeBandSurfaceGeometryData keeps zero energy at display zero", () => {
+  const mesh = {
+    vertices: [
+      { x: 0, y: 0, z: -1, i: 0, j: 0, band: 0 },
+      { x: 1, y: 0, z: 0, i: 0, j: 1, band: 0 },
+      { x: 0, y: 1, z: 1, i: 1, j: 0, band: 0 },
+    ],
+    triangles: /** @type {[number, number, number][]} */ ([[0, 1, 2]]),
+    summary: { count: 3, zmin: -1, zmax: 1 },
+  };
+
+  const geometry = threeBandSurfaceGeometryData(mesh, { emin: -1, emax: 1, kSpan: 2 }, { energyZero: 0 });
+
+  assert.ok(geometry.positions[1] < 0);
+  assert.equal(geometry.positions[4], 0);
+  assert.ok(geometry.positions[7] > 0);
 });
