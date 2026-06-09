@@ -33,6 +33,7 @@ import {
   vertexInsideVisibleHexagon,
   bandBasisToCartesian,
   threeUvGridReferenceData,
+  threePrimitiveCellReferenceData,
   threeHexagonReferenceData,
   threeBandSurfaceGeometryData,
   bandSurfaceEnergyDomain,
@@ -898,18 +899,17 @@ test("threeHexagonReferenceData converts bz hexagon to display plane", () => {
 });
 
 
-test("band surface uv plane and hexagon reference policy exists", () => {
+test("band surface reciprocal plane, BZ hexagon, and primitive cell reference policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes("function threeHexagonReferenceData(payload)"), true);
-  assert.equal(source.includes("new THREE.PlaneGeometry"), true);
-  assert.equal(source.includes("new THREE.GridHelper"), false);
-  assert.equal(source.includes("threeHexagonReferenceData(this.payload)"), true);
-  assert.equal(source.includes("band-surface-reference-group"), true);
-  assert.equal(source.includes("plane.position.set(data.center.x, 0.0, data.center.z)"), true);
+  assert.equal(source.includes("bandBasisToCartesian"), true);
+  assert.equal(source.includes("threeUvGridReferenceData"), true);
+  assert.equal(source.includes("threeHexagonReferenceData"), true);
+  assert.equal(source.includes("threePrimitiveCellReferenceData"), true);
+  assert.equal(source.includes("band-surface-reference-white-k-plane"), true);
+  assert.equal(source.includes("band-surface-reference-bz-hexagon"), true);
+  assert.equal(source.includes("band-surface-reference-primitive-cell"), true);
+  assert.equal(source.includes("AxesHelper"), true);
 });
-
-
 
 test("threeHexagonReferenceData provides fallback regular hexagon", () => {
   const points = threeHexagonReferenceData({});
@@ -920,6 +920,24 @@ test("threeHexagonReferenceData provides fallback regular hexagon", () => {
 });
 
 
+
+test("threePrimitiveCellReferenceData draws centered reciprocal primitive cell", () => {
+  const cell = threePrimitiveCellReferenceData();
+  assert.equal(cell.length, 4);
+
+  const expected = [
+    bandBasisToCartesian(-Math.PI, -Math.PI),
+    bandBasisToCartesian(Math.PI, -Math.PI),
+    bandBasisToCartesian(Math.PI, Math.PI),
+    bandBasisToCartesian(-Math.PI, Math.PI),
+  ];
+
+  for (let i = 0; i < cell.length; i += 1) {
+    assert.ok(Math.abs(cell[i].x - expected[i].x) < 1e-12);
+    assert.equal(cell[i].y, 0.0);
+    assert.ok(Math.abs(cell[i].z - expected[i].y) < 1e-12);
+  }
+});
 
 test("threeUvGridReferenceData creates u and v grid lines", () => {
   const lines = threeUvGridReferenceData(Math.PI, 2);
@@ -935,17 +953,15 @@ test("threeUvGridReferenceData creates u and v grid lines", () => {
 });
 
 
-test("band surface uv reference plane styling policy exists", () => {
+test("band surface reciprocal reference plane styling policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes("threeUvGridReferenceData(Math.PI, 8)"), true);
-  assert.equal(source.includes("color: 0x101820"), true);
-  assert.equal(source.includes("color: 0xffb000"), true);
+  assert.equal(source.includes("color: 0xffffff"), true);
+  assert.equal(source.includes("band-surface-reference-white-k-plane"), true);
+  assert.equal(source.includes("makeThickClosedPolyline"), true);
+  assert.equal(source.includes("band-surface-reference-primitive-cell"), true);
   assert.equal(source.includes("depthTest: false"), true);
-  assert.equal(source.includes("color: 0x4e6e81"), true);
+  assert.equal(source.includes("depthWrite: false"), true);
 });
-
-
 
 test("bandSurfaceMeshDataWithMask clips triangles against visible hexagon", () => {
   const payload = {

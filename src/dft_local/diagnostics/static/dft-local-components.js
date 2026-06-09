@@ -211,6 +211,28 @@ function threeHexagonReferenceData(payload) {
 
 
 /**
+ * Centered reciprocal primitive cell in (k1,k2) coordinates.
+ *
+ * This is the parallelogram -pi <= k1 <= pi, -pi <= k2 <= pi,
+ * projected into the Cartesian display plane.  It is distinct from the
+ * central Brillouin-zone hexagon.
+ *
+ * @returns {Array<{x:number, y:number, z:number}>}
+ */
+function threePrimitiveCellReferenceData() {
+  return [
+    [-Math.PI, -Math.PI],
+    [Math.PI, -Math.PI],
+    [Math.PI, Math.PI],
+    [-Math.PI, Math.PI],
+  ].map(([k1, k2]) => {
+    const p = bandBasisToCartesian(k1, k2);
+    return { x: p.x, y: 0.0, z: p.y };
+  });
+}
+
+
+/**
  * @param {{vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>, triangles:Array<[number, number, number]>, summary:{count:number, zmin:number|null, zmax:number|null}}} mesh
  * @returns {{positions:Float32Array, indices:Uint32Array, center:{x:number,y:number,z:number}, radius:number}}
  */
@@ -3453,29 +3475,99 @@ selectedBandIndex() {
       const group = new THREE.Group();
       group.name = "band-surface-reference-group";
 
-      // Reference plane is the uv/k plane.  It is deliberately at y=0, so
-      // it passes through the OrbitControls target and is easy to compare
-      // against the band surface.
-      const planeSize = 2.4 * radius;
-      const plane = new THREE.Mesh(
-        new THREE.PlaneGeometry(planeSize, planeSize),
-        new THREE.MeshBasicMaterial({
-          color: 0x101820,
-          transparent: true,
-          opacity: 0.22,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-        }),
-      );
-      plane.rotation.x = -Math.PI / 2.0;
-      plane.position.set(data.center.x, 0.0, data.center.z);
-      group.add(plane);
+      const hex = threeHexagonReferenceData(this.payload);
+
+      /**
+       * @param {Array<{x:number, y:number, z:number}>} points
+       * @param {number} yOffset
+       * @param {number} thickness
+       * @param {any} material
+       * @param {string} name
+       * @returns {any}
+       */
+      const makeThickClosedPolyline = (points, yOffset, thickness, material, name) => {
+        const positions = [];
+        const indices = [];
+        const half = 0.5 * thickness;
+
+        for (let i = 0; i < points.length; i += 1) {
+          const a = points[i];
+          const b = points[(i + 1) % points.length];
+          const dx = b.x - a.x;
+          const dz = b.z - a.z;
+          const len = Math.max(Math.hypot(dx, dz), 1e-12);
+          const nx = -dz / len;
+          const nz = dx / len;
+          const base = positions.length / 3;
+
+          positions.push(
+            a.x + nx * half, yOffset, a.z + nz * half,
+            a.x - nx * half, yOffset, a.z - nz * half,
+            b.x - nx * half, yOffset, b.z - nz * half,
+            b.x + nx * half, yOffset, b.z + nz * half,
+          );
+
+          indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+        }
+
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geom.setIndex(indices);
+        const mesh = new THREE.Mesh(geom, material);
+        mesh.name = name;
+        mesh.renderOrder = 50;
+        return mesh;
+      };
+
+      /**
+       * @param {Array<{x:number, y:number, z:number}>} points
+       * @param {number} yOffset
+       * @param {any} material
+       * @param {string} name
+       * @returns {any}
+       */
+      const makeFilledPolygon = (points, yOffset, material, name) => {
+        const positions = [];
+        const indices = [];
+
+        for (const point of points) {
+          positions.push(point.x, yOffset, point.z);
+        }
+
+        for (let i = 1; i + 1 < points.length; i += 1) {
+          indices.push(0, i, i + 1);
+        }
+
+        const geom = new THREE.BufferGeometry();
+        geom.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+        geom.setIndex(indices);
+        const mesh = new THREE.Mesh(geom, material);
+        mesh.name = name;
+        mesh.renderOrder = 10;
+        return mesh;
+      };
+
+      if (hex.length >= 3) {
+        group.add(makeFilledPolygon(
+          hex,
+          -0.018 * radius,
+          new THREE.MeshBasicMaterial({
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.92,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false,
+          }),
+          "band-surface-reference-white-k-plane",
+        ));
+      }
 
       const uvGridLines = threeUvGridReferenceData(Math.PI, 8);
       const uvGridMaterial = new THREE.LineBasicMaterial({
-        color: 0x4e6e81,
+        color: 0x7b838a,
         transparent: true,
-        opacity: 0.42,
+        opacity: 0.55,
         depthTest: false,
       });
 
@@ -3484,41 +3576,61 @@ selectedBandIndex() {
           new THREE.Vector3(line[0].x, 0.006 * radius, line[0].z),
           new THREE.Vector3(line[1].x, 0.006 * radius, line[1].z),
         ]);
-        group.add(new THREE.Line(lineGeom, uvGridMaterial));
+        const gridLine = new THREE.Line(lineGeom, uvGridMaterial);
+        gridLine.name = "band-surface-reference-uv-grid";
+        group.add(gridLine);
       }
 
-      const hex = threeHexagonReferenceData(this.payload);
-      if (hex.length >= 3) {
-        const pts = hex.map((p) => new THREE.Vector3(p.x, 0.0, p.z));
-        pts.push(new THREE.Vector3(hex[0].x, 0.0, hex[0].z));
-
-        const hexGeom = new THREE.BufferGeometry().setFromPoints(pts);
-        const hexLine = new THREE.Line(
-          hexGeom,
-          new THREE.LineBasicMaterial({
-            color: 0xffb000,
+      const primitiveCell = threePrimitiveCellReferenceData();
+      if (primitiveCell.length >= 3) {
+        group.add(makeThickClosedPolyline(
+          primitiveCell,
+          0.030 * radius,
+          0.025 * radius,
+          new THREE.MeshBasicMaterial({
+            color: 0x004cff,
             transparent: true,
             opacity: 1.0,
+            side: THREE.DoubleSide,
             depthTest: false,
+            depthWrite: false,
           }),
-        );
-        group.add(hexLine);
+          "band-surface-reference-primitive-cell",
+        ));
+      }
+
+      if (hex.length >= 3) {
+        group.add(makeThickClosedPolyline(
+          hex,
+          0.050 * radius,
+          0.034 * radius,
+          new THREE.MeshBasicMaterial({
+            color: 0x000000,
+            transparent: true,
+            opacity: 1.0,
+            side: THREE.DoubleSide,
+            depthTest: false,
+            depthWrite: false,
+          }),
+          "band-surface-reference-bz-hexagon",
+        ));
+
+        const spokeMaterial = new THREE.LineBasicMaterial({
+          color: 0x343a40,
+          transparent: true,
+          opacity: 0.48,
+          depthTest: false,
+        });
 
         // radial spokes make the hexagon visibly non-square
         for (const p of hex) {
           const spoke = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0.0, 0.0, 0.0),
-            new THREE.Vector3(p.x, 0.0, p.z),
+            new THREE.Vector3(0.0, 0.046 * radius, 0.0),
+            new THREE.Vector3(p.x, 0.046 * radius, p.z),
           ]);
-          group.add(new THREE.Line(
-            spoke,
-            new THREE.LineBasicMaterial({
-              color: 0xffd166,
-              transparent: true,
-              opacity: 0.45,
-              depthTest: false,
-            }),
-          ));
+          const spokeLine = new THREE.Line(spoke, spokeMaterial);
+          spokeLine.name = "band-surface-reference-bz-spoke";
+          group.add(spokeLine);
         }
       }
 
@@ -4631,4 +4743,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threePrimitiveCellReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
