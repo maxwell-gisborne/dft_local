@@ -975,3 +975,16 @@ def test_datastar_run_stream_preserves_stateful_table_state() -> None:
     assert "window.__dftTableState = window.captureDftTableState?.(document)" in stream
     assert "window.restoreDftTableState?.(window.__dftTableState, document)" in stream
     assert "data: selector #dft-block-" in stream
+
+
+
+def test_datastar_table_state_is_captured_before_table_patches() -> None:
+    app = DiagnosticApp()
+    stream = app.diagnostic_run_stream("transport.boltzmann.calculation.overview", {})
+
+    capture_index = stream.index("window.__dftTableState = window.captureDftTableState")
+    patch_index = stream.index("data: selector #dft-block-")
+    restore_index = stream.index("window.restoreDftTableState")
+
+    assert capture_index < patch_index < restore_index
+    assert stream.count("window.__dftTableState = window.captureDftTableState") == 1

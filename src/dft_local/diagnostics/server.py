@@ -404,6 +404,14 @@ class DiagnosticApp:
         needs_model_refresh = False
         needs_table_restore = False
 
+        has_stateful_html = any(block["kind"] == "stateful-html" for block in blocks)
+        if has_stateful_html:
+            stream.append(
+                cls.datastar_execute_script(
+                    "window.__dftTableState = window.captureDftTableState?.(document)"
+                )
+            )
+
         for block in blocks:
             block_id = block["id"]
             kind = block["kind"]
@@ -415,11 +423,6 @@ class DiagnosticApp:
                     needs_model_refresh = True
             elif kind == "stateful-html":
                 needs_table_restore = True
-                stream.append(
-                    cls.datastar_execute_script(
-                        "window.__dftTableState = window.captureDftTableState?.(document)"
-                    )
-                )
                 stream.append(cls.datastar_patch_element(f"#dft-block-{block_id}", block_html))
             else:
                 stream.append(cls.datastar_patch_element(f"#dft-block-{block_id}", block_html))
