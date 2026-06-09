@@ -2113,7 +2113,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
       const t = i / 5;
       const x = margin.left + t * innerW;
       const xv = xmin + t * (xmax - xmin);
-  
+
       svg.appendChild(svgEl("line", {
         class: "grid",
         x1: String(x),
@@ -2121,7 +2121,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
         x2: String(x),
         y2: String(margin.top + innerH),
       }));
-  
+
       const label = svgEl("text", {
         class: "axis-label",
         x: String(x),
@@ -2131,12 +2131,12 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
       label.textContent = nice(xv);
       svg.appendChild(label);
     }
-  
+
     for (let i = 0; i <= 5; i++) {
       const t = i / 5;
       const y = margin.top + t * innerH;
       const yv = ymax - t * (ymax - ymin);
-  
+
       svg.appendChild(svgEl("line", {
         class: "grid",
         x1: String(margin.left),
@@ -2144,7 +2144,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
         x2: String(margin.left + innerW),
         y2: String(y),
       }));
-  
+
       const label = svgEl("text", {
         class: "axis-label",
         x: String(margin.left - 10),
@@ -2154,7 +2154,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
       label.textContent = nice(yv);
       svg.appendChild(label);
     }
-  
+
     svg.appendChild(svgEl("line", {
       class: "axis",
       x1: String(margin.left),
@@ -2162,7 +2162,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
       x2: String(margin.left + innerW),
       y2: String(margin.top + innerH),
     }));
-  
+
     svg.appendChild(svgEl("line", {
       class: "axis",
       x1: String(margin.left),
@@ -2170,7 +2170,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
       x2: String(margin.left),
       y2: String(margin.top + innerH),
     }));
-  
+
     const xTitle = svgEl("text", {
       class: "axis-title",
       x: String(margin.left + innerW / 2),
@@ -2179,7 +2179,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
     });
     xTitle.textContent = payload.x_label || "x";
     svg.appendChild(xTitle);
-  
+
     const yTitle = svgEl("text", {
       class: "axis-title",
       x: "18",
@@ -2189,7 +2189,7 @@ function makeGraphSvg(payload, view = null, cursor = null, options = {}) {
     });
     yTitle.textContent = payload.y_label || "y";
     svg.appendChild(yTitle);
-  
+
     }
 
   const colours = [
@@ -3220,6 +3220,7 @@ selectedBandIndex() {
 
       this.updateStatus();
       this.updateSlicePanel();
+      this.renderThreeOnce();
     }
 
     updateLegend() {
@@ -3424,8 +3425,13 @@ selectedBandIndex() {
       this.updateSelectedMarker();
       this.updateSlicePanel();
       this.updateSliceOverlay();
-    }
 
+
+      this.renderThreeOnce();
+
+
+
+    }
 
     /**
      * @param {{center:{x:number,y:number,z:number}, radius:number}} data
@@ -4009,6 +4015,10 @@ selectedBandIndex() {
       this.selectedMarker = new THREE.Mesh(geometry, material);
       this.selectedMarker.position.set(display.x, vertex.z, display.y);
       this.scene.add(this.selectedMarker);
+
+
+      this.renderThreeOnce();
+
     }
   }
 
