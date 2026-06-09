@@ -3167,8 +3167,12 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       if (slicePlot instanceof HTMLElement) {
         slicePlot.style.contain = "layout paint style";
-        slicePlot.style.contentVisibility = "auto";
-        slicePlot.style.containIntrinsicSize = "480px 320px";
+        slicePlot.style.minHeight = "320px";
+        slicePlot.style.marginTop = "0.75rem";
+        slicePlot.style.padding = "0.5rem";
+        slicePlot.style.border = "1px solid rgba(120, 130, 145, 0.35)";
+        slicePlot.style.borderRadius = "0.35rem";
+        slicePlot.style.background = "rgba(255, 255, 255, 0.04)";
       }
     }
 
@@ -3180,7 +3184,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         this.renderThreeOnce();
 
         if (this.sliceDetailsEl?.open) {
-          this.flushSlicePlot();
+          this.updateSlicePanel();
+          requestAnimationFrame(() => this.flushSlicePlot());
         }
       });
     }
@@ -4095,6 +4100,10 @@ selectedBandIndex() {
         return;
       }
 
+      const title = document.createElement("div");
+      title.className = "band-surface-slice-plot-title";
+      title.textContent = `Intersection plot: ${segments.length} segments`;
+
       const payload = axis === "energy"
         ? this.sliceKspaceGraphPayload(segments, value)
         : this.sliceBandGraphPayload(segments, axis, value);
@@ -4127,12 +4136,19 @@ selectedBandIndex() {
       activeComponent.setAttribute("data-dft-slice-component", componentKind);
 
       if (!activeComponent.isConnected) {
-        this.slicePlotEl.replaceChildren(script, activeComponent);
+        this.slicePlotEl.replaceChildren(title, script, activeComponent);
         return;
       }
 
+      const existingTitle = this.slicePlotEl.querySelector(".band-surface-slice-plot-title");
+      if (existingTitle instanceof HTMLElement) {
+        existingTitle.textContent = title.textContent;
+      } else {
+        this.slicePlotEl.prepend(title);
+      }
+
       if (!script.isConnected) {
-        this.slicePlotEl.prepend(script);
+        this.slicePlotEl.insertBefore(script, activeComponent);
       }
 
       if (typeof /** @type {any} */ (activeComponent).updateModel === "function") {
