@@ -467,3 +467,91 @@ test("generic model refresh updates existing custom element", async () => {
     await server.close();
   }
 });
+
+
+
+test("datastar-style run patches model island without replacing viewer", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-datastar-model-"));
+  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
+  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+
+  const firstPayload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 1], [0, 1]],
+    k2: [[0, 0], [1, 1]],
+    energies: [
+      [[0], [1]],
+      [[2], [3]],
+    ],
+    bands: [0],
+    nbands: 1,
+    selected_band: 0,
+  };
+
+  const secondPayload = {
+    ...firstPayload,
+    energies: [
+      [[10], [11]],
+      [[12], [13]],
+    ],
+  };
+
+  writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(firstPayload).replaceAll("</", "<\\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+  const server = await serveDirectory(root);
+  const browserInstance = await chromium.launch();
+  const page = await browserInstance.newPage();
+
+  try {
+    await page.goto(server.url);
+    await page.waitForSelector("dft-band-surface-viewer .band-surface-viewer-three-only", { timeout: 10000 });
+
+    await page.evaluate(() => {
+      const viewer = document.querySelector("dft-band-surface-viewer");
+      if (!viewer) throw new Error("missing viewer");
+      /** @type {any} */ (window).__viewerBefore = viewer;
+    });
+
+    await page.evaluate((payload) => {
+      const model = document.getElementById("dft-model-surface");
+      if (!model) throw new Error("missing model");
+      model.textContent = JSON.stringify(payload);
+      /** @type {any} */ (window).dftRefreshModels?.(document);
+    }, secondPayload);
+
+    await page.waitForFunction(() => {
+      const viewer = document.querySelector("dft-band-surface-viewer");
+      return viewer && viewer === /** @type {any} */ (window).__viewerBefore;
+    }, { timeout: 10000 });
+
+    const payloadValue = await page.evaluate(() => {
+      const viewer = document.querySelector("dft-band-surface-viewer");
+      return /** @type {any} */ (viewer)?.payload?.energies?.[0]?.[0]?.[0];
+    });
+
+    assert.equal(payloadValue, 10);
+  } finally {
+    await browserInstance.close();
+    await server.close();
+  }
+});
