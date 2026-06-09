@@ -923,9 +923,10 @@ def test_diagnostic_page_includes_datastar_dependency_and_result_outlet() -> Non
     html = app.diagnostic_page("transport.boltzmann.calculation.overview", {})
 
     assert "datastar" in html.lower()
+    assert "datastar@v1.0.2/bundles/datastar.js" in html
     assert "id='diagnostic-result'" in html
     assert "data-dft-diagnostic-result" in html
-    assert "data-on-submit" in html
+    assert "data-on:submit" in html
     assert "/d-run/transport.boltzmann.calculation.overview" in html
 
 

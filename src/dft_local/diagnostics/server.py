@@ -503,7 +503,7 @@ class DiagnosticApp:
         action = f"/d-run/{quote(spec.id)}"
         return (
             f"<form method='get' action='/d/{escape(spec.id)}' "
-            f"data-on-submit=\"@get('{action}', {{contentType: 'form'}})\">"
+            f"data-on:submit=\"@get('{action}', {{contentType: 'form'}})\">"
             "<p>"
             + "</p><p>".join(fields)
             + "</p><button type='submit'>Run</button></form>"
