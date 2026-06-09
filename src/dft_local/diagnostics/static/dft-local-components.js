@@ -229,6 +229,31 @@ function threeHexagonReferenceData(payload) {
  *
  * @returns {Array<{x:number, y:number, z:number}>}
  */
+/**
+ * Origin-rooted reciprocal primitive cell in (k1,k2) coordinates.
+ *
+ * In the dimensionless reciprocal-basis coordinates used by the payload:
+ *
+ *   b1 = (2*pi, 0)
+ *   b2 = (0, 2*pi)
+ *
+ * This draws the parallelogram 0, b1, b1+b2, b2.
+ *
+ * @returns {Array<{x:number, y:number, z:number}>}
+ */
+function threePrimitiveCellReferenceData() {
+  return [
+    [0.0, 0.0],
+    [2.0 * Math.PI, 0.0],
+    [2.0 * Math.PI, 2.0 * Math.PI],
+    [0.0, 2.0 * Math.PI],
+  ].map(([k1, k2]) => {
+    const p = bandBasisToCartesian(k1, k2);
+    return { x: p.x, y: 0.0, z: p.y };
+  });
+}
+
+
 function threeReciprocalLatticeHexagonReferenceData() {
   return [
     [2.0 * Math.PI, 0.0],
@@ -336,6 +361,22 @@ function vertexInsideReciprocalLatticeHexagon(vertex) {
   const polygon = threeReciprocalLatticeHexagonReferenceData();
   const p = bandBasisToCartesian(vertex.x, vertex.y);
   return pointInDisplayPolygon({ x: p.x, z: p.y }, polygon);
+}
+
+
+/**
+ * @param {{x:number, y:number}} vertex
+ * @returns {boolean}
+ */
+function vertexInsidePrimitiveCell(vertex) {
+  const twopi = 2.0 * Math.PI;
+  const tol = 1e-10;
+  return (
+    vertex.x >= -tol
+    && vertex.x <= twopi + tol
+    && vertex.y >= -tol
+    && vertex.y <= twopi + tol
+  );
 }
 
 
@@ -1421,6 +1462,111 @@ function visibleBandIndices(payload, hiddenBands) {
 /**
  * @param {JsonPayload | null} payload
  * @param {number} band
+ * @param {"primitive" | "bz" | "extended" | string | null | undefined} domainMode
+ * @returns {{
+ *   vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>,
+ *   triangles:Array<[number, number, number]>,
+ *   summary:{count:number, zmin:number|null, zmax:number|null}
+ * }}
+ */
+function bandSurfaceMeshDataWithDomain(payload, band, domainMode) {
+  const rawVertices = bandSurfaceVertices(payload, band);
+  const rawTriangles = bandSurfaceTriangles(payload, false);
+  const summary = bandSurfaceSummary(payload, band);
+  const mode = domainMode === "primitive" || domainMode === "bz" || domainMode === "extended"
+    ? domainMode
+    : "extended";
+
+  if (rawVertices.length === 0 || rawTriangles.length === 0) {
+    return { vertices: rawVertices, triangles: [], summary };
+  }
+
+  if (mode === "primitive") {
+    /** @type {Array<[number, number, number]>} */
+    const triangles = [];
+
+    for (const tri of rawTriangles) {
+      const triVertices = tri.map((index) => rawVertices[index]);
+      if (triVertices.some((vertex) => !vertex || !vertexInsidePrimitiveCell(vertex))) {
+        continue;
+      }
+      triangles.push(tri);
+    }
+
+    return { vertices: rawVertices, triangles, summary };
+  }
+
+  if (mode === "bz") {
+    /** @type {Array<[number, number, number]>} */
+    const triangles = [];
+
+    for (const tri of rawTriangles) {
+      const triVertices = tri.map((index) => rawVertices[index]);
+      if (triVertices.some((vertex) => !vertex || !vertexInsideVisibleHexagon(payload, vertex))) {
+        continue;
+      }
+      triangles.push(tri);
+    }
+
+    return { vertices: rawVertices, triangles, summary };
+  }
+
+  const twopi = 2.0 * Math.PI;
+
+  // One central copy plus the six nearest reciprocal-lattice neighbours.
+  const shifts = [
+    [0.0, 0.0],
+    [twopi, 0.0],
+    [twopi, twopi],
+    [0.0, twopi],
+    [-twopi, 0.0],
+    [-twopi, -twopi],
+    [0.0, -twopi],
+  ];
+
+  /** @type {Array<{x:number, y:number, z:number, i:number, j:number, band:number}>} */
+  const vertices = [];
+  /** @type {Array<[number, number, number]>} */
+  const triangles = [];
+
+  for (const [du, dv] of shifts) {
+    const baseIndex = vertices.length;
+
+    for (const vertex of rawVertices) {
+      vertices.push({
+        ...vertex,
+        x: vertex.x + du,
+        y: vertex.y + dv,
+      });
+    }
+
+    for (const tri of rawTriangles) {
+      const aIndex = baseIndex + tri[0];
+      const bIndex = baseIndex + tri[1];
+      const cIndex = baseIndex + tri[2];
+
+      const triVertices = [
+        vertices[aIndex],
+        vertices[bIndex],
+        vertices[cIndex],
+      ];
+
+      if (triVertices.some((vertex) => !vertex || !vertexInsideReciprocalLatticeHexagon(vertex))) {
+        continue;
+      }
+
+      triangles.push([aIndex, bIndex, cIndex]);
+    }
+  }
+
+  return { vertices, triangles, summary };
+}
+
+/**
+ * Backwards-compatible wrapper for older tests/call sites.
+ *
+ * @param {JsonPayload | null} payload
+ * @param {number} band
  * @param {boolean} useMask
  * @returns {{
  *   vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>,
@@ -1429,78 +1575,7 @@ function visibleBandIndices(payload, hiddenBands) {
  * }}
  */
 function bandSurfaceMeshDataWithMask(payload, band, useMask) {
-  const rawVertices = bandSurfaceVertices(payload, band);
-  const rawTriangles = bandSurfaceTriangles(payload, false);
-  const summary = bandSurfaceSummary(payload, band);
-
-  if (rawVertices.length === 0 || rawTriangles.length === 0) {
-    return { vertices: rawVertices, triangles: [], summary };
-  }
-
-  if (!useMask) {
-    const twopi = 2.0 * Math.PI;
-
-    // One central copy plus the six nearest reciprocal-lattice neighbours.
-    const shifts = [
-      [0.0, 0.0],
-      [twopi, 0.0],
-      [twopi, twopi],
-      [0.0, twopi],
-      [-twopi, 0.0],
-      [-twopi, -twopi],
-      [0.0, -twopi],
-    ];
-
-    /** @type {Array<{x:number, y:number, z:number, i:number, j:number, band:number}>} */
-    const vertices = [];
-    /** @type {Array<[number, number, number]>} */
-    const triangles = [];
-
-    for (const [du, dv] of shifts) {
-      const baseIndex = vertices.length;
-
-      for (const vertex of rawVertices) {
-        vertices.push({
-          ...vertex,
-          x: vertex.x + du,
-          y: vertex.y + dv,
-        });
-      }
-
-      for (const tri of rawTriangles) {
-        const aIndex = baseIndex + tri[0];
-        const bIndex = baseIndex + tri[1];
-        const cIndex = baseIndex + tri[2];
-
-        const triVertices = [
-          vertices[aIndex],
-          vertices[bIndex],
-          vertices[cIndex],
-        ];
-
-        if (triVertices.some((vertex) => !vertex || !vertexInsideReciprocalLatticeHexagon(vertex))) {
-          continue;
-        }
-
-        triangles.push([aIndex, bIndex, cIndex]);
-      }
-    }
-
-    return { vertices, triangles, summary };
-  }
-
-  /** @type {Array<[number, number, number]>} */
-  const triangles = [];
-
-  for (const tri of rawTriangles) {
-    const triVertices = tri.map((index) => rawVertices[index]);
-    if (triVertices.some((vertex) => !vertex || !vertexInsideVisibleHexagon(payload, vertex))) {
-      continue;
-    }
-    triangles.push(tri);
-  }
-
-  return { vertices: rawVertices, triangles, summary };
+  return bandSurfaceMeshDataWithDomain(payload, band, useMask ? "bz" : "extended");
 }
 
 
@@ -2715,8 +2790,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.resizeObserver = null;
       /** @type {any} */
       this.referenceGroup = null;
-      /** @type {boolean} */
-      this.maskToHexagon = false;
+      /** @type {"primitive" | "bz" | "extended"} */
+      this.domainMode = "extended";
       /** @type {boolean} */
       this.hasInitialCamera = false;
       /** @type {Set<number>} */
@@ -2887,9 +2962,13 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
               energy scale
               <input data-dft-view-energy-scale type="range" min="0.1" max="5" step="0.1" value="1">
             </label>
-            <label class="band-surface-mask-toggle">
-              <input type="checkbox" data-dft-mask-to-hexagon>
-              mask to hexagon
+            <label class="band-surface-view-control">
+              k-domain
+              <select data-dft-domain-mode>
+                <option value="primitive">primitive cell</option>
+                <option value="bz">BZ hexagon</option>
+                <option value="extended" selected>extended hexagon</option>
+              </select>
             </label>
           </div>
           <div class="band-surface-legend" data-dft-surface-legend></div>
@@ -2937,7 +3016,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       this.bindSliceControls();
       this.bindSliceDetails();
-      this.bindMaskToggle();
+      this.bindDomainModeControl();
     }
 
     bindViewControls() {
@@ -3106,15 +3185,19 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       });
     }
 
-    bindMaskToggle() {
-      const input = this.querySelector("[data-dft-mask-to-hexagon]");
-      if (!(input instanceof HTMLInputElement)) return;
-      if (input.dataset.maskBound === "1") return;
+    bindDomainModeControl() {
+      const input = this.querySelector("[data-dft-domain-mode]");
+      if (!(input instanceof HTMLSelectElement)) return;
+      if (input.dataset.domainBound === "1") return;
 
-      input.checked = this.maskToHexagon;
-      input.dataset.maskBound = "1";
+      input.value = this.domainMode;
+      input.dataset.domainBound = "1";
+
       const update = () => {
-        this.maskToHexagon = input.checked;
+        const value = input.value;
+        this.domainMode = value === "primitive" || value === "bz" || value === "extended"
+          ? value
+          : "extended";
         this.requestSurfaceUpdate();
       };
 
@@ -3478,18 +3561,21 @@ selectedBandIndex() {
     }
 
     async updateSurface() {
-      const maskInput = this.querySelector("[data-dft-mask-to-hexagon]");
-      if (maskInput instanceof HTMLInputElement) {
-        this.maskToHexagon = maskInput.checked;
+      const domainInput = this.querySelector("[data-dft-domain-mode]");
+      if (domainInput instanceof HTMLSelectElement) {
+        const value = domainInput.value;
+        this.domainMode = value === "primitive" || value === "bz" || value === "extended"
+          ? value
+          : "extended";
       }
 
-      this.dataset.hexMask = this.maskToHexagon ? "on" : "off";
+      this.dataset.domainMode = this.domainMode;
 
       const bands = allBandIndices(this.payload);
 
       this.currentBandMeshes = bands.map((band) => ({
         band,
-        mesh: bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon),
+        mesh: bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode),
       }));
       this.currentMesh = this.currentBandMeshes.find((item) => !this.hiddenBands.has(item.band))?.mesh ?? null;
 
@@ -3505,8 +3591,7 @@ selectedBandIndex() {
         this.updateLegend();
         if (this.statusEl) {
           const allBands = allBandIndices(this.payload);
-          const maskText = this.maskToHexagon ? "hex mask on" : "hex mask off";
-          this.statusEl.textContent = `visible 0; hidden ${this.hiddenBands.size}; bands ${allBands.length}; no visible bands; ${maskText}`;
+          this.statusEl.textContent = `visible 0; hidden ${this.hiddenBands.size}; bands ${allBands.length}; no visible bands; domain ${this.domainMode}`;
         }
         this.renderThreeOnce();
         return;
@@ -3602,8 +3687,14 @@ selectedBandIndex() {
       const group = new THREE.Group();
       group.name = "band-surface-reference-group";
 
+      const primitiveCell = threePrimitiveCellReferenceData();
       const hex = threeHexagonReferenceData(this.payload);
       const reciprocalHex = threeReciprocalLatticeHexagonReferenceData();
+      const referencePolygon = this.domainMode === "primitive"
+        ? primitiveCell
+        : this.domainMode === "bz"
+          ? hex
+          : reciprocalHex;
       const symmetryPoints = threeSymmetryPointReferenceData(this.payload);
 
       // All reciprocal reference geometry is painted flat on the y=0 k-plane.
@@ -3680,9 +3771,9 @@ selectedBandIndex() {
         return mesh;
       };
 
-      if (reciprocalHex.length >= 3) {
+      if (referencePolygon.length >= 3) {
         group.add(makeFilledPolygon(
-          reciprocalHex,
+          referencePolygon,
           0.0,
           new THREE.MeshBasicMaterial({
             color: 0xd8dde3,
@@ -3718,7 +3809,27 @@ selectedBandIndex() {
         group.add(gridLine);
       }
 
-      if (reciprocalHex.length >= 3) {
+      if (primitiveCell.length >= 3 && this.domainMode === "primitive") {
+        group.add(makeThickClosedPolyline(
+          primitiveCell,
+          0.0,
+          0.025 * radius,
+          new THREE.MeshBasicMaterial({
+            color: 0x6f8fd6,
+            transparent: true,
+            opacity: 0.72,
+            side: THREE.DoubleSide,
+            depthTest: true,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+          }),
+          "band-surface-reference-primitive-cell",
+        ));
+      }
+
+      if (reciprocalHex.length >= 3 && this.domainMode === "extended") {
         group.add(makeThickClosedPolyline(
           reciprocalHex,
           0.0,
@@ -3738,7 +3849,7 @@ selectedBandIndex() {
         ));
       }
 
-      if (hex.length >= 3) {
+      if (hex.length >= 3 && this.domainMode !== "primitive") {
         group.add(makeThickClosedPolyline(
           hex,
           0.0,
@@ -3849,25 +3960,27 @@ selectedBandIndex() {
         return sprite;
       };
 
-      group.add(makeSymmetryMarker(symmetryPoints.gamma, 0.012, 0xe6e6e6, "band-surface-reference-symmetry-gamma", 70));
-      for (const [index, point] of symmetryPoints.k.entries()) {
-        group.add(makeSymmetryMarker(point, 0.009, 0xd58a72, `band-surface-reference-symmetry-k-${index}`, 71));
-      }
-      for (const [index, point] of symmetryPoints.m.entries()) {
-        group.add(makeSymmetryMarker(point, 0.008, 0x73c7b0, `band-surface-reference-symmetry-m-${index}`, 72));
-      }
+      if (this.domainMode !== "primitive") {
+        group.add(makeSymmetryMarker(symmetryPoints.gamma, 0.012, 0xe6e6e6, "band-surface-reference-symmetry-gamma", 70));
+        for (const [index, point] of symmetryPoints.k.entries()) {
+          group.add(makeSymmetryMarker(point, 0.009, 0xd58a72, `band-surface-reference-symmetry-k-${index}`, 71));
+        }
+        for (const [index, point] of symmetryPoints.m.entries()) {
+          group.add(makeSymmetryMarker(point, 0.008, 0x73c7b0, `band-surface-reference-symmetry-m-${index}`, 72));
+        }
 
-      const gammaLabel = makeLabelSprite("Γ", "#e6e6e6", "band-surface-reference-symmetry-label-gamma", symmetryPoints.gamma, 0.035, -0.020);
-      if (gammaLabel) group.add(gammaLabel);
+        const gammaLabel = makeLabelSprite("Γ", "#e6e6e6", "band-surface-reference-symmetry-label-gamma", symmetryPoints.gamma, 0.035, -0.020);
+        if (gammaLabel) group.add(gammaLabel);
 
-      if (symmetryPoints.k.length > 0) {
-        const kLabel = makeLabelSprite("K", "#d58a72", "band-surface-reference-symmetry-label-k", symmetryPoints.k[0], 0.030, 0.020);
-        if (kLabel) group.add(kLabel);
-      }
+        if (symmetryPoints.k.length > 0) {
+          const kLabel = makeLabelSprite("K", "#d58a72", "band-surface-reference-symmetry-label-k", symmetryPoints.k[0], 0.030, 0.020);
+          if (kLabel) group.add(kLabel);
+        }
 
-      if (symmetryPoints.m.length > 0) {
-        const mLabel = makeLabelSprite("M", "#73c7b0", "band-surface-reference-symmetry-label-m", symmetryPoints.m[0], 0.030, 0.020);
-        if (mLabel) group.add(mLabel);
+        if (symmetryPoints.m.length > 0) {
+          const mLabel = makeLabelSprite("M", "#73c7b0", "band-surface-reference-symmetry-label-m", symmetryPoints.m[0], 0.030, 0.020);
+          if (mLabel) group.add(mLabel);
+        }
       }
 
       const axes = new THREE.AxesHelper(0.8 * radius);
@@ -3922,7 +4035,7 @@ selectedBandIndex() {
         visibleBands,
         axis,
         value,
-        { useMask: this.maskToHexagon },
+        { useMask: this.domainMode === "bz" },
       );
 
       if (segments.length === 0) {
@@ -4331,9 +4444,9 @@ selectedBandIndex() {
         : `${this.sliceAxis}=${nice(this.sliceValue)}`;
 
       if (this.statusEl) {
-        const maskText = this.maskToHexagon ? "hex mask on" : "hex mask off";
+        const domainText = `domain ${this.domainMode}`;
         const hiddenCount = this.hiddenBands.size;
-        this.statusEl.textContent = `band ${band}; visible ${visibleCount}; hidden ${hiddenCount}; grid ${gridText}; bands ${bandsText}; vertices ${totalVertices}; triangles ${totalTriangles}; energy ${energyText}; energy zero ${nice(this.energyZero)}; energy scale ${nice(this.energyScale)}; slice ${slice}; ${maskText}`;
+        this.statusEl.textContent = `band ${band}; visible ${visibleCount}; hidden ${hiddenCount}; grid ${gridText}; bands ${bandsText}; vertices ${totalVertices}; triangles ${totalTriangles}; energy ${energyText}; energy zero ${nice(this.energyZero)}; energy scale ${nice(this.energyScale)}; slice ${slice}; ${domainText}`;
       }
     }
 
@@ -4979,4 +5092,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, vertexInsideReciprocalLatticeHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeReciprocalLatticeHexagonReferenceData, threeSymmetryPointReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithDomain, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, vertexInsidePrimitiveCell, vertexInsideReciprocalLatticeHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threePrimitiveCellReferenceData, threeHexagonReferenceData, threeReciprocalLatticeHexagonReferenceData, threeSymmetryPointReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

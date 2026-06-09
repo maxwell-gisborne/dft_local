@@ -112,20 +112,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                     HtmlBlock(
                         id="group_resolved_controls",
                         title="Band controls",
-                        html=f"""
-<dft-band-controls>
-  <label>band <input data-dft-band type='number' min='0' max='{resolved.sigma_band.shape[0] - 1}' value='{band}'></label>
-  <label>slice axis
-    <select data-dft-slice-axis>
-      <option value='u'>u</option>
-      <option value='v'>v</option>
-      <option value='energy'>energy</option>
-    </select>
-  </label>
-  <label>slice <input data-dft-slice-value type='range' min='0' max='1' step='0.01' value='0.5'></label>
-  <label>rotation <input data-dft-rotation type='range' min='-3.14159' max='3.14159' step='0.01' value='0'></label>
-</dft-band-controls>
-<dft-kpoint-readout></dft-kpoint-readout>
+                        html=f"""<dft-kpoint-readout></dft-kpoint-readout>
 """,
                     ),
                     WebGLView(

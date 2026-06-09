@@ -167,7 +167,7 @@ test("band surface viewer renders in a real browser", async () => {
     const status = await page.locator("[data-dft-surface-status]").innerText();
     assert.match(status, /band 0/, await debugSurfacePage(page, errors));
     assert.match(status, /vertices 63/);
-    assert.match(status, /hex mask off/);
+    assert.match(status, /domain extended/);
     assert.doesNotMatch(status, /no surface data/);
 
     await page.waitForFunction(() => {
@@ -199,35 +199,29 @@ test("band surface viewer renders in a real browser", async () => {
 
 
 
-test("band surface hex mask toggle changes rendered status", async () => {
-  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-mask-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
-
+test("band surface domain dropdown switches primitive BZ and extended modes", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-domain-mode-"));
   const payload = {
+    kind: "band-surface-preview",
     nu: 3,
     nv: 3,
-    k1: [[-4, 0, 4], [-4, 0, 4], [-4, 0, 4]],
-    k2: [[-4, -4, -4], [0, 0, 0], [4, 4, 4]],
+    k1: [[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+    k2: [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
     energies: [
-      [[0], [1], [0]],
-      [[1], [2], [1]],
-      [[0], [1], [0]],
+      [[0], [1], [2]],
+      [[0], [1], [2]],
+      [[0], [1], [2]],
     ],
+    mask: [[true, true, true], [true, true, true], [true, true, true]],
     bands: [0],
     nbands: 1,
     selected_band: 0,
-    bz_hexagon: [
-      [Math.PI, 0],
-      [Math.PI, Math.PI],
-      [0, Math.PI],
-      [-Math.PI, 0],
-      [-Math.PI, -Math.PI],
-      [0, -Math.PI],
-    ],
+    energy_unit: "eV",
   };
 
-  writeFileSync(join(root, "index.html"), `<!doctype html>
+  try {
+    writeFileSync(join(root, "index.html"), `<!doctype html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -240,62 +234,111 @@ test("band surface hex mask toggle changes rendered status", async () => {
   </script>
 </head>
 <body>
-  <script type="application/json" id="surface-payload">${JSON.stringify(payload).replaceAll("</", "<\/")}</script>
-  <dft-band-surface-viewer data-source="surface-payload"></dft-band-surface-viewer>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(payload).replaceAll("</", "<\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
   <script type="module" src="/dft-local-components.js"></script>
 </body>
 </html>`);
 
-  const server = await serveDirectory(root);
-  const browser = await chromium.launch();
-  const page = await browser.newPage();
-  /** @type {string[]} */
-  const errors = [];
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
 
-  page.on("pageerror", (error) => errors.push(error.message));
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
-  });
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
 
-  try {
-    await page.goto(server.url);
-    await page.waitForSelector("dft-band-surface-viewer .band-surface-viewer-three-only", { timeout: 10000 });
+      await page.locator("[data-dft-domain-mode]").selectOption("primitive");
+      await page.waitForFunction(() => document.querySelector("[data-dft-surface-status]")?.textContent?.includes("domain primitive"));
 
-    await page.waitForFunction(() => {
-      const text = document.querySelector("[data-dft-surface-status]")?.textContent || "";
-      return text.includes("hex mask off") && text.includes("triangles");
-    }, { timeout: 10000 });
+      await page.locator("[data-dft-domain-mode]").selectOption("bz");
+      await page.waitForFunction(() => document.querySelector("[data-dft-surface-status]")?.textContent?.includes("domain bz"));
 
-    const before = await page.locator("[data-dft-surface-status]").innerText();
-    assert.match(before, /hex mask off/, await debugSurfacePage(page, errors));
-
-    await page.locator("[data-dft-mask-to-hexagon]").evaluate((input) => {
-      if (!(input instanceof HTMLInputElement)) {
-        throw new Error("mask toggle is not an input");
-      }
-      input.checked = true;
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    });
-
-    await page.waitForFunction(() => {
-      const viewer = document.querySelector("dft-band-surface-viewer");
-      return viewer?.getAttribute("data-hex-mask") === "on";
-    }, { timeout: 10000 }).catch(async (error) => {
-      const checked = await page.locator("[data-dft-mask-to-hexagon]").isChecked().catch(() => false);
-      const afterNow = await page.locator("[data-dft-surface-status]").innerText().catch(() => "<missing>");
-      throw new Error(`${error.message}; checked=${checked}; before=${before}; after=${afterNow}; ${await debugSurfacePage(page, errors)}`);
-    });
-
-    const after = await page.locator("[data-dft-surface-status]").innerText();
-    assert.match(after, /hex mask on/, await debugSurfacePage(page, errors));
+      await page.locator("[data-dft-domain-mode]").selectOption("extended");
+      await page.waitForFunction(() => document.querySelector("[data-dft-surface-status]")?.textContent?.includes("domain extended"));
+    } finally {
+      await server.close();
+    }
   } finally {
-    await browser.close();
-    await server.close();
+    await browserInstance.close();
   }
 });
 
 
+test("band surface domain dropdown changes rendered status", async () => {
+  const browserInstance = await chromium.launch();
+  const root = mkdtempSync(join(tmpdir(), "dft-local-domain-status-"));
+  const payload = {
+    kind: "band-surface-preview",
+    nu: 3,
+    nv: 3,
+    k1: [[0, 1, 2], [0, 1, 2], [0, 1, 2]],
+    k2: [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
+    energies: [
+      [[0], [1], [2]],
+      [[0], [1], [2]],
+      [[0], [1], [2]],
+    ],
+    mask: [[true, true, true], [true, true, true], [true, true, true]],
+    bands: [0],
+    nbands: 1,
+    selected_band: 0,
+    energy_unit: "eV",
+  };
+
+  try {
+    writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <section id="dft-block-surface" data-dft-block="surface" data-dft-block-kind="json-rendered">
+    <script type="application/json" id="dft-model-surface" data-dft-model="surface">${JSON.stringify(payload).replaceAll("</", "<\/")}</script>
+    <dft-band-surface-viewer data-source="dft-model-surface" data-dft-model="dft-model-surface"></dft-band-surface-viewer>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    const server = await serveDirectory(root);
+    const page = await browserInstance.newPage();
+
+    try {
+      await page.goto(server.url);
+      await page.waitForSelector("dft-band-surface-viewer canvas", { timeout: 10000 });
+
+      const initial = await page.locator("[data-dft-surface-status]").textContent();
+      assert.match(initial ?? "", /domain extended/);
+
+      await page.locator("[data-dft-domain-mode]").selectOption("bz");
+      await page.waitForFunction(() => document.querySelector("[data-dft-surface-status]")?.textContent?.includes("domain bz"));
+
+      const bz = await page.locator("[data-dft-surface-status]").textContent();
+      assert.match(bz ?? "", /domain bz/);
+
+      await page.locator("[data-dft-domain-mode]").selectOption("primitive");
+      await page.waitForFunction(() => document.querySelector("[data-dft-surface-status]")?.textContent?.includes("domain primitive"));
+
+      const primitive = await page.locator("[data-dft-surface-status]").textContent();
+      assert.match(primitive ?? "", /domain primitive/);
+    } finally {
+      await server.close();
+    }
+  } finally {
+    await browserInstance.close();
+  }
+});
 
 test("band surface legend toggles bands", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-multiband-"));

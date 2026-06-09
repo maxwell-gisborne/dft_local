@@ -22,6 +22,7 @@ import {
   bandSurfaceSliceSegments,
   bandSurfaceSliceSegmentsForBands,
   bandSurfaceMeshData,
+  bandSurfaceMeshDataWithDomain,
   bandSurfaceMeshDataWithMask,
   visibleBandIndices,
   bandSurfaceColor,
@@ -31,9 +32,11 @@ import {
   nearestBandSurfaceVertex,
   pointInDisplayPolygon,
   vertexInsideVisibleHexagon,
+  vertexInsidePrimitiveCell,
   vertexInsideReciprocalLatticeHexagon,
   bandBasisToCartesian,
   threeUvGridReferenceData,
+  threePrimitiveCellReferenceData,
   threeReciprocalLatticeHexagonReferenceData,
   threeSymmetryPointReferenceData,
   threeHexagonReferenceData,
@@ -552,11 +555,9 @@ test("band surface viewer reads payload policy", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
   assert.equal(source.includes("this.payload = readJsonPayload("), true);
-  assert.equal(source.includes("bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon)"), true);
+  assert.equal(source.includes("bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode)"), true);
   assert.equal(source.includes("this.requestSurfaceUpdate();"), true);
 });
-
-
 
 test("bandSurfaceVertices extracts selected band samples", () => {
   const payload = {
@@ -913,10 +914,12 @@ test("band surface reciprocal plane, BZ hexagon, reciprocal shell, and symmetry-
   assert.equal(source.includes("bandBasisToCartesian"), true);
   assert.equal(source.includes("threeUvGridReferenceData"), true);
   assert.equal(source.includes("threeHexagonReferenceData"), true);
+  assert.equal(source.includes("threePrimitiveCellReferenceData"), true);
   assert.equal(source.includes("threeReciprocalLatticeHexagonReferenceData"), true);
   assert.equal(source.includes("threeSymmetryPointReferenceData"), true);
   assert.equal(source.includes("band-surface-reference-white-k-plane"), true);
   assert.equal(source.includes("band-surface-reference-bz-hexagon"), true);
+  assert.equal(source.includes("band-surface-reference-primitive-cell"), true);
   assert.equal(source.includes("band-surface-reference-reciprocal-hexagon"), true);
   assert.equal(source.includes("band-surface-reference-symmetry-gamma"), true);
   assert.equal(source.includes("band-surface-reference-symmetry-label-k"), true);
@@ -931,6 +934,25 @@ test("threeHexagonReferenceData provides fallback regular hexagon", () => {
   assert.equal(Math.max(...radii) - Math.min(...radii) < 1e-12, true);
 });
 
+
+
+test("threePrimitiveCellReferenceData draws origin-rooted reciprocal primitive cell", () => {
+  const cell = threePrimitiveCellReferenceData();
+  assert.equal(cell.length, 4);
+
+  const expected = [
+    bandBasisToCartesian(0.0, 0.0),
+    bandBasisToCartesian(2.0 * Math.PI, 0.0),
+    bandBasisToCartesian(2.0 * Math.PI, 2.0 * Math.PI),
+    bandBasisToCartesian(0.0, 2.0 * Math.PI),
+  ];
+
+  for (let i = 0; i < cell.length; i += 1) {
+    assert.ok(Math.abs(cell[i].x - expected[i].x) < 1e-12);
+    assert.equal(cell[i].y, 0.0);
+    assert.ok(Math.abs(cell[i].z - expected[i].y) < 1e-12);
+  }
+});
 
 
 test("threeReciprocalLatticeHexagonReferenceData draws larger nearest-shell reciprocal-lattice hexagon", () => {
@@ -1001,6 +1023,52 @@ test("threeUvGridReferenceData creates u and v grid lines", () => {
 });
 
 
+
+
+test("bandSurfaceMeshDataWithDomain selects primitive, BZ, and extended domains", () => {
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [
+      [0.0, Math.PI],
+      [0.0, Math.PI],
+    ],
+    k2: [
+      [0.0, 0.0],
+      [Math.PI, Math.PI],
+    ],
+    energies: [
+      [[0.0], [1.0]],
+      [[2.0], [3.0]],
+    ],
+    mask: [
+      [true, true],
+      [true, true],
+    ],
+    bands: [0],
+    nbands: 1,
+  };
+
+  const primitive = bandSurfaceMeshDataWithDomain(payload, 0, "primitive");
+  const bz = bandSurfaceMeshDataWithDomain(payload, 0, "bz");
+  const extended = bandSurfaceMeshDataWithDomain(payload, 0, "extended");
+
+  assert.ok(primitive.vertices.length <= extended.vertices.length);
+  assert.ok(bz.vertices.length <= extended.vertices.length);
+  assert.ok(extended.vertices.length > primitive.vertices.length);
+
+  for (const tri of primitive.triangles) {
+    for (const index of tri) {
+      assert.equal(vertexInsidePrimitiveCell(primitive.vertices[index]), true);
+    }
+  }
+
+  for (const tri of bz.triangles) {
+    for (const index of tri) {
+      assert.equal(vertexInsideVisibleHexagon(payload, bz.vertices[index]), true);
+    }
+  }
+});
 
 
 test("bandSurfaceMeshDataWithMask expands unmasked surfaces into the larger reciprocal hexagon", () => {
@@ -1108,19 +1176,17 @@ test("visible hexagon point predicate follows displayed polygon", () => {
 });
 
 
-test("band surface hex mask toggle policy exists", () => {
+test("band surface domain dropdown policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
-  assert.equal(source.includes("data-dft-mask-to-hexagon"), true);
-  assert.equal(source.includes("mask to hexagon"), true);
-  assert.equal(source.includes("this.maskToHexagon"), true);
-  assert.equal(source.includes("this.maskToHexagon = false"), true);
-  assert.equal(source.includes("bandSurfaceMeshDataWithMask(this.payload, band, this.maskToHexagon)"), true);
-  assert.equal(source.includes("hex mask on"), true);
-  assert.equal(source.includes("hex mask off"), true);
+  assert.equal(source.includes("data-dft-domain-mode"), true);
+  assert.equal(source.includes("primitive cell"), true);
+  assert.equal(source.includes("BZ hexagon"), true);
+  assert.equal(source.includes("extended hexagon"), true);
+  assert.equal(source.includes("this.domainMode = \"extended\""), true);
+  assert.equal(source.includes("bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode)"), true);
+  assert.equal(source.includes("domain ${this.domainMode}"), true);
 });
-
-
 
 test("threeHexagonReferenceData fallback hexagon is regular in Cartesian display", () => {
   const points = threeHexagonReferenceData({});
@@ -1204,15 +1270,11 @@ test("band surface legend keeps one band visible policy exists", () => {
 
 
 
-test("band surface no visible bands status keeps mask state", () => {
+test("band surface no visible bands status keeps domain state", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
-  assert.equal(source.includes("no visible bands; ${maskText}"), true);
+  assert.equal(source.includes("no visible bands; domain ${this.domainMode}"), true);
 });
-
-
-
-
 
 test("json-rendered components expose updateModel policy", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
