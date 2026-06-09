@@ -1,6 +1,10 @@
 // @ts-check
 
 /**
+ * @typedef {Window & { dftRefreshModels?: (root?: ParentNode) => void }} DftWindow
+ */
+
+/**
  * @typedef {{x:number, y:number, entity_id?:string|null, label?:string, meta?:Record<string, unknown>}} GraphPoint
  * @typedef {{name:string, kind:"line"|"points"|"line_points", points:GraphPoint[]}} GraphSeries
  * @typedef {{id:string, title:string, x_label:string, y_label:string, series:GraphSeries[]}} GraphPayload
@@ -366,8 +370,56 @@ function onDftSignal(name, listener) {
  * @param {Element} host
  * @returns {JsonPayload | null}
  */
+/**
+ * @param {string | null | undefined} modelId
+ * @returns {JsonPayload | null}
+ */
+function readJsonModelById(modelId) {
+  if (!modelId) return null;
+
+  const source = document.getElementById(modelId);
+  if (!(source instanceof HTMLScriptElement)) return null;
+
+  try {
+    return JSON.parse(source.textContent || "null");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refresh all JSON-rendered DFT components whose model island may have changed.
+ *
+ * Components keep their local view state.  Only their server model changes.
+ *
+ * @param {ParentNode} root
+ */
+function refreshDftModels(root = document) {
+  for (const element of Array.from(root.querySelectorAll("[data-dft-model]"))) {
+    if (!(element instanceof HTMLElement)) continue;
+
+    const modelId = element.dataset.dftModel;
+    const model = readJsonModelById(modelId);
+
+    if (model === null) continue;
+
+    const maybeUpdater = /** @type {{updateModel?: unknown}} */ (element);
+    if (typeof maybeUpdater.updateModel === "function") {
+      maybeUpdater.updateModel(model);
+    }
+  }
+}
+
+if (typeof window !== "undefined") {
+  /** @type {DftWindow} */ (window).dftRefreshModels = refreshDftModels;
+}
+
+/**
+ * @param {Element | null | undefined} host
+ * @returns {JsonPayload | null}
+ */
 function readJsonPayload(host) {
-  const source = host.getAttribute("data-source");
+  const source = host?.getAttribute("data-source");
   if (!source) return null;
 
   const script = document.getElementById(source);
@@ -2218,6 +2270,23 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.requestSurfaceUpdate();
     }
 
+    /**
+     * Replace the server model while preserving the local view model:
+     * camera, hidden bands, selected marker, and hover state.
+     *
+     * @param {JsonPayload} model
+     */
+    updateModel(model) {
+      this.payload = model;
+
+      const available = new Set(allBandIndices(this.payload));
+      for (const band of Array.from(this.hiddenBands)) {
+        if (!available.has(band)) this.hiddenBands.delete(band);
+      }
+
+      this.requestSurfaceUpdate();
+    }
+
     disconnectedCallback() {
       for (const unsubscribe of this.unsubscribers) unsubscribe();
       this.unsubscribers = [];
@@ -2978,7 +3047,22 @@ selectedBandIndex() {
       shell.appendChild(svg);
 
       this.replaceChildren(shell);
+    }    /**
+     * Replace the server model while preserving local view state.
+     *
+     * @param {GraphPayload} model
+     */
+    /**
+     * Replace the server model while preserving local view state.
+     *
+     * @param {GraphPayload} model
+     */
+    updateModel(model) {
+      this.payload = model;
+      this.render();
     }
+
+
   }
 
   class DftKSpacePlot extends HTMLElement {
@@ -3295,4 +3379,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

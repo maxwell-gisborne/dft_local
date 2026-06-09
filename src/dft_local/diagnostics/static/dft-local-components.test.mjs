@@ -8,6 +8,8 @@ import assert from "node:assert/strict";
 import {
   nice,
   readJsonPayload,
+  refreshDftModels,
+  readJsonModelById,
   graphBounds,
   zoomView,
   panView,
@@ -1086,4 +1088,28 @@ test("band surface no visible bands status keeps mask state", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
   assert.equal(source.includes("no visible bands; ${maskText}"), true);
+});
+
+
+
+
+
+test("json-rendered components expose updateModel policy", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function refreshDftModels"), true);
+  assert.equal(source.includes("dftRefreshModels = refreshDftModels"), true);
+  assert.equal(source.includes("updateModel(model)"), true);
+  assert.equal(source.includes("this.requestSurfaceUpdate();"), true);
+});
+
+
+
+test("generic model refresh source policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("function readJsonModelById"), true);
+  assert.equal(source.includes("function refreshDftModels"), true);
+  assert.equal(source.includes("dftRefreshModels = refreshDftModels"), true);
+  assert.equal(source.includes('typeof maybeUpdater.updateModel === "function"'), true);
 });

@@ -402,3 +402,68 @@ test("band surface legend does not allow hiding every band", async () => {
     await server.close();
   }
 });
+
+
+
+test("generic model refresh updates existing custom element", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-model-refresh-"));
+  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
+  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+
+  writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <script type="application/json" id="model-test">{"value": 1}</script>
+  <div id="host" data-dft-model="model-test"></div>
+  <script type="module" src="/dft-local-components.js"></script>
+  <script>
+    window.__receivedModels = [];
+    const host = document.getElementById("host");
+    host.updateModel = (model) => window.__receivedModels.push(model);
+  </script>
+</body>
+</html>`);
+
+  const server = await serveDirectory(root);
+  const browserInstance = await chromium.launch();
+  const page = await browserInstance.newPage();
+
+  try {
+    await page.goto(server.url);
+    await page.waitForFunction(() => typeof /** @type {any} */ (window).dftRefreshModels === "function", { timeout: 10000 });
+
+    await page.evaluate(() => {
+      /** @type {any} */ (window).dftRefreshModels?.(document);
+    });
+
+    await page.waitForFunction(() => /** @type {any} */ (window).__receivedModels?.length === 1, { timeout: 10000 });
+
+    const first = await page.evaluate(() => /** @type {any} */ (window).__receivedModels?.[0]);
+    assert.deepEqual(first, { value: 1 });
+
+    await page.evaluate(() => {
+      const script = document.getElementById("model-test");
+      if (!script) throw new Error("missing model-test script");
+      script.textContent = JSON.stringify({ value: 2 });
+      /** @type {any} */ (window).dftRefreshModels?.(document);
+    });
+
+    await page.waitForFunction(() => /** @type {any} */ (window).__receivedModels?.length === 2, { timeout: 10000 });
+
+    const second = await page.evaluate(() => /** @type {any} */ (window).__receivedModels?.[1]);
+    assert.deepEqual(second, { value: 2 });
+  } finally {
+    await browserInstance.close();
+    await server.close();
+  }
+});
