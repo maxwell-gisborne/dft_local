@@ -501,12 +501,12 @@ def _synthetic_surface_payload(kind: str, *, nu: int, nv: int) -> dict:
         "energy_unit": "synthetic",
         "matching_strategy": "synthetic",
         "bz_hexagon": [
-            [np.pi, 0.0],
-            [np.pi, np.pi],
-            [0.0, np.pi],
-            [-np.pi, 0.0],
-            [-np.pi, -np.pi],
-            [0.0, -np.pi],
+            [4.0 * np.pi / 3.0, 2.0 * np.pi / 3.0],
+            [2.0 * np.pi / 3.0, 4.0 * np.pi / 3.0],
+            [-2.0 * np.pi / 3.0, 2.0 * np.pi / 3.0],
+            [-4.0 * np.pi / 3.0, -2.0 * np.pi / 3.0],
+            [-2.0 * np.pi / 3.0, -4.0 * np.pi / 3.0],
+            [2.0 * np.pi / 3.0, -2.0 * np.pi / 3.0],
         ],
     }
 

@@ -1019,16 +1019,24 @@ def grouped_hungarian_order_from_costs(
 
 
 def bz_hexagon_vertices() -> list[list[float]]:
-    """Return central Brillouin-zone hexagon vertices in raw irrep coordinates."""
+    """Return central graphene Brillouin-zone hexagon vertices in (k1,k2).
+
+    Coordinates are reciprocal-basis phase variables with one reciprocal
+    primitive period equal to 2*pi in each coordinate.  In the display metric
+
+        |k|^2 = k1^2 - k1*k2 + k2^2
+
+    these six vertices are the K/K' corners of the first Brillouin zone.
+    """
 
     p = np.pi
     return [
-        [p, 0.0],
-        [p, p],
-        [0.0, p],
-        [-p, 0.0],
-        [-p, -p],
-        [0.0, -p],
+        [4.0 * p / 3.0, 2.0 * p / 3.0],
+        [2.0 * p / 3.0, 4.0 * p / 3.0],
+        [-2.0 * p / 3.0, 2.0 * p / 3.0],
+        [-4.0 * p / 3.0, -2.0 * p / 3.0],
+        [-2.0 * p / 3.0, -4.0 * p / 3.0],
+        [2.0 * p / 3.0, -2.0 * p / 3.0],
     ]
 
 

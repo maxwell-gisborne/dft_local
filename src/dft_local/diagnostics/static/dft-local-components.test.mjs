@@ -914,6 +914,7 @@ test("band surface reciprocal plane, BZ hexagon, reciprocal shell, and symmetry-
   assert.equal(source.includes("bandBasisToCartesian"), true);
   assert.equal(source.includes("threeUvGridReferenceData"), true);
   assert.equal(source.includes("threeHexagonReferenceData"), true);
+  assert.equal(source.includes("graphene K/K\' corners"), true);
   assert.equal(source.includes("threePrimitiveCellReferenceData"), true);
   assert.equal(source.includes("threeReciprocalLatticeHexagonReferenceData"), true);
   assert.equal(source.includes("threeSymmetryPointReferenceData"), true);
