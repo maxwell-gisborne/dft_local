@@ -1074,6 +1074,13 @@ details.diagnostic-section .diagnostic-paper details.diagnostic-section {
 """
 
 
+DATASTAR_SCRIPT = (
+    "  <script type='module' "
+    "src='https://cdn.jsdelivr.net/gh/starfederation/datastar@main/bundles/datastar.js'>"
+    "</script>\n"
+)
+
+
 THREE_IMPORT_MAP = """  <script type="importmap">
   {
     "imports": {
@@ -1093,6 +1100,7 @@ def render_page(title: str, body: str) -> str:
         f"  <title>{escape(title)}</title>\n"
         f"{ACADEMIC_STYLE}\n"
         f"{THREE_IMPORT_MAP}\n"
+        f"{DATASTAR_SCRIPT}\n"
         "  <script type='module' src='/static/dft-local-components.js'></script>\n"
         "</head>\n"
         "<body>\n"

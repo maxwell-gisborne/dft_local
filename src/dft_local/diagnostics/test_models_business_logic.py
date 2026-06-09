@@ -388,6 +388,9 @@ def test_webgl_view_renders_band_surface_component() -> None:
 
     html = render_result(result)
 
-    assert "id='data-surface'" in html
-    assert "<dft-band-surface-viewer data-source='data-surface'></dft-band-surface-viewer>" in html
+    assert "id='dft-model-surface'" in html
+    assert "data-dft-model='surface'" in html
+    assert "<dft-band-surface-viewer" in html
+    assert "data-source='dft-model-surface'" in html
+    assert "data-dft-model='dft-model-surface'" in html
     assert "\"nbands\": 1" in html

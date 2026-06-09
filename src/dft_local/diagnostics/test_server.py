@@ -915,3 +915,26 @@ def test_table_blocks_are_stateful_html_blocks() -> None:
     html = app.diagnostic_page("transport.boltzmann.calculation.overview", {})
 
     assert "data-dft-block-kind='stateful-html'" in html
+
+
+
+def test_diagnostic_page_includes_datastar_dependency_and_result_outlet() -> None:
+    app = DiagnosticApp()
+    html = app.diagnostic_page("transport.boltzmann.calculation.overview", {})
+
+    assert "datastar" in html.lower()
+    assert "id='diagnostic-result'" in html
+    assert "data-dft-diagnostic-result" in html
+    assert "data-on-submit" in html
+    assert "/d-run/transport.boltzmann.calculation.overview" in html
+
+
+def test_diagnostic_run_stream_returns_datastar_sse_patch() -> None:
+    app = DiagnosticApp()
+    stream = app.diagnostic_run_stream("transport.boltzmann.calculation.overview", {})
+
+    assert "event: datastar-patch-elements" in stream
+    assert "data: selector #diagnostic-result" in stream
+    assert "id='diagnostic-result'" in stream
+    assert "event: datastar-execute-script" in stream
+    assert "dftRefreshModels" in stream

@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, quote
 from wsgiref.simple_server import make_server
 import os
 
@@ -77,6 +77,11 @@ class DiagnosticApp:
                 doc_id = path.removeprefix("/docs").strip("/")
                 body = self.docs_page(doc_id)
                 status = "200 OK"
+            elif path.startswith("/d-run/"):
+                diagnostic_id = path.removeprefix("/d-run/")
+                body = self.diagnostic_run_stream(diagnostic_id, raw_inputs)
+                status = "200 OK"
+                content_type = "text/event-stream; charset=utf-8"
             elif path.startswith("/d/"):
                 diagnostic_id = path.removeprefix("/d/")
                 body = self.diagnostic_page(diagnostic_id, raw_inputs)
@@ -322,61 +327,98 @@ class DiagnosticApp:
 
     def diagnostic_page(self, diagnostic_id: str, raw_inputs: dict[str, str]) -> str:
         spec = self.specs[diagnostic_id]
+        inputs = parse_inputs(spec, raw_inputs)
+        result = spec.compute(self.ctx, inputs)
 
-        try:
-            inputs = parse_inputs(spec, raw_inputs)
-        except InputParseError as exc:
-            return render_page("Input error", f"<h1>Input error</h1><p>{exc}</p>")
+        doc_id = ".".join(diagnostic_id.split(".")[:-1])
+        doc_link = ""
+        if doc_id in self.discover_docs():
+            doc_link = f" · <a href='/docs/{escape(doc_id)}'>docs</a>"
 
         form = self.form(spec, inputs)
+        body = (
+            f"<nav><a href='/'>index</a>{doc_link}</nav>"
+            f"{form}"
+            f"{self.result_outlet(render_result(result))}"
+        )
+        return render_page(spec.title, body)
+
+    def diagnostic_run_stream(self, diagnostic_id: str, raw_inputs: dict[str, str]) -> str:
+        spec = self.specs[diagnostic_id]
+        inputs = parse_inputs(spec, raw_inputs)
         result = spec.compute(self.ctx, inputs)
-        doc_id = ".".join(diagnostic_id.split(".")[:-1])
-        doc_link = f" · <a href='/docs/{doc_id}'>docs</a>" if doc_id in self.discover_docs() else ""
-        body = f"<nav><a href='/'>index</a>{doc_link}</nav>{form}{render_result(result)}"
-        return render_page(result.title, body)
+        html = self.result_outlet(render_result(result))
+        return self.datastar_patch_element("#diagnostic-result", html)
 
     @staticmethod
-    def form(spec, inputs: dict[str, Any]) -> str:
-        if not spec.inputs:
-            return ""
+    def result_outlet(html: str) -> str:
+        return (
+            "<section id='diagnostic-result' data-dft-diagnostic-result>"
+            f"{html}"
+            "</section>"
+        )
 
-        fields = []
-        for inp in spec.inputs:
-            value = inputs.get(inp.name, inp.default)
-            if inp.kind == "bool":
-                checked = " checked" if bool(value) else ""
-                fields.append(
-                    f"<label><input type='checkbox' name='{inp.name}' value='1'{checked}> {inp.label}</label>"
-                )
-            elif inp.kind == "select":
+    @staticmethod
+    def datastar_patch_element(selector: str, html: str) -> str:
+        lines = [
+            "event: datastar-patch-elements",
+            f"data: selector {selector}",
+            "data: mode outer",
+        ]
+        lines.extend(f"data: elements {line}" for line in html.splitlines())
+        lines.append("")
+        lines.append("event: datastar-execute-script")
+        lines.append("data: script window.dftRefreshModels?.(document)")
+        lines.append("")
+        return "\n".join(lines) + "\n"
+
+    @staticmethod
+    def form(spec: DiagnosticSpec, inputs: dict[str, object]) -> str:
+        fields: list[str] = []
+
+        for input_spec in spec.inputs:
+            value = inputs[input_spec.name]
+            label = escape(input_spec.label)
+            name = escape(input_spec.name)
+
+            if input_spec.kind == "select":
                 options = []
-                for option_value, option_label in inp.options:
-                    selected = " selected" if str(option_value) == str(value) else ""
+                for raw_value, raw_label in input_spec.options:
+                    selected = " selected" if raw_value == value else ""
                     options.append(
-                        f"<option value='{option_value}'{selected}>{option_label}</option>"
+                        f"<option value='{escape(str(raw_value))}'{selected}>"
+                        f"{escape(str(raw_label))}"
+                        "</option>"
                     )
-                fields.append(
-                    f"<label>{inp.label}<br><select name='{inp.name}'>"
+
+                control = (
+                    f"<label>{label}<br>"
+                    f"<select name='{name}'>"
                     + "".join(options)
                     + "</select></label>"
                 )
             else:
-                fields.append(
-                    f"<label>{inp.label}<br><input name='{inp.name}' value='{value}'></label>"
+                control = (
+                    f"<label>{label}<br>"
+                    f"<input name='{name}' value='{escape(str(value))}'></label>"
                 )
-            if inp.help:
-                fields.append(f"<small>{inp.help}</small>")
 
-        return "<form method='get'><p>" + "</p><p>".join(fields) + "</p><button>Run</button></form>"
+            if input_spec.help:
+                control += f"<br><small>{escape(input_spec.help)}</small>"
+
+            fields.append(control)
+
+        action = f"/d-run/{quote(spec.id)}"
+        return (
+            f"<form method='get' action='/d/{escape(spec.id)}' "
+            f"data-on-submit=\"@get('{action}', {{contentType: 'form'}})\">"
+            "<p>"
+            + "</p><p>".join(fields)
+            + "</p><button type='submit'>Run</button></form>"
+        )
 
 
 class DiagnosticASGI:
-    """Tiny ASGI wrapper around DiagnosticApp.
-
-    This lets uvicorn provide reload/watchfiles while keeping the diagnostic
-    app itself dependency-light and easy to test.
-    """
-
     def __init__(self, *, ctx: Any = None) -> None:
         self.wsgi = DiagnosticApp(ctx=ctx)
 
