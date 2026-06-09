@@ -1608,14 +1608,71 @@ test("band surface viewer draws cheap slice plane outline in 3D", async () => {
 
       const result = await page.evaluate(() => {
         const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        const guide = viewer.sliceMeshes[0];
         return {
           sliceMeshes: viewer.sliceMeshes.length,
+          childCount: guide?.children?.length ?? 0,
+          hasFill: Boolean(guide?.children?.some((/** @type {any} */ child) => child.name?.includes("fill"))),
+          hasOutline: Boolean(guide?.children?.some((/** @type {any} */ child) => child.name?.includes("outline"))),
+          hasMarker: Boolean(guide?.children?.some((/** @type {any} */ child) => child.name?.includes("center"))),
+          axis: guide?.userData?.dftSliceAxis,
           panel: viewer.querySelector("[data-dft-slice-panel]")?.textContent ?? "",
         };
       });
 
       assert.equal(result.sliceMeshes, 1);
+      assert.ok(result.childCount >= 3);
+      assert.equal(result.hasFill, true);
+      assert.equal(result.hasOutline, true);
+      assert.equal(result.hasMarker, true);
+      assert.equal(result.axis, "u");
       assert.match(result.panel, /segments/);
+
+      await page.locator("[data-dft-view-slice-axis]").selectOption("v");
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "0.5";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      const vGuide = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        const guide = viewer.sliceMeshes[0];
+        return {
+          sliceMeshes: viewer.sliceMeshes.length,
+          childCount: guide?.children?.length ?? 0,
+          axis: guide?.userData?.dftSliceAxis,
+          hasFill: Boolean(guide?.children?.some((/** @type {any} */ child) => child.name?.includes("fill"))),
+        };
+      });
+
+      assert.equal(vGuide.sliceMeshes, 1);
+      assert.ok(vGuide.childCount >= 3);
+      assert.equal(vGuide.axis, "v");
+      assert.equal(vGuide.hasFill, true);
+
+      await page.locator("[data-dft-view-slice-axis]").selectOption("energy");
+      await page.locator("[data-dft-view-slice-value]").evaluate((input) => {
+        if (!(input instanceof HTMLInputElement)) throw new Error("not input");
+        input.value = "12";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+      const energyGuide = await page.evaluate(() => {
+        const viewer = /** @type {any} */ (document.querySelector("dft-band-surface-viewer"));
+        const guide = viewer.sliceMeshes[0];
+        return {
+          sliceMeshes: viewer.sliceMeshes.length,
+          childCount: guide?.children?.length ?? 0,
+          axis: guide?.userData?.dftSliceAxis,
+          hasFill: Boolean(guide?.children?.some((/** @type {any} */ child) => child.name?.includes("fill"))),
+        };
+      });
+
+      assert.equal(energyGuide.sliceMeshes, 1);
+      assert.ok(energyGuide.childCount >= 3);
+      assert.equal(energyGuide.axis, "energy");
+      assert.equal(energyGuide.hasFill, true);
     } finally {
       await server.close();
     }

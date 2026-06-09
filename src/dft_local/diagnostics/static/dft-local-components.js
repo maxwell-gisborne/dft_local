@@ -3852,6 +3852,36 @@ selectedBandIndex() {
       const center12 = corners[1].clone().lerp(corners[2], 0.5);
       const center23 = corners[2].clone().lerp(corners[3], 0.5);
       const center30 = corners[3].clone().lerp(corners[0], 0.5);
+      const center = corners[0].clone().add(corners[1]).add(corners[2]).add(corners[3]).multiplyScalar(0.25);
+
+      const group = new THREE.Group();
+      group.name = `band-surface-slice-plane-guide-${axis}`;
+      group.userData.dftSliceOverlay = true;
+      group.userData.dftSlicePlane = true;
+      group.userData.dftSliceAxis = axis;
+      group.userData.dftSliceValue = value;
+      group.renderOrder = 901;
+
+      // A single translucent quad is cheap and much easier to see than a bare
+      // wire box, especially for u/v planes viewed nearly edge-on.  Dense slice
+      // intersections still live in the panel/SVG path, not in the Three scene.
+      const fillGeometry = new THREE.BufferGeometry();
+      fillGeometry.setFromPoints(corners);
+      fillGeometry.setIndex([0, 1, 2, 0, 2, 3]);
+      const fill = new THREE.Mesh(
+        fillGeometry,
+        new THREE.MeshBasicMaterial({
+          color: 0xff00ff,
+          transparent: true,
+          opacity: 0.14,
+          side: THREE.DoubleSide,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      fill.name = `band-surface-slice-plane-fill-${axis}`;
+      fill.renderOrder = 900;
+      group.add(fill);
 
       const edgePoints = [
         // Border.
@@ -3870,29 +3900,39 @@ selectedBandIndex() {
         corners[1], corners[3],
       ];
 
-      const geometry = new THREE.BufferGeometry();
-      geometry.setFromPoints(edgePoints);
+      const outlineGeometry = new THREE.BufferGeometry();
+      outlineGeometry.setFromPoints(edgePoints);
 
       const outline = new THREE.LineSegments(
-        geometry,
+        outlineGeometry,
         new THREE.LineBasicMaterial({
           color: 0xff00ff,
           transparent: true,
-          opacity: 0.95,
+          opacity: 1.0,
           depthTest: false,
           depthWrite: false,
         }),
       );
-
       outline.name = `band-surface-slice-plane-outline-${axis}`;
-      outline.userData.dftSliceOverlay = true;
-      outline.userData.dftSlicePlane = true;
-      outline.userData.dftSliceAxis = axis;
-      outline.userData.dftSliceValue = value;
-      outline.renderOrder = 901;
+      outline.renderOrder = 902;
+      group.add(outline);
 
-      this.sliceMeshes.push(outline);
-      this.surfaceGroup.add(outline);
+      const markerRadius = 0.018 * Math.max(xmax - xmin, zmax - zmin, ymax - ymin, 1.0);
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(markerRadius, 12, 12),
+        new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      marker.name = `band-surface-slice-plane-center-${axis}`;
+      marker.position.copy(center);
+      marker.renderOrder = 903;
+      group.add(marker);
+
+      this.sliceMeshes.push(group);
+      this.surfaceGroup.add(group);
 
       this.renderThreeOnce();
     }
