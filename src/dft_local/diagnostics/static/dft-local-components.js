@@ -2916,7 +2916,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
             <div class="band-surface-slice-panel" data-dft-slice-panel>slice: none</div>
             <div class="band-surface-slice-plot" data-dft-slice-plot></div>
           </details>
-          <p class="band-surface-help">three.js controls: left drag rotate, wheel zoom, right drag pan.</p>
+          <p class="band-surface-help">three.js controls: left drag rotate, wheel zoom, Shift+wheel dolly zoom, right drag pan.</p>
         </div>
       `;
 
@@ -3206,6 +3206,10 @@ selectedBandIndex() {
 
       renderer.domElement.addEventListener("pointermove", (/** @type {PointerEvent} */ event) => this.handlePointerMove(event));
       renderer.domElement.addEventListener("click", (/** @type {MouseEvent} */ event) => this.handleClick(event));
+      renderer.domElement.addEventListener("wheel", (/** @type {WheelEvent} */ event) => this.handleThreeWheel(event), {
+        passive: false,
+        capture: true,
+      });
 
       this.startThreeLoop();
     }
@@ -3246,6 +3250,61 @@ selectedBandIndex() {
       this.renderer.setSize(width, height, false);
       this.camera.aspect = width / height;
       this.camera.updateProjectionMatrix();
+      this.renderThreeOnce();
+    }
+
+
+    /**
+     * @param {WheelEvent} event
+     */
+    handleThreeWheel(event) {
+      if (!event.shiftKey) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      this.applyDollyZoomFromWheel(event.deltaY);
+    }
+
+    /**
+     * Dolly zoom changes perspective without changing apparent target size.
+     *
+     * Shift+wheel up narrows the field of view and moves the camera away
+     * from the controls target.  This flattens perspective.  Shift+wheel down
+     * widens the field of view and moves the camera closer.
+     *
+     * @param {number} deltaY
+     */
+    applyDollyZoomFromWheel(deltaY) {
+      if (!this.camera || !this.controls || !this.THREE) return;
+
+      const THREE = this.THREE;
+      const camera = this.camera;
+      const target = this.controls.target;
+      const offset = new THREE.Vector3().subVectors(camera.position, target);
+      const distance = Math.max(offset.length(), 1e-9);
+      const direction = offset.clone().normalize();
+
+      const oldFov = Number(camera.fov);
+      if (!Number.isFinite(oldFov) || oldFov <= 0) return;
+
+      const oldHalfFov = THREE.MathUtils.degToRad(oldFov) * 0.5;
+      const apparentTargetHeight = 2.0 * distance * Math.tan(oldHalfFov);
+
+      const steps = Math.max(1, Math.min(8, Math.abs(deltaY) / 80.0));
+      const factor = Math.pow(1.08, steps);
+      const nextFov = deltaY < 0
+        ? oldFov / factor
+        : oldFov * factor;
+
+      camera.fov = Math.max(12.0, Math.min(85.0, nextFov));
+
+      const newHalfFov = THREE.MathUtils.degToRad(camera.fov) * 0.5;
+      const nextDistance = apparentTargetHeight / (2.0 * Math.tan(newHalfFov));
+
+      camera.position.copy(target).add(direction.multiplyScalar(nextDistance));
+      camera.updateProjectionMatrix();
+
+      this.controls.update();
       this.renderThreeOnce();
     }
 

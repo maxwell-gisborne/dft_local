@@ -798,16 +798,23 @@ test("threeBandSurfaceGeometryData builds position and index buffers", () => {
 
 test("band surface threejs orbit controls policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-
-  assert.equal(source.includes("async function loadThreeRuntime"), true);
   assert.equal(source.includes("OrbitControls"), true);
-  assert.equal(source.includes("new THREE.WebGLRenderer"), true);
   assert.equal(source.includes("new OrbitControls(camera, renderer.domElement)"), true);
-  assert.equal(source.includes("data-dft-three-surface"), true);
-  assert.equal(source.includes("three.js controls: left drag rotate, wheel zoom, right drag pan"), true);
+  assert.equal(source.includes("controls.addEventListener(\"change\""), true);
+  assert.equal(source.includes("controls.screenSpacePanning = true"), true);
+  assert.equal(source.includes("controls.update()"), true);
 });
 
-
+test("band surface shift-wheel dolly zoom policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+  assert.equal(source.includes("handleThreeWheel"), true);
+  assert.equal(source.includes("applyDollyZoomFromWheel"), true);
+  assert.equal(source.includes("event.shiftKey"), true);
+  assert.equal(source.includes("camera.fov"), true);
+  assert.equal(source.includes("apparentTargetHeight"), true);
+  assert.equal(source.includes("updateProjectionMatrix"), true);
+  assert.equal(source.includes("Shift+wheel dolly zoom"), true);
+});
 
 test("band surface orbit control interaction policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
