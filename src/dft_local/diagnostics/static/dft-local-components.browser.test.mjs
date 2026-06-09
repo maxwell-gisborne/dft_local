@@ -166,7 +166,7 @@ test("band surface viewer renders in a real browser", async () => {
 
     const status = await page.locator("[data-dft-surface-status]").innerText();
     assert.match(status, /band 0/, await debugSurfacePage(page, errors));
-    assert.match(status, /vertices 9/);
+    assert.match(status, /vertices 63/);
     assert.match(status, /hex mask off/);
     assert.doesNotMatch(status, /no surface data/);
 

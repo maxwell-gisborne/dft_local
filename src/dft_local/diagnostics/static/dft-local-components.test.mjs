@@ -31,9 +31,11 @@ import {
   nearestBandSurfaceVertex,
   pointInDisplayPolygon,
   vertexInsideVisibleHexagon,
+  vertexInsideReciprocalLatticeHexagon,
   bandBasisToCartesian,
   threeUvGridReferenceData,
-  threePrimitiveCellReferenceData,
+  threeReciprocalLatticeHexagonReferenceData,
+  threeSymmetryPointReferenceData,
   threeHexagonReferenceData,
   threeBandSurfaceGeometryData,
   bandSurfaceEnergyDomain,
@@ -899,15 +901,18 @@ test("threeHexagonReferenceData converts bz hexagon to display plane", () => {
 });
 
 
-test("band surface reciprocal plane, BZ hexagon, and primitive cell reference policy exists", () => {
+test("band surface reciprocal plane, BZ hexagon, reciprocal shell, and symmetry-point reference policy exists", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
   assert.equal(source.includes("bandBasisToCartesian"), true);
   assert.equal(source.includes("threeUvGridReferenceData"), true);
   assert.equal(source.includes("threeHexagonReferenceData"), true);
-  assert.equal(source.includes("threePrimitiveCellReferenceData"), true);
+  assert.equal(source.includes("threeReciprocalLatticeHexagonReferenceData"), true);
+  assert.equal(source.includes("threeSymmetryPointReferenceData"), true);
   assert.equal(source.includes("band-surface-reference-white-k-plane"), true);
   assert.equal(source.includes("band-surface-reference-bz-hexagon"), true);
-  assert.equal(source.includes("band-surface-reference-primitive-cell"), true);
+  assert.equal(source.includes("band-surface-reference-reciprocal-hexagon"), true);
+  assert.equal(source.includes("band-surface-reference-symmetry-gamma"), true);
+  assert.equal(source.includes("band-surface-reference-symmetry-label-k"), true);
   assert.equal(source.includes("AxesHelper"), true);
 });
 
@@ -921,21 +926,57 @@ test("threeHexagonReferenceData provides fallback regular hexagon", () => {
 
 
 
-test("threePrimitiveCellReferenceData draws centered reciprocal primitive cell", () => {
-  const cell = threePrimitiveCellReferenceData();
-  assert.equal(cell.length, 4);
+test("threeReciprocalLatticeHexagonReferenceData draws larger nearest-shell reciprocal-lattice hexagon", () => {
+  const hex = threeReciprocalLatticeHexagonReferenceData();
+  assert.equal(hex.length, 6);
 
   const expected = [
-    bandBasisToCartesian(-Math.PI, -Math.PI),
-    bandBasisToCartesian(Math.PI, -Math.PI),
-    bandBasisToCartesian(Math.PI, Math.PI),
-    bandBasisToCartesian(-Math.PI, Math.PI),
+    bandBasisToCartesian(2.0 * Math.PI, 0.0),
+    bandBasisToCartesian(2.0 * Math.PI, 2.0 * Math.PI),
+    bandBasisToCartesian(0.0, 2.0 * Math.PI),
+    bandBasisToCartesian(-2.0 * Math.PI, 0.0),
+    bandBasisToCartesian(-2.0 * Math.PI, -2.0 * Math.PI),
+    bandBasisToCartesian(0.0, -2.0 * Math.PI),
   ];
 
-  for (let i = 0; i < cell.length; i += 1) {
-    assert.ok(Math.abs(cell[i].x - expected[i].x) < 1e-12);
-    assert.equal(cell[i].y, 0.0);
-    assert.ok(Math.abs(cell[i].z - expected[i].y) < 1e-12);
+  for (let i = 0; i < hex.length; i += 1) {
+    assert.ok(Math.abs(hex[i].x - expected[i].x) < 1e-12);
+    assert.equal(hex[i].y, 0.0);
+    assert.ok(Math.abs(hex[i].z - expected[i].y) < 1e-12);
+  }
+
+  const radii = hex.map((p) => Math.hypot(p.x, p.z));
+  const first = radii[0];
+  for (const r of radii) {
+    assert.ok(Math.abs(r - first) < 1e-12);
+  }
+});
+
+
+test("threeSymmetryPointReferenceData returns Gamma, K, and M markers on the BZ", () => {
+  const data = threeSymmetryPointReferenceData({
+    bz_hexagon: [
+      [2, 0],
+      [1, 1],
+      [-1, 1],
+      [-2, 0],
+      [-1, -1],
+      [1, -1],
+    ],
+  });
+
+  assert.equal(data.k.length, 6);
+  assert.equal(data.m.length, 6);
+  assert.equal(data.gamma.x, 0.0);
+  assert.equal(data.gamma.y, 0.0);
+  assert.equal(data.gamma.z, 0.0);
+
+  for (let i = 0; i < data.k.length; i += 1) {
+    const a = data.k[i];
+    const b = data.k[(i + 1) % data.k.length];
+    const m = data.m[i];
+    assert.ok(Math.abs(m.x - 0.5 * (a.x + b.x)) < 1e-12);
+    assert.ok(Math.abs(m.z - 0.5 * (a.z + b.z)) < 1e-12);
   }
 });
 
@@ -953,44 +994,95 @@ test("threeUvGridReferenceData creates u and v grid lines", () => {
 });
 
 
-test("band surface reciprocal reference plane styling policy exists", () => {
-  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
-  assert.equal(source.includes("color: 0xffffff"), true);
-  assert.equal(source.includes("band-surface-reference-white-k-plane"), true);
-  assert.equal(source.includes("makeThickClosedPolyline"), true);
-  assert.equal(source.includes("band-surface-reference-primitive-cell"), true);
-  assert.equal(source.includes("depthTest: false"), true);
-  assert.equal(source.includes("depthWrite: false"), true);
-});
 
-test("bandSurfaceMeshDataWithMask clips triangles against visible hexagon", () => {
+
+test("bandSurfaceMeshDataWithMask expands unmasked surfaces into the larger reciprocal hexagon", () => {
   const payload = {
     nu: 2,
     nv: 2,
-    k1: [[0, 10], [0, 10]],
-    k2: [[0, 0], [1, 1]],
+    k1: [
+      [0.0, Math.PI],
+      [0.0, Math.PI],
+    ],
+    k2: [
+      [0.0, 0.0],
+      [Math.PI, Math.PI],
+    ],
+    energies: [
+      [[0.0], [1.0]],
+      [[2.0], [3.0]],
+    ],
+    mask: [
+      [true, true],
+      [true, true],
+    ],
+    bands: [0],
+    nbands: 1,
+  };
+
+  const masked = bandSurfaceMeshDataWithMask(payload, 0, true);
+  const expanded = bandSurfaceMeshDataWithMask(payload, 0, false);
+
+  assert.ok(expanded.vertices.length > masked.vertices.length);
+  assert.ok(expanded.triangles.length > masked.triangles.length);
+  assert.equal(expanded.vertices.some((v) => v.x < -1e-12), true);
+  assert.equal(expanded.vertices.some((v) => v.y < -1e-12), true);
+
+  for (const tri of expanded.triangles) {
+    for (const index of tri) {
+      assert.equal(vertexInsideReciprocalLatticeHexagon(expanded.vertices[index]), true);
+    }
+  }
+});
+
+test("band surface reciprocal reference plane styling policy exists", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+  assert.equal(source.includes("color: 0xd8dde3"), true);
+  assert.equal(source.includes("band-surface-reference-white-k-plane"), true);
+  assert.equal(source.includes("makeThickClosedPolyline"), true);
+  assert.equal(source.includes("band-surface-reference-reciprocal-hexagon"), true);
+  assert.equal(source.includes("painted flat on the y=0 k-plane"), true);
+  assert.equal(source.includes("polygonOffset: true"), true);
+  assert.equal(source.includes("band surface dark charcoal scene background"), true);
+  assert.equal(source.includes("band-surface-reference-symmetry-label-gamma"), true);
+  assert.equal(source.includes("depthWrite: false"), true);
+});
+
+test("bandSurfaceMeshDataWithMask clips masked triangles against visible BZ hexagon", () => {
+  const payload = {
+    nu: 2,
+    nv: 2,
+    k1: [[0, 4], [0, 4]],
+    k2: [[0, 0], [4, 4]],
     energies: [
       [[0], [1]],
       [[2], [3]],
     ],
-    bz_hexagon: [
-      [2, 0],
-      [1, 1],
-      [-1, 1],
-      [-2, 0],
-      [-1, -1],
-      [1, -1],
-    ],
+    mask: [[true, true], [true, true]],
+    bands: [0],
+    nbands: 1,
   };
 
-  const unmasked = bandSurfaceMeshDataWithMask(payload, 0, false);
+  const expanded = bandSurfaceMeshDataWithMask(payload, 0, false);
   const masked = bandSurfaceMeshDataWithMask(payload, 0, true);
 
-  assert.equal(unmasked.vertices.length, 4);
-  assert.equal(unmasked.triangles.length, 2);
-  assert.equal(masked.triangles.length, 0);
-});
+  // Unmasked now means periodically expanded into the larger reciprocal
+  // lattice shell, not the old single raw cell.
+  assert.ok(expanded.vertices.length > 4);
+  assert.ok(expanded.triangles.length > 2);
 
+  // Masked still means central BZ clipping.
+  assert.ok(masked.vertices.length <= 4);
+  assert.ok(masked.triangles.length <= 2);
+  assert.ok(masked.vertices.length < expanded.vertices.length);
+  assert.ok(masked.triangles.length < expanded.triangles.length);
+
+  for (const tri of masked.triangles) {
+    for (const index of tri) {
+      assert.equal(vertexInsideVisibleHexagon(payload, masked.vertices[index]), true);
+    }
+  }
+});
 
 test("visible hexagon point predicate follows displayed polygon", () => {
   const polygon = threeHexagonReferenceData({

@@ -211,25 +211,69 @@ function threeHexagonReferenceData(payload) {
 
 
 /**
- * Centered reciprocal primitive cell in (k1,k2) coordinates.
+ * Larger reciprocal-lattice hexagon in (k1,k2) coordinates.
  *
- * This is the parallelogram -pi <= k1 <= pi, -pi <= k2 <= pi,
- * projected into the Cartesian display plane.  It is distinct from the
- * central Brillouin-zone hexagon.
+ * This is the hexagon through the six nearest reciprocal-lattice points
+ *
+ *   b1, b1+b2, b2, -b1, -(b1+b2), -b2
+ *
+ * where, in the dimensionless reciprocal-basis coordinates used by the
+ * payload,
+ *
+ *   b1 = (2*pi, 0)
+ *   b2 = (0, 2*pi)
+ *
+ * This is not the Brillouin-zone hexagon.  It is the larger hexagon through
+ * the nearest reciprocal lattice points around the origin.  The BZ hexagon is
+ * the Voronoi cell whose faces bisect the lines from 0 to these points.
  *
  * @returns {Array<{x:number, y:number, z:number}>}
  */
-function threePrimitiveCellReferenceData() {
+function threeReciprocalLatticeHexagonReferenceData() {
   return [
-    [-Math.PI, -Math.PI],
-    [Math.PI, -Math.PI],
-    [Math.PI, Math.PI],
-    [-Math.PI, Math.PI],
+    [2.0 * Math.PI, 0.0],
+    [2.0 * Math.PI, 2.0 * Math.PI],
+    [0.0, 2.0 * Math.PI],
+    [-2.0 * Math.PI, 0.0],
+    [-2.0 * Math.PI, -2.0 * Math.PI],
+    [0.0, -2.0 * Math.PI],
   ].map(([k1, k2]) => {
     const p = bandBasisToCartesian(k1, k2);
     return { x: p.x, y: 0.0, z: p.y };
   });
 }
+
+/**
+ * Returns representative symmetry-point markers on the central Brillouin zone.
+ *
+ * Gamma is at the origin, K points are the BZ vertices, and M points are the
+ * midpoints of the BZ edges.
+ *
+ * @param {JsonPayload | null} payload
+ * @returns {{gamma:{x:number, y:number, z:number}, k:Array<{x:number, y:number, z:number}>, m:Array<{x:number, y:number, z:number}>}}
+ */
+function threeSymmetryPointReferenceData(payload) {
+  const k = threeHexagonReferenceData(payload);
+  /** @type {Array<{x:number, y:number, z:number}>} */
+  const m = [];
+
+  for (let i = 0; i < k.length; i += 1) {
+    const a = k[i];
+    const b = k[(i + 1) % k.length];
+    m.push({
+      x: 0.5 * (a.x + b.x),
+      y: 0.0,
+      z: 0.5 * (a.z + b.z),
+    });
+  }
+
+  return {
+    gamma: { x: 0.0, y: 0.0, z: 0.0 },
+    k,
+    m,
+  };
+}
+
 
 
 /**
@@ -279,6 +323,17 @@ function pointInDisplayPolygon(point, polygon) {
  */
 function vertexInsideVisibleHexagon(payload, vertex) {
   const polygon = threeHexagonReferenceData(payload);
+  const p = bandBasisToCartesian(vertex.x, vertex.y);
+  return pointInDisplayPolygon({ x: p.x, z: p.y }, polygon);
+}
+
+
+/**
+ * @param {{x:number, y:number}} vertex
+ * @returns {boolean}
+ */
+function vertexInsideReciprocalLatticeHexagon(vertex) {
+  const polygon = threeReciprocalLatticeHexagonReferenceData();
   const p = bandBasisToCartesian(vertex.x, vertex.y);
   return pointInDisplayPolygon({ x: p.x, z: p.y }, polygon);
 }
@@ -1376,65 +1431,76 @@ function visibleBandIndices(payload, hiddenBands) {
 function bandSurfaceMeshDataWithMask(payload, band, useMask) {
   const rawVertices = bandSurfaceVertices(payload, band);
   const rawTriangles = bandSurfaceTriangles(payload, false);
+  const summary = bandSurfaceSummary(payload, band);
 
-  if (!useMask) {
-    const summary = bandSurfaceSummary(payload, band);
-    return { vertices: rawVertices, triangles: rawTriangles, summary };
+  if (rawVertices.length === 0 || rawTriangles.length === 0) {
+    return { vertices: rawVertices, triangles: [], summary };
   }
 
-  /** @type {Map<number, number>} */
-  const indexMap = new Map();
-  /** @type {Array<{x:number, y:number, z:number, i:number, j:number, band:number}>} */
-  const vertices = [];
+  if (!useMask) {
+    const twopi = 2.0 * Math.PI;
+
+    // One central copy plus the six nearest reciprocal-lattice neighbours.
+    const shifts = [
+      [0.0, 0.0],
+      [twopi, 0.0],
+      [twopi, twopi],
+      [0.0, twopi],
+      [-twopi, 0.0],
+      [-twopi, -twopi],
+      [0.0, -twopi],
+    ];
+
+    /** @type {Array<{x:number, y:number, z:number, i:number, j:number, band:number}>} */
+    const vertices = [];
+    /** @type {Array<[number, number, number]>} */
+    const triangles = [];
+
+    for (const [du, dv] of shifts) {
+      const baseIndex = vertices.length;
+
+      for (const vertex of rawVertices) {
+        vertices.push({
+          ...vertex,
+          x: vertex.x + du,
+          y: vertex.y + dv,
+        });
+      }
+
+      for (const tri of rawTriangles) {
+        const aIndex = baseIndex + tri[0];
+        const bIndex = baseIndex + tri[1];
+        const cIndex = baseIndex + tri[2];
+
+        const triVertices = [
+          vertices[aIndex],
+          vertices[bIndex],
+          vertices[cIndex],
+        ];
+
+        if (triVertices.some((vertex) => !vertex || !vertexInsideReciprocalLatticeHexagon(vertex))) {
+          continue;
+        }
+
+        triangles.push([aIndex, bIndex, cIndex]);
+      }
+    }
+
+    return { vertices, triangles, summary };
+  }
+
   /** @type {Array<[number, number, number]>} */
   const triangles = [];
 
   for (const tri of rawTriangles) {
-    const triVertices = tri.map((rawIndex) => rawVertices[rawIndex]);
-
-    if (
-      triVertices.length !== 3
-      || triVertices.some((vertex) => !vertex || !vertexInsideVisibleHexagon(payload, vertex))
-    ) {
+    const triVertices = tri.map((index) => rawVertices[index]);
+    if (triVertices.some((vertex) => !vertex || !vertexInsideVisibleHexagon(payload, vertex))) {
       continue;
     }
-
-    /** @type {number[]} */
-    const remapped = [];
-
-    for (const rawIndex of tri) {
-      let mapped = indexMap.get(rawIndex);
-
-      if (mapped === undefined) {
-        const vertex = rawVertices[rawIndex];
-        if (!vertex) break;
-
-        mapped = vertices.length;
-        indexMap.set(rawIndex, mapped);
-        vertices.push(vertex);
-      }
-
-      remapped.push(mapped);
-    }
-
-    if (remapped.length === 3) {
-      triangles.push(/** @type {[number, number, number]} */ ([remapped[0], remapped[1], remapped[2]]));
-    }
+    triangles.push(tri);
   }
 
-  if (vertices.length === 0) {
-    return { vertices, triangles, summary: { count: 0, zmin: null, zmax: null } };
-  }
-
-  let zmin = Infinity;
-  let zmax = -Infinity;
-
-  for (const vertex of vertices) {
-    zmin = Math.min(zmin, vertex.z);
-    zmax = Math.max(zmax, vertex.z);
-  }
-
-  return { vertices, triangles, summary: { count: vertices.length, zmin, zmax } };
+  return { vertices: rawVertices, triangles, summary };
 }
 
 
@@ -3090,6 +3156,8 @@ selectedBandIndex() {
       this.threeHost.replaceChildren(renderer.domElement);
 
       const scene = new THREE.Scene();
+      // band surface dark charcoal scene background
+      scene.background = new THREE.Color(0x15171b);
       const camera = new THREE.PerspectiveCamera(45, width / height, 0.001, 100000);
       const controls = new OrbitControls(camera, renderer.domElement);
 
@@ -3413,7 +3481,7 @@ selectedBandIndex() {
           color,
           side: THREE.DoubleSide,
           transparent: true,
-          opacity: drawable.length === 1 ? 0.96 : 0.78,
+          opacity: drawable.length === 1 ? 1.0 : 0.96,
           roughness: 0.72,
           metalness: 0.0,
         });
@@ -3422,7 +3490,7 @@ selectedBandIndex() {
           color,
           wireframe: true,
           transparent: true,
-          opacity: drawable.length === 1 ? 0.10 : 0.14,
+          opacity: drawable.length === 1 ? 0.035 : 0.045,
         });
 
         const surface = new THREE.Mesh(geometry, material);
@@ -3476,7 +3544,13 @@ selectedBandIndex() {
       group.name = "band-surface-reference-group";
 
       const hex = threeHexagonReferenceData(this.payload);
+      const reciprocalHex = threeReciprocalLatticeHexagonReferenceData();
+      const symmetryPoints = threeSymmetryPointReferenceData(this.payload);
 
+      // All reciprocal reference geometry is painted flat on the y=0 k-plane.
+      // Do not use vertical y-offsets to avoid z-fighting: they make the
+      // BZ/primitive-cell guides look like floating 3D objects.  Instead,
+      // keep depth disabled and use renderOrder.
       /**
        * @param {Array<{x:number, y:number, z:number}>} points
        * @param {number} yOffset
@@ -3515,7 +3589,7 @@ selectedBandIndex() {
         geom.setIndex(indices);
         const mesh = new THREE.Mesh(geom, material);
         mesh.name = name;
-        mesh.renderOrder = 50;
+        mesh.renderOrder = name.includes("bz-hexagon") ? 60 : 55;
         return mesh;
       };
 
@@ -3543,21 +3617,24 @@ selectedBandIndex() {
         geom.setIndex(indices);
         const mesh = new THREE.Mesh(geom, material);
         mesh.name = name;
-        mesh.renderOrder = 10;
+        mesh.renderOrder = 40;
         return mesh;
       };
 
-      if (hex.length >= 3) {
+      if (reciprocalHex.length >= 3) {
         group.add(makeFilledPolygon(
-          hex,
-          -0.018 * radius,
+          reciprocalHex,
+          0.0,
           new THREE.MeshBasicMaterial({
-            color: 0xffffff,
+            color: 0xd8dde3,
             transparent: true,
-            opacity: 0.92,
+            opacity: 0.13,
             side: THREE.DoubleSide,
-            depthTest: false,
+            depthTest: true,
             depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: 2,
+            polygonOffsetUnits: 2,
           }),
           "band-surface-reference-white-k-plane",
         ));
@@ -3565,73 +3642,173 @@ selectedBandIndex() {
 
       const uvGridLines = threeUvGridReferenceData(Math.PI, 8);
       const uvGridMaterial = new THREE.LineBasicMaterial({
-        color: 0x7b838a,
+        color: 0x8f969e,
         transparent: true,
-        opacity: 0.55,
-        depthTest: false,
+        opacity: 0.26,
+        depthTest: true,
       });
 
       for (const line of uvGridLines) {
         const lineGeom = new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(line[0].x, 0.006 * radius, line[0].z),
-          new THREE.Vector3(line[1].x, 0.006 * radius, line[1].z),
+          new THREE.Vector3(line[0].x, 0.0, line[0].z),
+          new THREE.Vector3(line[1].x, 0.0, line[1].z),
         ]);
         const gridLine = new THREE.Line(lineGeom, uvGridMaterial);
         gridLine.name = "band-surface-reference-uv-grid";
+        gridLine.renderOrder = 45;
         group.add(gridLine);
       }
 
-      const primitiveCell = threePrimitiveCellReferenceData();
-      if (primitiveCell.length >= 3) {
+      if (reciprocalHex.length >= 3) {
         group.add(makeThickClosedPolyline(
-          primitiveCell,
-          0.030 * radius,
+          reciprocalHex,
+          0.0,
           0.025 * radius,
           new THREE.MeshBasicMaterial({
-            color: 0x004cff,
+            color: 0x6f8fd6,
             transparent: true,
-            opacity: 1.0,
+            opacity: 0.55,
             side: THREE.DoubleSide,
-            depthTest: false,
+            depthTest: true,
             depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
           }),
-          "band-surface-reference-primitive-cell",
+          "band-surface-reference-reciprocal-hexagon",
         ));
       }
 
       if (hex.length >= 3) {
         group.add(makeThickClosedPolyline(
           hex,
-          0.050 * radius,
+          0.0,
           0.034 * radius,
           new THREE.MeshBasicMaterial({
-            color: 0x000000,
+            color: 0x2b3036,
             transparent: true,
-            opacity: 1.0,
+            opacity: 0.78,
             side: THREE.DoubleSide,
-            depthTest: false,
+            depthTest: true,
             depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -2,
+            polygonOffsetUnits: -2,
           }),
           "band-surface-reference-bz-hexagon",
         ));
 
         const spokeMaterial = new THREE.LineBasicMaterial({
-          color: 0x343a40,
+          color: 0x8b9299,
           transparent: true,
-          opacity: 0.48,
-          depthTest: false,
+          opacity: 0.18,
+          depthTest: true,
         });
 
         // radial spokes make the hexagon visibly non-square
         for (const p of hex) {
           const spoke = new THREE.BufferGeometry().setFromPoints([
-            new THREE.Vector3(0.0, 0.046 * radius, 0.0),
-            new THREE.Vector3(p.x, 0.046 * radius, p.z),
+            new THREE.Vector3(0.0, 0.0, 0.0),
+            new THREE.Vector3(p.x, 0.0, p.z),
           ]);
           const spokeLine = new THREE.Line(spoke, spokeMaterial);
           spokeLine.name = "band-surface-reference-bz-spoke";
+          spokeLine.renderOrder = 50;
           group.add(spokeLine);
         }
+      }
+
+      /**
+       * @param {{x:number, y:number, z:number}} point
+       * @param {number} radiusScale
+       * @param {number} color
+       * @param {string} name
+       * @param {number} renderOrder
+       * @returns {any}
+       */
+      const makeSymmetryMarker = (point, radiusScale, color, name, renderOrder) => {
+        const marker = new THREE.Mesh(
+          new THREE.SphereGeometry(radiusScale * radius, 14, 14),
+          new THREE.MeshBasicMaterial({
+            color,
+            transparent: true,
+            opacity: 0.95,
+            depthTest: true,
+            depthWrite: false,
+            polygonOffset: true,
+            polygonOffsetFactor: -3,
+            polygonOffsetUnits: -3,
+          }),
+        );
+        marker.name = name;
+        marker.position.set(point.x, 0.0, point.z);
+        marker.renderOrder = renderOrder;
+        return marker;
+      };
+
+      /**
+       * @param {string} text
+       * @param {string} color
+       * @param {string} name
+       * @param {{x:number, y:number, z:number}} point
+       * @param {number} xOffset
+       * @param {number} zOffset
+       * @returns {any | null}
+       */
+      const makeLabelSprite = (text, color, name, point, xOffset, zOffset) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 128;
+        canvas.height = 64;
+        const ctx2d = canvas.getContext("2d");
+        if (!ctx2d) return null;
+
+        ctx2d.clearRect(0, 0, canvas.width, canvas.height);
+        ctx2d.fillStyle = "rgba(255,255,255,0.00)";
+        ctx2d.fillRect(0, 0, canvas.width, canvas.height);
+        ctx2d.strokeStyle = "rgba(0,0,0,0.00)";
+        ctx2d.lineWidth = 2;
+        ctx2d.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+        ctx2d.fillStyle = color;
+        ctx2d.font = "600 32px sans-serif";
+        ctx2d.textAlign = "center";
+        ctx2d.textBaseline = "middle";
+        ctx2d.fillText(text, canvas.width / 2, canvas.height / 2);
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.needsUpdate = true;
+
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: texture,
+          transparent: true,
+          depthTest: false,
+          depthWrite: false,
+        }));
+        sprite.name = name;
+        sprite.position.set(point.x + xOffset * radius, 0.0, point.z + zOffset * radius);
+        sprite.scale.set(0.075 * radius, 0.038 * radius, 1.0);
+        sprite.renderOrder = 80;
+        return sprite;
+      };
+
+      group.add(makeSymmetryMarker(symmetryPoints.gamma, 0.012, 0xe6e6e6, "band-surface-reference-symmetry-gamma", 70));
+      for (const [index, point] of symmetryPoints.k.entries()) {
+        group.add(makeSymmetryMarker(point, 0.009, 0xd58a72, `band-surface-reference-symmetry-k-${index}`, 71));
+      }
+      for (const [index, point] of symmetryPoints.m.entries()) {
+        group.add(makeSymmetryMarker(point, 0.008, 0x73c7b0, `band-surface-reference-symmetry-m-${index}`, 72));
+      }
+
+      const gammaLabel = makeLabelSprite("Γ", "#e6e6e6", "band-surface-reference-symmetry-label-gamma", symmetryPoints.gamma, 0.035, -0.020);
+      if (gammaLabel) group.add(gammaLabel);
+
+      if (symmetryPoints.k.length > 0) {
+        const kLabel = makeLabelSprite("K", "#d58a72", "band-surface-reference-symmetry-label-k", symmetryPoints.k[0], 0.030, 0.020);
+        if (kLabel) group.add(kLabel);
+      }
+
+      if (symmetryPoints.m.length > 0) {
+        const mLabel = makeLabelSprite("M", "#73c7b0", "band-surface-reference-symmetry-label-m", symmetryPoints.m[0], 0.030, 0.020);
+        if (mLabel) group.add(mLabel);
       }
 
       const axes = new THREE.AxesHelper(0.8 * radius);
@@ -4743,4 +4920,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threePrimitiveCellReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, vertexInsideReciprocalLatticeHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeReciprocalLatticeHexagonReferenceData, threeSymmetryPointReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
