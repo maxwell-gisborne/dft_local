@@ -410,8 +410,114 @@ function refreshDftModels(root = document) {
   }
 }
 
+
+/**
+ * @typedef {{
+ *   selectedRowIds:Set<string>,
+ *   hoveredRowId:string | null,
+ *   scrollPositions:Map<string, {left:number, top:number}>
+ * }} DftTableViewState
+ */
+
+/**
+ * @param {ParentNode} root
+ * @returns {DftTableViewState}
+ */
+function captureDftTableState(root = document) {
+  /** @type {Set<string>} */
+  const selectedRowIds = new Set();
+  /** @type {string | null} */
+  let hoveredRowId = null;
+  /** @type {Map<string, {left:number, top:number}>} */
+  const scrollPositions = new Map();
+
+  for (const row of Array.from(root.querySelectorAll("[data-dft-row-id]"))) {
+    if (!(row instanceof HTMLElement)) continue;
+
+    const rowId = row.dataset.dftRowId;
+    if (!rowId) continue;
+
+    if (row.matches("[data-selected='1'], .selected, .is-selected")) {
+      selectedRowIds.add(rowId);
+    }
+
+    if (row.matches("[data-hovered='1'], .hover, .is-hovered")) {
+      hoveredRowId = rowId;
+    }
+  }
+
+  for (const table of Array.from(root.querySelectorAll("[data-dft-table]"))) {
+    if (!(table instanceof HTMLElement)) continue;
+
+    const tableId = table.dataset.dftTable;
+    if (!tableId) continue;
+
+    const scroller = table.closest(".table-breakout");
+    if (scroller instanceof HTMLElement) {
+      scrollPositions.set(tableId, {
+        left: scroller.scrollLeft,
+        top: scroller.scrollTop,
+      });
+    }
+  }
+
+  return { selectedRowIds, hoveredRowId, scrollPositions };
+}
+
+/**
+ * @param {DftTableViewState | undefined | null} state
+ * @param {ParentNode} root
+ */
+function restoreDftTableState(state, root = document) {
+  if (!state) return;
+
+  for (const row of Array.from(root.querySelectorAll("[data-dft-row-id]"))) {
+    if (!(row instanceof HTMLElement)) continue;
+
+    const rowId = row.dataset.dftRowId;
+    if (!rowId) continue;
+
+    const selected = state.selectedRowIds.has(rowId);
+    const hovered = state.hoveredRowId === rowId;
+
+    row.dataset.selected = selected ? "1" : "0";
+    row.classList.toggle("is-selected", selected);
+    row.dataset.hovered = hovered ? "1" : "0";
+    row.classList.toggle("is-hovered", hovered);
+  }
+
+  for (const table of Array.from(root.querySelectorAll("[data-dft-table]"))) {
+    if (!(table instanceof HTMLElement)) continue;
+
+    const tableId = table.dataset.dftTable;
+    if (!tableId) continue;
+
+    const position = state.scrollPositions.get(tableId);
+    if (!position) continue;
+
+    const scroller = table.closest(".table-breakout");
+    if (scroller instanceof HTMLElement) {
+      scroller.scrollLeft = position.left;
+      scroller.scrollTop = position.top;
+    }
+  }
+}
+
+/**
+ * @param {() => void} replace
+ * @param {ParentNode} root
+ */
+function preserveDftTableState(replace, root = document) {
+  const state = captureDftTableState(root);
+  replace();
+  restoreDftTableState(state, root);
+}
+
 if (typeof window !== "undefined") {
   /** @type {DftWindow} */ (window).dftRefreshModels = refreshDftModels;
+  /** @type {any} */ (window).captureDftTableState = captureDftTableState;
+  /** @type {any} */ (window).restoreDftTableState = restoreDftTableState;
+  /** @type {any} */ (window).preserveDftTableState = preserveDftTableState;
 }
 
 /**
@@ -3379,4 +3485,4 @@ selectedBandIndex() {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceMeshData, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threeHexagonReferenceData, threeBandSurfaceGeometryData, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };

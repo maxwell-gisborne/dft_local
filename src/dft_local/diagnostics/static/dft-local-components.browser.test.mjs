@@ -555,3 +555,78 @@ test("datastar-style run patches model island without replacing viewer", async (
     await server.close();
   }
 });
+
+
+
+test("stateful table patch preserves selected row identity", async () => {
+  const root = mkdtempSync(join(tmpdir(), "dft-local-browser-table-patch-"));
+  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
+  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+
+  writeFileSync(join(root, "index.html"), `<!doctype html>
+<html>
+<body>
+  <section id="dft-block-events" data-dft-block="events" data-dft-block-kind="stateful-html">
+    <div class="table-breakout" style="width:200px; height:40px; overflow:auto">
+      <table data-dft-table="events" data-dft-selectable-table>
+        <tbody id="events-body">
+          <tr data-dft-row-id="events:row:1" data-selected="1" class="is-selected"><td>old one</td></tr>
+          <tr data-dft-row-id="events:row:2"><td>old two</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+  <script type="module" src="/dft-local-components.js"></script>
+</body>
+</html>`);
+
+  const server = await serveDirectory(root);
+  const browserInstance = await chromium.launch();
+  const page = await browserInstance.newPage();
+
+  try {
+    await page.goto(server.url);
+    await page.waitForFunction(() => typeof /** @type {any} */ (window).captureDftTableState === "function", { timeout: 10000 }).catch(async (error) => {
+      const keys = await page.evaluate(() => Object.keys(window).filter((key) => key.includes("Dft") || key.includes("dft")));
+      throw new Error(`${error.message}; dft-like window keys=${JSON.stringify(keys)}`);
+    });
+
+    const selectedAfterPatch = await page.evaluate(() => {
+      const state = /** @type {any} */ (window).captureDftTableState(document);
+
+      const block = document.getElementById("dft-block-events");
+      if (!block) throw new Error("missing table block");
+
+      block.innerHTML = `
+        <div class="table-breakout" style="width:200px; height:40px; overflow:auto">
+          <table data-dft-table="events" data-dft-selectable-table>
+            <tbody id="events-body">
+              <tr data-dft-row-id="events:row:1"><td>new one</td></tr>
+              <tr data-dft-row-id="events:row:3"><td>new three</td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+
+      /** @type {any} */ (window).restoreDftTableState(state, document);
+
+      const kept = document.querySelector("[data-dft-row-id='events:row:1']");
+      const gone = document.querySelector("[data-dft-row-id='events:row:2']");
+
+      return {
+        keptSelected: kept?.classList.contains("is-selected") ?? false,
+        keptData: kept?.getAttribute("data-selected") ?? "",
+        removedMissing: gone === null,
+      };
+    });
+
+    assert.deepEqual(selectedAfterPatch, {
+      keptSelected: true,
+      keptData: "1",
+      removedMissing: true,
+    });
+  } finally {
+    await browserInstance.close();
+    await server.close();
+  }
+});
