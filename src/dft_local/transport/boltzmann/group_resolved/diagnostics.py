@@ -75,6 +75,24 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     velocity_unit = calc.unit_context.unit_for_dimension(VELOCITY)
     velocity_unit_symbol = velocity_unit.symbol
 
+    # Finite-difference velocity of the displayed energy-ordered sheets.
+    # This intentionally differs from calc.velocities, which uses the
+    # generalized Hellmann-Feynman symbol derivative.  The finite-difference
+    # version is useful for reproducing diagnostics that differentiate the
+    # displayed band surface itself.
+    dk1 = float(k1_grid[1, 0] - k1_grid[0, 0]) if nu > 1 else 1.0
+    dk2 = float(k2_grid[0, 1] - k2_grid[0, 0]) if nv > 1 else 1.0
+    fd_dE_dk1, fd_dE_dk2 = np.gradient(
+        energy_grid,
+        dk1,
+        dk2,
+        axis=(0, 1),
+        edge_order=2 if min(nu, nv) >= 3 else 1,
+    )
+    fd_vx_grid = fd_dE_dk1 / calc.unit_context.hbar()
+    fd_vy_grid = fd_dE_dk2 / calc.unit_context.hbar()
+    fd_speed_grid = np.sqrt(fd_vx_grid * fd_vx_grid + fd_vy_grid * fd_vy_grid)
+
     common_surface_payload = {
         "kind": "band-surface-preview",
         "nu": nu,
@@ -120,6 +138,22 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         "selected_field": "speed",
     }
 
+    finite_difference_velocity_surface_payload = {
+        **common_surface_payload,
+        "energies": energy_grid.tolist(),
+        "fields": [
+            {"id": "vx", "label": "FD velocity x", "unit": velocity_unit_symbol, "signed": True},
+            {"id": "vy", "label": "FD velocity y", "unit": velocity_unit_symbol, "signed": True},
+            {"id": "speed", "label": "FD speed", "unit": velocity_unit_symbol, "signed": False},
+        ],
+        "field_values": {
+            "vx": fd_vx_grid.tolist(),
+            "vy": fd_vy_grid.tolist(),
+            "speed": fd_speed_grid.tolist(),
+        },
+        "selected_field": "speed",
+    }
+
     def velocity_quantity(value: float, name: str) -> DisplayQuantity:
         return DisplayQuantity(
             value=float(value),
@@ -140,6 +174,22 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             velocity_quantity(np.min(speed_grid[:, :, n]), "min speed"),
             velocity_quantity(np.mean(speed_grid[:, :, n]), "mean speed"),
             velocity_quantity(np.max(speed_grid[:, :, n]), "max speed"),
+        ))
+        for n in range(nbands)
+    )
+
+    finite_difference_velocity_rows = tuple(
+        TableRow((
+            n,
+            velocity_quantity(np.min(fd_vx_grid[:, :, n]), "min fd vx"),
+            velocity_quantity(np.mean(fd_vx_grid[:, :, n]), "mean fd vx"),
+            velocity_quantity(np.max(fd_vx_grid[:, :, n]), "max fd vx"),
+            velocity_quantity(np.min(fd_vy_grid[:, :, n]), "min fd vy"),
+            velocity_quantity(np.mean(fd_vy_grid[:, :, n]), "mean fd vy"),
+            velocity_quantity(np.max(fd_vy_grid[:, :, n]), "max fd vy"),
+            velocity_quantity(np.min(fd_speed_grid[:, :, n]), "min fd speed"),
+            velocity_quantity(np.mean(fd_speed_grid[:, :, n]), "mean fd speed"),
+            velocity_quantity(np.max(fd_speed_grid[:, :, n]), "max fd speed"),
         ))
         for n in range(nbands)
     )
@@ -221,6 +271,54 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                             "max |v|",
                         ),
                         rows=velocity_rows,
+                        numeric=frozenset(range(10)),
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="finite_difference_band_velocity_surfaces",
+                title="Finite-difference band velocity surfaces",
+                description=(
+                    "Velocity fields obtained by finite-differencing the displayed energy-ordered band sheets. "
+                    "This is useful for reproducing band-surface derivative diagnostics, but can differ from "
+                    "projector/Hellmann-Feynman velocities near crossings or degeneracies."
+                ),
+                body=(
+                    WebGLView(
+                        id="group_resolved_fd_band_velocity_surface",
+                        title="Finite-difference band velocity surface",
+                        description=(
+                            "Finite-difference velocity x, velocity y, and speed from E_n(k1,k2). "
+                            "The default view is finite-difference speed."
+                        ),
+                        renderer="region_surface",
+                        payload=finite_difference_velocity_surface_payload,
+                        interaction_channel="group_resolved_fd_band_velocity_surface",
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="finite_difference_band_velocity_summary",
+                title="Finite-difference band velocity summary",
+                description="Finite-difference velocity statistics by displayed energy-ordered band.",
+                tables=(
+                    Table(
+                        id="finite_difference_band_velocity_summary_table",
+                        title="Finite-difference velocity min / mean / max by band",
+                        description="Finite-difference velocity components and speed on the displayed conductivity grid.",
+                        headers=(
+                            "band",
+                            "min vx",
+                            "mean vx",
+                            "max vx",
+                            "min vy",
+                            "mean vy",
+                            "max vy",
+                            "min |v|",
+                            "mean |v|",
+                            "max |v|",
+                        ),
+                        rows=finite_difference_velocity_rows,
                         numeric=frozenset(range(10)),
                     ),
                 ),
