@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from dft_local.core.units import DisplayQuantity, VELOCITY
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -63,33 +64,85 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     residual = resolved.sigma - calc.sigma
     assert calc.energies is not None
 
-    surface_payload = {
+    nbands = int(resolved.sigma_band.shape[0])
+    k1_grid = np.asarray(k1, dtype=float).reshape(nu, nv)
+    k2_grid = np.asarray(k2, dtype=float).reshape(nu, nv)
+    energy_grid = np.asarray(calc.energies, dtype=float).reshape(nu, nv, nbands)
+    velocity_grid = np.asarray(calc.velocities, dtype=float).reshape(nu, nv, nbands, 2)
+    vx_grid = velocity_grid[:, :, :, 0]
+    vy_grid = velocity_grid[:, :, :, 1]
+    speed_grid = np.sqrt(vx_grid * vx_grid + vy_grid * vy_grid)
+    velocity_unit = calc.unit_context.unit_for_dimension(VELOCITY)
+    velocity_unit_symbol = velocity_unit.symbol
+
+    common_surface_payload = {
         "kind": "band-surface-preview",
         "nu": nu,
         "nv": nv,
-        "k1": np.asarray(k1, dtype=float).reshape(nu, nv).tolist(),
-        "k2": np.asarray(k2, dtype=float).reshape(nu, nv).tolist(),
-        "energies": np.asarray(calc.energies, dtype=float).reshape(
-            nu,
-            nv,
-            resolved.sigma_band.shape[0],
-        ).tolist(),
+        "k1": k1_grid.tolist(),
+        "k2": k2_grid.tolist(),
         "mask": (
-            (np.abs(np.asarray(k1, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
-            & (np.abs(np.asarray(k2, dtype=float).reshape(nu, nv)) <= np.pi + 1e-12)
-            & (
-                np.abs(
-                    np.asarray(k1, dtype=float).reshape(nu, nv)
-                    - np.asarray(k2, dtype=float).reshape(nu, nv)
-                )
-                <= np.pi + 1e-12
-            )
+            (np.abs(k1_grid) <= np.pi + 1e-12)
+            & (np.abs(k2_grid) <= np.pi + 1e-12)
+            & (np.abs(k1_grid - k2_grid) <= np.pi + 1e-12)
         ).tolist(),
-        "bands": list(range(int(resolved.sigma_band.shape[0]))),
-        "nbands": int(resolved.sigma_band.shape[0]),
+        "bands": list(range(nbands)),
+        "nbands": nbands,
         "selected_band": band,
         "energy_unit": calc.unit_context.energy.symbol,
     }
+
+    surface_payload = {
+        **common_surface_payload,
+        "energies": energy_grid.tolist(),
+        "fields": [
+            {"id": "energy", "label": "Energy", "unit": calc.unit_context.energy.symbol, "signed": True},
+        ],
+        "field_values": {
+            "energy": energy_grid.tolist(),
+        },
+        "selected_field": "energy",
+    }
+
+    velocity_surface_payload = {
+        **common_surface_payload,
+        "energies": energy_grid.tolist(),
+        "fields": [
+            {"id": "vx", "label": "Velocity x", "unit": velocity_unit_symbol, "signed": True},
+            {"id": "vy", "label": "Velocity y", "unit": velocity_unit_symbol, "signed": True},
+            {"id": "speed", "label": "Speed", "unit": velocity_unit_symbol, "signed": False},
+        ],
+        "field_values": {
+            "vx": vx_grid.tolist(),
+            "vy": vy_grid.tolist(),
+            "speed": speed_grid.tolist(),
+        },
+        "selected_field": "speed",
+    }
+
+    def velocity_quantity(value: float, name: str) -> DisplayQuantity:
+        return DisplayQuantity(
+            value=float(value),
+            dimension=VELOCITY,
+            unit=velocity_unit,
+            name=name,
+        )
+
+    velocity_rows = tuple(
+        TableRow((
+            n,
+            velocity_quantity(np.min(vx_grid[:, :, n]), "min vx"),
+            velocity_quantity(np.mean(vx_grid[:, :, n]), "mean vx"),
+            velocity_quantity(np.max(vx_grid[:, :, n]), "max vx"),
+            velocity_quantity(np.min(vy_grid[:, :, n]), "min vy"),
+            velocity_quantity(np.mean(vy_grid[:, :, n]), "mean vy"),
+            velocity_quantity(np.max(vy_grid[:, :, n]), "max vy"),
+            velocity_quantity(np.min(speed_grid[:, :, n]), "min speed"),
+            velocity_quantity(np.mean(speed_grid[:, :, n]), "mean speed"),
+            velocity_quantity(np.max(speed_grid[:, :, n]), "max speed"),
+        ))
+        for n in range(nbands)
+    )
 
     return DiagnosticResult(
         title="Group-resolved Boltzmann conductivity",
@@ -105,13 +158,13 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         ),
         sections=(
             DiagnosticSection(
-                id="interactive_band_controls",
-                title="Interactive band controls",
-                description="Reusable signal components used by later band surface and conductivity views.",
+                id="band_energy_surfaces",
+                title="Band energy surfaces",
+                description="Band energy scalar fields on the conductivity grid.",
                 body=(
                     HtmlBlock(
                         id="group_resolved_controls",
-                        title="Band controls",
+                        title="Band readout",
                         html=f"""<dft-kpoint-readout></dft-kpoint-readout>
 """,
                     ),
@@ -125,6 +178,50 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         renderer="region_surface",
                         payload=surface_payload,
                         interaction_channel="group_resolved_band_surface",
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="band_velocity_surfaces",
+                title="Band velocity surfaces",
+                description="Physical velocity scalar fields from the symbol/Hellmann-Feynman Boltzmann calculation.",
+                body=(
+                    WebGLView(
+                        id="group_resolved_band_velocity_surface",
+                        title="Band velocity surface",
+                        description=(
+                            "Velocity x, velocity y, and speed on the same k-space grid. "
+                            "The default view is speed; use the quantity dropdown to inspect components."
+                        ),
+                        renderer="region_surface",
+                        payload=velocity_surface_payload,
+                        interaction_channel="group_resolved_band_velocity_surface",
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="band_velocity_summary",
+                title="Band velocity summary",
+                description="Physical velocity statistics from the symbol/Hellmann-Feynman Boltzmann calculation.",
+                tables=(
+                    Table(
+                        id="band_velocity_summary_table",
+                        title="Velocity min / mean / max by band",
+                        description="Velocity components and speed on the displayed conductivity grid.",
+                        headers=(
+                            "band",
+                            "min vx",
+                            "mean vx",
+                            "max vx",
+                            "min vy",
+                            "mean vy",
+                            "max vy",
+                            "min |v|",
+                            "mean |v|",
+                            "max |v|",
+                        ),
+                        rows=velocity_rows,
+                        numeric=frozenset(range(10)),
                     ),
                 ),
             ),

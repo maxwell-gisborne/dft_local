@@ -555,7 +555,7 @@ test("band surface viewer reads payload policy", () => {
   const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
 
   assert.equal(source.includes("this.payload = readJsonPayload("), true);
-  assert.equal(source.includes("bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode)"), true);
+  assert.equal(source.includes("bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode, this.selectedField)"), true);
   assert.equal(source.includes("this.requestSurfaceUpdate();"), true);
 });
 
@@ -574,6 +574,34 @@ test("bandSurfaceVertices extracts selected band samples", () => {
     { x: 1, y: 11, z: 11, i: 0, j: 1, band: 1 },
     { x: 2, y: 12, z: 12, i: 1, j: 0, band: 1 },
     { x: 3, y: 13, z: 13, i: 1, j: 1, band: 1 },
+  ]);
+});
+
+test("bandSurfaceVertices can extract non-energy scalar fields", () => {
+  const payload = {
+    k1: [[0, 1], [2, 3]],
+    k2: [[10, 11], [12, 13]],
+    energies: [
+      [[0.0, 10.0], [1.0, 11.0]],
+      [[2.0, 12.0], [3.0, 13.0]],
+    ],
+    fields: [
+      { id: "energy", label: "Energy", unit: "eV", signed: true },
+      { id: "speed", label: "Speed", unit: "m/s", signed: false },
+    ],
+    field_values: {
+      speed: [
+        [[100.0, 110.0], [101.0, 111.0]],
+        [[102.0, 112.0], [103.0, 113.0]],
+      ],
+    },
+  };
+
+  assert.deepEqual(bandSurfaceVertices(payload, 1, "speed"), [
+    { x: 0, y: 10, z: 110, i: 0, j: 0, band: 1 },
+    { x: 1, y: 11, z: 111, i: 0, j: 1, band: 1 },
+    { x: 2, y: 12, z: 112, i: 1, j: 0, band: 1 },
+    { x: 3, y: 13, z: 113, i: 1, j: 1, band: 1 },
   ]);
 });
 
@@ -1185,7 +1213,7 @@ test("band surface domain dropdown policy exists", () => {
   assert.equal(source.includes("BZ hexagon"), true);
   assert.equal(source.includes("extended hexagon"), true);
   assert.equal(source.includes("this.domainMode = \"extended\""), true);
-  assert.equal(source.includes("bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode)"), true);
+  assert.equal(source.includes("bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode, this.selectedField)"), true);
   assert.equal(source.includes("domain ${this.domainMode}"), true);
 });
 

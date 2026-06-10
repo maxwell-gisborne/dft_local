@@ -1068,30 +1068,31 @@ function rotatePoint(x, y, angle) {
 /**
  * @param {JsonPayload | null} payload
  * @param {number} band
+ * @param {string | null | undefined} fieldId
  * @returns {Array<{x:number, y:number, z:number, i:number, j:number, band:number}>}
  */
-function bandSurfaceVertices(payload, band) {
+function bandSurfaceVertices(payload, band, fieldId = null) {
   if (!payload) return [];
 
   const k1 = /** @type {unknown[][] | undefined} */ (payload.k1);
   const k2 = /** @type {unknown[][] | undefined} */ (payload.k2);
-  const energies = /** @type {unknown[][][] | undefined} */ (payload.energies);
+  const values = bandSurfaceFieldArray(payload, fieldId);
 
-  if (!Array.isArray(k1) || !Array.isArray(k2) || !Array.isArray(energies)) return [];
+  if (!Array.isArray(k1) || !Array.isArray(k2) || !Array.isArray(values)) return [];
 
   const vertices = [];
 
-  for (let i = 0; i < energies.length; i += 1) {
-    const row = energies[i];
+  for (let i = 0; i < values.length; i += 1) {
+    const row = values[i];
     if (!Array.isArray(row)) continue;
 
     for (let j = 0; j < row.length; j += 1) {
-      const energyBands = row[j];
-      if (!Array.isArray(energyBands)) continue;
+      const valueBands = row[j];
+      if (!Array.isArray(valueBands)) continue;
 
       const x = Number(k1[i]?.[j]);
       const y = Number(k2[i]?.[j]);
-      const z = Number(energyBands[band]);
+      const z = Number(valueBands[band]);
 
       if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
 
@@ -1355,10 +1356,11 @@ function bandSurfaceSliceSegmentsForBands(payload, bands, axis, value, options =
 /**
  * @param {JsonPayload | null} payload
  * @param {number} band
+ * @param {string | null | undefined} fieldId
  * @returns {{count:number, zmin:number|null, zmax:number|null}}
  */
-function bandSurfaceSummary(payload, band) {
-  const vertices = bandSurfaceVertices(payload, band);
+function bandSurfaceSummary(payload, band, fieldId = null) {
+  const vertices = bandSurfaceVertices(payload, band, fieldId);
 
   if (vertices.length === 0) {
     return { count: 0, zmin: null, zmax: null };
@@ -1384,10 +1386,10 @@ function bandSurfaceSummary(payload, band) {
  *   summary:{count:number, zmin:number|null, zmax:number|null}
  * }}
  */
-function bandSurfaceMeshData(payload, band) {
-  const vertices = bandSurfaceVertices(payload, band);
+function bandSurfaceMeshData(payload, band, fieldId = null) {
+  const vertices = bandSurfaceVertices(payload, band, fieldId);
   const triangles = bandSurfaceTriangles(payload);
-  const summary = bandSurfaceSummary(payload, band);
+  const summary = bandSurfaceSummary(payload, band, fieldId);
 
   return { vertices, triangles, summary };
 }
@@ -1441,6 +1443,87 @@ function allBandIndices(payload) {
   return bands.length > 0 ? bands : fallback;
 }
 
+/**
+ * @param {JsonPayload | null} payload
+ * @returns {Array<{id:string, label:string, unit:string, signed:boolean}>}
+ */
+function bandSurfaceFields(payload) {
+  const fields = Array.isArray(payload?.fields) ? payload.fields : [];
+  /** @type {Array<{id:string, label:string, unit:string, signed:boolean}>} */
+  const parsed = [];
+
+  for (const field of fields) {
+    if (!field || typeof field !== "object") continue;
+
+    const record = /** @type {Record<string, unknown>} */ (field);
+    const id = String(record.id ?? "");
+    if (!id) continue;
+
+    parsed.push({
+      id,
+      label: String(record.label ?? id),
+      unit: String(record.unit ?? ""),
+      signed: Boolean(record.signed ?? true),
+    });
+  }
+
+  if (parsed.length > 0) return parsed;
+
+  return [{
+    id: "energy",
+    label: "Energy",
+    unit: String(payload?.energy_unit ?? ""),
+    signed: true,
+  }];
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {string | null | undefined} fieldId
+ * @returns {string}
+ */
+function activeBandSurfaceFieldId(payload, fieldId) {
+  const fields = bandSurfaceFields(payload);
+  const requested = String(fieldId ?? payload?.selected_field ?? "energy");
+  return fields.some((field) => field.id === requested) ? requested : fields[0]?.id ?? "energy";
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {string | null | undefined} fieldId
+ * @returns {{id:string, label:string, unit:string, signed:boolean}}
+ */
+function activeBandSurfaceField(payload, fieldId) {
+  const id = activeBandSurfaceFieldId(payload, fieldId);
+  return bandSurfaceFields(payload).find((field) => field.id === id) ?? {
+    id: "energy",
+    label: "Energy",
+    unit: String(payload?.energy_unit ?? ""),
+    signed: true,
+  };
+}
+
+/**
+ * @param {JsonPayload | null} payload
+ * @param {string | null | undefined} fieldId
+ * @returns {unknown[][][] | undefined}
+ */
+function bandSurfaceFieldArray(payload, fieldId) {
+  const id = activeBandSurfaceFieldId(payload, fieldId);
+
+  if (id === "energy") {
+    return /** @type {unknown[][][] | undefined} */ (payload?.energies);
+  }
+
+  const fieldValues = payload?.field_values;
+  if (fieldValues && typeof fieldValues === "object") {
+    const values = /** @type {Record<string, unknown>} */ (fieldValues)[id];
+    if (Array.isArray(values)) return /** @type {unknown[][][]} */ (values);
+  }
+
+  return /** @type {unknown[][][] | undefined} */ (payload?.energies);
+}
+
 
 /**
  * @param {JsonPayload | null} payload
@@ -1469,16 +1552,17 @@ function visibleBandIndices(payload, hiddenBands) {
  * @param {JsonPayload | null} payload
  * @param {number} band
  * @param {"primitive" | "bz" | "extended" | string | null | undefined} domainMode
+ * @param {string | null | undefined} fieldId
  * @returns {{
  *   vertices:Array<{x:number, y:number, z:number, i:number, j:number, band:number}>,
  *   triangles:Array<[number, number, number]>,
  *   summary:{count:number, zmin:number|null, zmax:number|null}
  * }}
  */
-function bandSurfaceMeshDataWithDomain(payload, band, domainMode) {
-  const rawVertices = bandSurfaceVertices(payload, band);
+function bandSurfaceMeshDataWithDomain(payload, band, domainMode, fieldId = null) {
+  const rawVertices = bandSurfaceVertices(payload, band, fieldId);
   const rawTriangles = bandSurfaceTriangles(payload, false);
-  const summary = bandSurfaceSummary(payload, band);
+  const summary = bandSurfaceSummary(payload, band, fieldId);
   const mode = domainMode === "primitive" || domainMode === "bz" || domainMode === "extended"
     ? domainMode
     : "extended";
@@ -2798,6 +2882,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
       this.referenceGroup = null;
       /** @type {"primitive" | "bz" | "extended"} */
       this.domainMode = "extended";
+      /** @type {string} */
+      this.selectedField = "energy";
       /** @type {boolean} */
       this.hasInitialCamera = false;
       /** @type {Set<number>} */
@@ -2939,6 +3025,8 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
      */
     updateModel(model) {
       this.payload = model;
+      this.selectedField = activeBandSurfaceFieldId(this.payload, this.selectedField);
+      this.syncFieldControl();
 
       const available = new Set(allBandIndices(this.payload));
       for (const band of Array.from(this.hiddenBands)) {
@@ -2967,6 +3055,10 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
             <label class="band-surface-view-control">
               energy scale
               <input data-dft-view-energy-scale type="range" min="0.1" max="5" step="0.1" value="1">
+            </label>
+            <label class="band-surface-view-control">
+              quantity
+              <select data-dft-surface-field></select>
             </label>
             <label class="band-surface-view-control">
               k-domain
@@ -3022,6 +3114,7 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
 
       this.bindSliceControls();
       this.bindSliceDetails();
+      this.bindFieldControl();
       this.bindDomainModeControl();
     }
 
@@ -3195,6 +3288,44 @@ if (typeof HTMLElement !== "undefined" && typeof customElements !== "undefined")
         }
       });
     }
+
+
+    bindFieldControl() {
+      const input = this.querySelector("[data-dft-surface-field]");
+      if (!(input instanceof HTMLSelectElement)) return;
+
+      input.addEventListener("change", () => {
+        this.selectedField = activeBandSurfaceFieldId(this.payload, input.value);
+        this.requestSurfaceUpdate();
+      });
+
+      this.syncFieldControl();
+    }
+
+    syncFieldControl() {
+      const input = this.querySelector("[data-dft-surface-field]");
+      if (!(input instanceof HTMLSelectElement)) return;
+
+      const fields = bandSurfaceFields(this.payload);
+      const selected = activeBandSurfaceFieldId(this.payload, this.selectedField);
+
+      const current = Array.from(input.options).map((option) => option.value).join("\n");
+      const wanted = fields.map((field) => field.id).join("\n");
+
+      if (current !== wanted) {
+        input.innerHTML = "";
+        for (const field of fields) {
+          const option = document.createElement("option");
+          option.value = field.id;
+          option.textContent = field.unit ? `${field.label} / ${field.unit}` : field.label;
+          input.append(option);
+        }
+      }
+
+      input.value = selected;
+      this.selectedField = selected;
+    }
+
 
     bindDomainModeControl() {
       const input = this.querySelector("[data-dft-domain-mode]");
@@ -3581,12 +3712,13 @@ selectedBandIndex() {
       }
 
       this.dataset.domainMode = this.domainMode;
+      this.syncFieldControl();
 
       const bands = allBandIndices(this.payload);
 
       this.currentBandMeshes = bands.map((band) => ({
         band,
-        mesh: bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode),
+        mesh: bandSurfaceMeshDataWithDomain(this.payload, band, this.domainMode, this.selectedField),
       }));
       this.currentMesh = this.currentBandMeshes.find((item) => !this.hiddenBands.has(item.band))?.mesh ?? null;
 
@@ -4458,9 +4590,10 @@ selectedBandIndex() {
       const bandsText = Number.isFinite(nbands)
         ? String(nbands)
         : Array.isArray(bands) ? String(bands.length) : "unknown";
-      const energyText = !mesh || mesh.summary.zmin === null || mesh.summary.zmax === null
+      const field = activeBandSurfaceField(this.payload, this.selectedField);
+      const fieldText = !mesh || mesh.summary.zmin === null || mesh.summary.zmax === null
         ? "unknown"
-        : `${nice(mesh.summary.zmin)} to ${nice(mesh.summary.zmax)}`;
+        : `${nice(mesh.summary.zmin)} to ${nice(mesh.summary.zmax)}${field.unit ? ` ${field.unit}` : ""}`;
       const slice = this.sliceAxis === null || this.sliceValue === null || !Number.isFinite(this.sliceValue)
         ? "none"
         : `${this.sliceAxis}=${nice(this.sliceValue)}`;
@@ -4468,7 +4601,7 @@ selectedBandIndex() {
       if (this.statusEl) {
         const domainText = `domain ${this.domainMode}`;
         const hiddenCount = this.hiddenBands.size;
-        this.statusEl.textContent = `band ${band}; visible ${visibleCount}; hidden ${hiddenCount}; grid ${gridText}; bands ${bandsText}; vertices ${totalVertices}; triangles ${totalTriangles}; energy ${energyText}; energy zero ${nice(this.energyZero)}; energy scale ${nice(this.energyScale)}; slice ${slice}; ${domainText}`;
+        this.statusEl.textContent = `band ${band}; visible ${visibleCount}; hidden ${hiddenCount}; grid ${gridText}; bands ${bandsText}; vertices ${totalVertices}; triangles ${totalTriangles}; ${field.label} ${fieldText}; energy zero ${nice(this.energyZero)}; energy scale ${nice(this.energyScale)}; slice ${slice}; ${domainText}`;
       }
     }
 
