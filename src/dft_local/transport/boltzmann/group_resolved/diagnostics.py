@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from dft_local.core.units import DisplayQuantity, VELOCITY
+from dft_local.core.units import CONDUCTIVITY, DisplayQuantity, VELOCITY
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -18,6 +18,10 @@ from dft_local.diagnostics.models import (
 )
 from dft_local.transport.boltzmann.calculation.diagnostics import conductivity_grid
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
+from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+    conductivity_from_velocity_grid,
+    velocity_from_epsilon_grid,
+)
 from dft_local.transport.boltzmann.group_resolved.core import (
     band_resolved_compact_conductivity,
 )
@@ -194,6 +198,85 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         for n in range(nbands)
     )
 
+    conductivity_unit = calc.unit_context.unit_for_dimension(CONDUCTIVITY)
+
+    def conductivity_quantity(value: float, name: str) -> DisplayQuantity:
+        return DisplayQuantity(
+            value=float(value),
+            dimension=CONDUCTIVITY,
+            unit=conductivity_unit,
+            name=name,
+        )
+
+    # Ashcroft validation convention:
+    #   * epsilon grid is in Hartree
+    #   * velocity helper differentiates a fractional reciprocal grid
+    #   * conductivity helper assembles the SI Boltzmann tensor
+    #
+    # The group diagnostic grid is raw phase coordinates in [-pi, pi] with both
+    # endpoints included.  Therefore use endpoint=True and an identity real-space
+    # primitive in bohr: fractional u,v correspond to one 2*pi phase period.
+    ashcroft_phase_ai_bohr = np.eye(2, dtype=float)
+    energy_grid_Ha = energy_grid / ctx.state.data.energy_conversion_disk_to_working
+    chemical_potential_J = mu * calc.unit_context.energy.scale_to_si
+
+    ashcroft_validation_rows = []
+    ashcroft_fd_vx = np.empty((nu, nv, nbands), dtype=float)
+    ashcroft_fd_vy = np.empty((nu, nv, nbands), dtype=float)
+
+    for n in range(nbands):
+        epsilon_Ha = energy_grid_Ha[:, :, n]
+        vx_m_s, vy_m_s = velocity_from_epsilon_grid(
+            epsilon_Ha,
+            ashcroft_phase_ai_bohr,
+            endpoint=True,
+        )
+        ashcroft_fd_vx[:, :, n] = vx_m_s
+        ashcroft_fd_vy[:, :, n] = vy_m_s
+
+        ashcroft_sigma = conductivity_from_velocity_grid(
+            epsilon_Ha,
+            np.stack([vx_m_s, vy_m_s], axis=-1),
+            ashcroft_phase_ai_bohr,
+            chemical_potential_J=chemical_potential_J,
+            temperature_K=temperature,
+            relaxation_time_s=tau,
+        ).conductivity_tensor_S
+
+        fh_sigma = resolved.sigma_band[n]
+        ashcroft_trace = float(np.trace(ashcroft_sigma).real)
+        fh_trace = float(np.trace(fh_sigma).real)
+        trace_delta = ashcroft_trace - fh_trace
+        trace_ratio = ashcroft_trace / fh_trace if fh_trace != 0.0 else np.nan
+        speed_m_s = np.sqrt(vx_m_s * vx_m_s + vy_m_s * vy_m_s)
+
+        ashcroft_validation_rows.append(
+            TableRow((
+                n,
+                velocity_quantity(np.min(vx_m_s), "Ashcroft FD min vx"),
+                velocity_quantity(np.mean(vx_m_s), "Ashcroft FD mean vx"),
+                velocity_quantity(np.max(vx_m_s), "Ashcroft FD max vx"),
+                velocity_quantity(np.min(vy_m_s), "Ashcroft FD min vy"),
+                velocity_quantity(np.mean(vy_m_s), "Ashcroft FD mean vy"),
+                velocity_quantity(np.max(vy_m_s), "Ashcroft FD max vy"),
+                velocity_quantity(np.min(speed_m_s), "Ashcroft FD min speed"),
+                velocity_quantity(np.mean(speed_m_s), "Ashcroft FD mean speed"),
+                velocity_quantity(np.max(speed_m_s), "Ashcroft FD max speed"),
+                conductivity_quantity(ashcroft_sigma[0, 0], "Ashcroft sigma_xx"),
+                conductivity_quantity(ashcroft_sigma[0, 1], "Ashcroft sigma_xy"),
+                conductivity_quantity(ashcroft_sigma[1, 0], "Ashcroft sigma_yx"),
+                conductivity_quantity(ashcroft_sigma[1, 1], "Ashcroft sigma_yy"),
+                conductivity_quantity(ashcroft_trace, "Ashcroft trace"),
+                conductivity_quantity(fh_sigma[0, 0].real, "FH sigma_xx"),
+                conductivity_quantity(fh_sigma[0, 1].real, "FH sigma_xy"),
+                conductivity_quantity(fh_sigma[1, 0].real, "FH sigma_yx"),
+                conductivity_quantity(fh_sigma[1, 1].real, "FH sigma_yy"),
+                conductivity_quantity(fh_trace, "FH trace"),
+                conductivity_quantity(trace_delta, "Ashcroft minus FH trace"),
+                f"{trace_ratio:.8e}",
+            ))
+        )
+
     return DiagnosticResult(
         title="Group-resolved Boltzmann conductivity",
         summary=(
@@ -320,6 +403,52 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         ),
                         rows=finite_difference_velocity_rows,
                         numeric=frozenset(range(10)),
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="ashcroft_finite_difference_band_validation",
+                title="Ashcroft finite-difference band validation",
+                description=(
+                    "Per-band validation using the same finite-difference velocity and conductivity assembly "
+                    "as the Ashcroft comparison domain.  The displayed energy-ordered band sheet is converted "
+                    "to Hartree, differentiated with endpoint=True over one phase period, then assembled with "
+                    "Ashcroft conductivity_from_velocity_grid.  This table is meant to compare the band-sheet "
+                    "finite-difference result against the Hellmann-Feynman band tensor."
+                ),
+                tables=(
+                    Table(
+                        id="ashcroft_finite_difference_band_validation_table",
+                        title="Ashcroft finite-difference validation by band",
+                        description=(
+                            "Velocity statistics and conductivity tensor comparison for each displayed band."
+                        ),
+                        headers=(
+                            "band",
+                            "min vx",
+                            "mean vx",
+                            "max vx",
+                            "min vy",
+                            "mean vy",
+                            "max vy",
+                            "min |v|",
+                            "mean |v|",
+                            "max |v|",
+                            "A sigma xx",
+                            "A sigma xy",
+                            "A sigma yx",
+                            "A sigma yy",
+                            "A trace",
+                            "FH sigma xx",
+                            "FH sigma xy",
+                            "FH sigma yx",
+                            "FH sigma yy",
+                            "FH trace",
+                            "A trace - FH trace",
+                            "A trace / FH trace",
+                        ),
+                        rows=tuple(ashcroft_validation_rows),
+                        numeric=frozenset(range(22)),
                     ),
                 ),
             ),
