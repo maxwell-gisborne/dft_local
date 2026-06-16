@@ -18,6 +18,7 @@ DEFAULT_DIAGNOSTIC_MODULES = (
     "dft_local.transport.boltzmann.ashcroft_comparison.diagnostics",
     "dft_local.transport.boltzmann.validation.diagnostics",
     "dft_local.transport.boltzmann.group_resolved.diagnostics",
+    "dft_local.transport.symmetry_audit.diagnostics",
     "dft_local.transport.bands.diagnostics",
 )
 
