@@ -542,6 +542,74 @@ def render_document_block(block: Any) -> str:
     raise TypeError(f"Unsupported diagnostic document block: {type(block)!r}")
 
 
+
+def _toc_title(value: object) -> str:
+    if value is None:
+        return ""
+    return render_user_string(value)
+
+
+def _iter_toc_entries(blocks: tuple[object, ...], depth: int = 0) -> list[tuple[int, str, str]]:
+    entries: list[tuple[int, str, str]] = []
+
+    for block in blocks:
+        nested_depth = depth
+
+        if isinstance(block, DiagnosticSection):
+            block_id = getattr(block, "id", "")
+            title = getattr(block, "title", "")
+            if block_id and title:
+                entries.append((depth, str(block_id), _toc_title(title)))
+            nested_depth = depth + 1
+
+        nested_body = tuple(getattr(block, "body", ()) or ())
+        nested_sections = tuple(getattr(block, "sections", ()) or ())
+        nested = nested_body or nested_sections
+        if nested:
+            entries.extend(_iter_toc_entries(nested, nested_depth))
+
+    return entries
+
+
+def render_result_toc(result: DiagnosticResult) -> str:
+    blocks: list[object] = []
+
+    if getattr(result, "body", ()):
+        blocks.extend(result.body)
+    else:
+        blocks.extend(result.markdowns)
+        blocks.extend(result.cards)
+        blocks.extend(result.sections)
+        blocks.extend(result.matrices)
+        blocks.extend(result.webgl)
+        blocks.extend(result.graphs)
+        blocks.extend(result.tables)
+
+    entries = _iter_toc_entries(tuple(blocks))
+    if not entries:
+        return ""
+
+    links = []
+    for depth, block_id, title in entries:
+        depth_class = f"diagnostic-toc-depth-{min(depth, 4)}"
+        links.append(
+            "<a "
+            f"class='diagnostic-toc-link {depth_class}' "
+            f"href='#{escape(block_id)}'>"
+            f"<span>{title}</span>"
+            "</a>"
+        )
+
+    return (
+        "<details class='diagnostic-toc'>"
+        "<summary aria-label='Table of contents'><span class='diagnostic-toc-icon'>☰</span><span class='diagnostic-toc-label'>Contents</span></summary>"
+        "<nav class='diagnostic-toc-panel' aria-label='Diagnostic table of contents'>"
+        + "".join(links)
+        + "</nav>"
+        "</details>"
+    )
+
+
 def render_diagnostic_section(section: DiagnosticSection) -> str:
     open_attr = "" if section.collapsed else " open"
     body: list[str] = []
@@ -604,6 +672,10 @@ def render_result(result: DiagnosticResult) -> str:
     """Render a diagnostic result body as simple HTML."""
 
     parts: list[str] = []
+
+    toc = render_result_toc(result)
+    if toc:
+        parts.append(toc)
 
     parts.append(f"<h1>{render_user_string(result.title)}</h1>")
     parts.append(f"<p>{render_user_string(result.summary)}</p>")
@@ -735,6 +807,93 @@ body {
   color: var(--muted);
   font-size: 0.92rem;
 }
+
+.diagnostic-paper details.diagnostic-toc {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 20;
+  margin: 0;
+  font-family: "Latin Modern Roman", "Computer Modern Serif", "CMU Serif", Georgia, "Times New Roman", serif;
+}
+
+.diagnostic-paper details.diagnostic-toc > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #fffdf8;
+  color: var(--accent);
+  box-shadow: var(--shadow);
+  font-weight: 600;
+}
+
+.diagnostic-paper .diagnostic-toc-label {
+  display: inline-block;
+  max-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  white-space: nowrap;
+  transition: max-width 140ms ease, opacity 140ms ease;
+}
+
+.diagnostic-paper details.diagnostic-toc:hover .diagnostic-toc-label,
+.diagnostic-paper details.diagnostic-toc[open] .diagnostic-toc-label {
+  max-width: 8rem;
+  opacity: 1;
+}
+
+.diagnostic-paper details.diagnostic-toc > summary::-webkit-details-marker {
+  display: none;
+}
+
+.diagnostic-paper .diagnostic-toc-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.diagnostic-paper .diagnostic-toc-panel {
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 5rem);
+  overflow: auto;
+  margin: 0.45rem 0 0;
+  padding: 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: #fffdf8;
+  box-shadow: 0 10px 30px rgba(80, 70, 55, 0.18);
+}
+
+.diagnostic-paper .diagnostic-toc-link {
+  display: block;
+  padding: 0.26rem 0.35rem;
+  border-radius: 3px;
+  color: var(--ink);
+  text-decoration: none;
+  line-height: 1.25;
+}
+
+.diagnostic-paper .diagnostic-toc-link:hover {
+  background: var(--accent-soft);
+}
+
+.diagnostic-paper .diagnostic-toc-depth-1 {
+  padding-left: 0.9rem;
+}
+
+.diagnostic-paper .diagnostic-toc-depth-2 {
+  padding-left: 1.8rem;
+}
+
+.diagnostic-paper .diagnostic-toc-depth-3,
+.diagnostic-paper .diagnostic-toc-depth-4 {
+  padding-left: 2.7rem;
+}
+
 
 .diagnostic-paper code, .diagnostic-paper pre, .diagnostic-paper kbd {
   font-family: "Latin Modern Mono", "Computer Modern Typewriter", "CMU Typewriter Text", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -975,6 +1134,20 @@ details.diagnostic-section .diagnostic-paper details.diagnostic-section {
 }
 
 @media (max-width: 760px) {
+  .diagnostic-paper details.diagnostic-toc {
+    top: 0.5rem;
+    left: 0.5rem;
+  }
+
+  .diagnostic-paper details.diagnostic-toc > summary span:last-child {
+    display: none;
+  }
+
+  .diagnostic-paper .diagnostic-toc-panel {
+    width: calc(100vw - 1rem);
+    max-height: calc(100vh - 4rem);
+  }
+
   body {
     padding: 1.4rem 1rem 3rem;
     box-shadow: none;

@@ -643,7 +643,13 @@ def test_vincent_delaunay_velocity_probe_is_present() -> None:
     table_ids = {table.id for table in velocity.tables} | {
         block.id for block in velocity.body if isinstance(block, Table)
     }
-    assert "section_velocity_delaunay_interpolation_probe" in table_ids
+    nested_table_ids = {
+        block.id
+        for section in (*velocity.sections, *(block for block in velocity.body if hasattr(block, "body")))
+        for block in getattr(section, "body", ())
+        if isinstance(block, Table)
+    }
+    assert "section_velocity_delaunay_interpolation_probe" in table_ids | nested_table_ids
 
 
 def test_vincent_delaunay_adjacent_simplex_probe_is_present() -> None:
@@ -670,7 +676,13 @@ def test_vincent_delaunay_adjacent_simplex_probe_is_present() -> None:
     table_ids = {table.id for table in velocity.tables} | {
         block.id for block in velocity.body if isinstance(block, Table)
     }
-    assert "section_velocity_delaunay_adjacent_simplex_probe" in table_ids
+    nested_table_ids = {
+        block.id
+        for section in (*velocity.sections, *(block for block in velocity.body if hasattr(block, "body")))
+        for block in getattr(section, "body", ())
+        if isinstance(block, Table)
+    }
+    assert "section_velocity_delaunay_adjacent_simplex_probe" in table_ids | nested_table_ids
 
 
 
@@ -717,12 +729,13 @@ def test_ashcroft_local_calculation_check_contains_validation_evidence() -> None
         for block in section.body
         if isinstance(block, Table)
     }
+    all_table_ids = table_ids | nested_table_ids
 
     assert local.title == "Local calculation check"
     assert "section_validation_summary" in table_ids
-    assert "section_analytic_end_to_end_derivative_error" in table_ids
-    assert "section_analytic_end_to_end_sigma" in table_ids
-    assert "section_conductivity_invariant_checks" in table_ids
+    assert "section_analytic_end_to_end_derivative_error" in all_table_ids
+    assert "section_analytic_end_to_end_sigma" in all_table_ids
+    assert "section_conductivity_invariant_checks" in all_table_ids
 
     assert "section_conductivity_grid_subsample_stability" in nested_table_ids
     assert "section_conductivity_temperature_response" in nested_table_ids
@@ -748,10 +761,20 @@ def test_ashcroft_velocity_comparison_contains_delaunay_resolution() -> None:
     table_ids = {table.id for table in velocity.tables} | {
         block.id for block in velocity.body if isinstance(block, Table)
     }
+    nested_sections = tuple(velocity.sections) + tuple(
+        block for block in velocity.body if hasattr(block, "body")
+    )
+    nested_table_ids = {
+        block.id
+        for section in nested_sections
+        for block in getattr(section, "body", ())
+        if isinstance(block, Table)
+    }
+    all_table_ids = table_ids | nested_table_ids
 
-    assert "section_velocity_delaunay_interpolation_probe" in table_ids
-    assert "section_velocity_delaunay_adjacent_simplex_probe" in table_ids
-    assert "section_velocity_k_grid" in table_ids
+    assert "section_velocity_delaunay_adjacent_simplex_probe" in all_table_ids
+    assert "section_velocity_delaunay_interpolation_probe" in all_table_ids
+    assert "section_velocity_k_grid" in all_table_ids
 
     markdown = "\n".join(
         block.markdown
@@ -788,10 +811,14 @@ def test_ashcroft_conductivity_comparison_contains_measure_result() -> None:
         if isinstance(block, Table)
     }
 
+    all_table_ids = table_ids | nested_table_ids
+
     assert "section_conductivity_fermi_window" in table_ids
     assert "section_best_conductivity_reconstruction" in table_ids
-    assert "section_conductivity_normalisation_hypotheses" in table_ids
-    assert "section_conductivity_shape_summary" in table_ids
+    assert "section_band_indexed_strong_dc" in table_ids
+    assert "section_vincent_strong_weak_temperature_sweep" in table_ids
+    assert "section_conductivity_normalisation_hypotheses" in all_table_ids
+    assert "section_conductivity_shape_summary" in all_table_ids
 
     assert "section_conductivity_normalisation" in nested_table_ids
     assert "section_conductivity_raw_tensor" in nested_table_ids
@@ -887,15 +914,18 @@ def test_ashcroft_local_equations_are_interleaved_with_prose() -> None:
     from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
 
     html = render_result(compute_overview(None, {}))
+    body_start = html.find("<h1>")
+    assert body_start >= 0
+    body_html = html[body_start:]
 
     points = [
-        html.find("The continuum expression being discretised is:"),
-        html.find("id='ashcroft_conductivity_equation'"),
-        html.find("The velocity entering the tensor"),
-        html.find("id='ashcroft_velocity_equation'"),
-        html.find("The thermal weighting"),
-        html.find("id='ashcroft_fermi_window_equation'"),
-        html.find("Validation summary"),
+        body_html.find("The first continuum expression being discretised is the weak, linear-response formula:"),
+        body_html.find("id='ashcroft_conductivity_equation'"),
+        body_html.find("The velocity entering the tensor"),
+        body_html.find("id='ashcroft_velocity_equation'"),
+        body_html.find("The thermal weighting"),
+        body_html.find("id='ashcroft_fermi_window_equation'"),
+        body_html.find("Validation summary"),
     ]
 
     assert all(point >= 0 for point in points)
@@ -930,12 +960,15 @@ def test_ashcroft_validation_summary_uses_same_document_block_style() -> None:
     from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
 
     html = render_result(compute_overview(None, {}))
+    body_start = html.find("<h1>")
+    assert body_start >= 0
+    body_html = html[body_start:]
 
-    validation = html.find("Validation summary")
+    validation = body_html.find("Validation summary")
     assert validation >= 0
 
-    group_start = html.rfind("class='markdown-math-group'", 0, validation)
-    group_end = html.find("</div>", validation)
+    group_start = body_html.rfind("class='markdown-math-group'", 0, validation)
+    group_end = body_html.find("</div>", validation)
 
     assert group_start >= 0
     assert group_start < validation < group_end

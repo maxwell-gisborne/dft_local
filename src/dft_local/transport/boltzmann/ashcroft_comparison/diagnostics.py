@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSection, DiagnosticSpec, MarkdownBlock, Table, TableRow, TypstMathBlock
+from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSection, DiagnosticSpec, MarkdownBlock, ProseBlock, Table, TableRow, TypstMathBlock
 from dft_local.diagnostics.user_strings import TypstMath, rich
 
 from dft_local.transport.boltzmann.ashcroft_comparison.core import (
@@ -286,13 +286,23 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 description="Independent checks that the local derivative, Fermi window, and tensor assembly are internally coherent.",
                 collapsed=False,
                 body=(
-                    MarkdownBlock(
+                    ProseBlock(
                         id="ashcroft_local_calculation_intro",
                         title="Local calculation equations",
-                        markdown="""The local calculation evaluates the Boltzmann conductivity from the band energy, the energy gradient, and the Fermi-window factor.
-
-The continuum expression being discretised is:
-""",
+                        markdown=rich(
+                            "The local calculation has two related Boltzmann formulas in play. ",
+                            "The weak formula is the linear-response DC conductivity. It assumes an infinitesimal electric field, so the current is obtained by contracting two velocities against the Fermi-window factor ",
+                            TypstMath("$ - (diff f_0) / (diff epsilon) $", display=False, name="ashcroft_local_intro_fermi_window"),
+                            ". The strong formula is the finite-field steady-state calculation. It first solves for the displaced occupation ",
+                            TypstMath("$ f_E(k) $", display=False, name="ashcroft_local_intro_displaced_occupation"),
+                            ", computes the current from that occupation, and then recovers the weak tensor by differentiating the current at zero field. ",
+                            "The local derivative is therefore checked in two ways. For the weak formula we use the chain rule, differentiating the band energy and then applying ",
+                            TypstMath("$ (diff f_0) / (diff epsilon) $", display=False, name="ashcroft_local_intro_chain_rule"),
+                            ". For the strong formula we also test the periodic spectral derivative of the sampled occupation ",
+                            TypstMath("$ f_0(k) $", display=False, name="ashcroft_local_intro_periodic_occupation"),
+                            ". These agree only when the Fermi occupation is smooth enough on the sampled periodic grid; at low temperature the Fermi window is sharp, so the periodic derivative can be under-resolved. ",
+                            "The first continuum expression being discretised is the weak, linear-response formula:",
+                        ),
                     ),
                     TypstMathBlock(
                         id="ashcroft_conductivity_equation",
@@ -348,54 +358,81 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                         headers=("check", "status/value", "meaning"),
                         rows=validation_summary_rows,
                     ),
+                    DiagnosticSection(
+                        id="ashcroft_local_validation_details",
+                        title="Validation details",
+                        description="Detailed analytic derivative, tensor, and invariant checks.",
+                        collapsed=True,
+                        body=(
                     Table(
-                        id="section_analytic_end_to_end_derivative_error",
-                        title="Analytic derivative error",
-                        description="Implemented central Cartesian derivative compared with exact central-periodic finite-difference derivative.",
-                        headers=("quantity", "error"),
-                        rows=(
-                            TableRow(("max abs vx error [m/s]", f"{analytic_probe['max_abs_vx_error']:.8e}")),
-                            TableRow(("max abs vy error [m/s]", f"{analytic_probe['max_abs_vy_error']:.8e}")),
-                            TableRow(("relative velocity-field error", f"{analytic_probe['relative_velocity_error']:.8e}")),
+                                id="section_analytic_end_to_end_derivative_error",
+                                title="Analytic derivative error",
+                                description="Implemented central Cartesian derivative compared with exact central-periodic finite-difference derivative.",
+                                headers=("quantity", "error"),
+                                rows=(
+                                    TableRow(("max abs vx error [m/s]", f"{analytic_probe['max_abs_vx_error']:.8e}")),
+                                    TableRow(("max abs vy error [m/s]", f"{analytic_probe['max_abs_vy_error']:.8e}")),
+                                    TableRow(("relative velocity-field error", f"{analytic_probe['relative_velocity_error']:.8e}")),
+                                ),
+                            ),
+                            Table(
+                                id="section_analytic_end_to_end_sigma",
+                                title="Analytic conductivity tensor check",
+                                description="Computed conductivity compared with the tensor assembled from the analytic expected derivative.",
+                                headers=("component", "expected x", "expected y", "computed x", "computed y", "delta x", "delta y"),
+                                rows=(
+                                    TableRow((
+                                        "x",
+                                        f"{analytic_probe['sigma_expected'][0, 0]:.8e}",
+                                        f"{analytic_probe['sigma_expected'][0, 1]:.8e}",
+                                        f"{analytic_probe['sigma_actual'][0, 0]:.8e}",
+                                        f"{analytic_probe['sigma_actual'][0, 1]:.8e}",
+                                        f"{analytic_probe['sigma_delta'][0, 0]:.8e}",
+                                        f"{analytic_probe['sigma_delta'][0, 1]:.8e}",
+                                    )),
+                                    TableRow((
+                                        "y",
+                                        f"{analytic_probe['sigma_expected'][1, 0]:.8e}",
+                                        f"{analytic_probe['sigma_expected'][1, 1]:.8e}",
+                                        f"{analytic_probe['sigma_actual'][1, 0]:.8e}",
+                                        f"{analytic_probe['sigma_actual'][1, 1]:.8e}",
+                                        f"{analytic_probe['sigma_delta'][1, 0]:.8e}",
+                                        f"{analytic_probe['sigma_delta'][1, 1]:.8e}",
+                                    )),
+                                    TableRow((
+                                        "relative tensor error",
+                                        f"{analytic_probe['relative_sigma_error']:.8e}",
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                        "",
+                                    )),
+                                ),
+                            ),
+                            Table(
+                                id="section_conductivity_invariant_checks",
+                                title="Conductivity invariant checks",
+                                description="Internal checks that should hold independently of Vincent's conventions.",
+                                headers=("check", "value", "target"),
+                                rows=(
+                                    TableRow(("tau linearity relative error", f"{conductivity_invariants['tau_linearity_relative_error']:.8e}", "0")),
+                                    TableRow(("energy-shift invariance relative error", f"{conductivity_invariants['energy_shift_relative_error']:.8e}", "0")),
+                                    TableRow(("velocity-square scaling relative error", f"{conductivity_invariants['velocity_square_relative_error']:.8e}", "0")),
+                                    TableRow(("minimum tensor eigenvalue", f"{conductivity_invariants['min_eigenvalue']:.8e}", ">= 0")),
+                                    TableRow(("antisymmetric part / trace", f"{conductivity_invariants['antisym_abs_over_trace']:.8e}", "0")),
+                                ),
+                            ),
                         ),
                     ),
-                    Table(
-                        id="section_analytic_end_to_end_sigma",
-                        title="Analytic conductivity tensor check",
-                        description="Computed conductivity compared with the tensor assembled from the analytic expected derivative.",
-                        headers=("component", "expected x", "expected y", "computed x", "computed y", "delta x", "delta y"),
-                        rows=(
-                            TableRow((
-                                "x",
-                                f"{analytic_probe['sigma_expected'][0, 0]:.8e}",
-                                f"{analytic_probe['sigma_expected'][0, 1]:.8e}",
-                                f"{analytic_probe['sigma_actual'][0, 0]:.8e}",
-                                f"{analytic_probe['sigma_actual'][0, 1]:.8e}",
-                                f"{analytic_probe['sigma_delta'][0, 0]:.8e}",
-                                f"{analytic_probe['sigma_delta'][0, 1]:.8e}",
-                            )),
-                            TableRow((
-                                "y",
-                                f"{analytic_probe['sigma_expected'][1, 0]:.8e}",
-                                f"{analytic_probe['sigma_expected'][1, 1]:.8e}",
-                                f"{analytic_probe['sigma_actual'][1, 0]:.8e}",
-                                f"{analytic_probe['sigma_actual'][1, 1]:.8e}",
-                                f"{analytic_probe['sigma_delta'][1, 0]:.8e}",
-                                f"{analytic_probe['sigma_delta'][1, 1]:.8e}",
-                            )),
-                            TableRow((
-                                "relative tensor error",
-                                f"{analytic_probe['relative_sigma_error']:.8e}",
-                                "",
-                                "",
-                                "",
-                                "",
-                                "",
-                            )),
-                        ),
-                    ),
-                    Table(
-                        id="section_strong_weak_dc_field_sweep",
+                    DiagnosticSection(
+                        id="ashcroft_strong_weak_analytic_checks",
+                        title="Strong/weak formula checks",
+                        description="Analytic checks of the strong DC formula and its weak-field limit.",
+                        collapsed=True,
+                        body=(
+                            Table(
+                                id="section_strong_weak_dc_field_sweep",
                         title="Strong versus weak DC field sweep",
                         description=(
                             "Analytic periodic-band comparison of the weak linear-response tensor "
@@ -428,8 +465,8 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                             for row in analytic_probe["strong_weak_field_rows"]
                         ),
                     ),
-                    Table(
-                        id="section_strong_weak_temperature_sweep",
+                            Table(
+                                id="section_strong_weak_temperature_sweep",
                         title="Strong versus weak DC temperature sweep",
                         description=(
                             "Analytic periodic-band comparison at E = 0. This checks when the "
@@ -456,17 +493,6 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                             for row in analytic_probe["strong_weak_temperature_rows"]
                         ),
                     ),
-                    Table(
-                        id="section_conductivity_invariant_checks",
-                        title="Conductivity invariant checks",
-                        description="Internal checks that should hold independently of Vincent's conventions.",
-                        headers=("check", "value", "target"),
-                        rows=(
-                            TableRow(("tau linearity relative error", f"{conductivity_invariants['tau_linearity_relative_error']:.8e}", "0")),
-                            TableRow(("energy-shift invariance relative error", f"{conductivity_invariants['energy_shift_relative_error']:.8e}", "0")),
-                            TableRow(("velocity-square scaling relative error", f"{conductivity_invariants['velocity_square_relative_error']:.8e}", "0")),
-                            TableRow(("minimum tensor eigenvalue", f"{conductivity_invariants['min_eigenvalue']:.8e}", ">= 0")),
-                            TableRow(("antisymmetric part / trace", f"{conductivity_invariants['antisym_abs_over_trace']:.8e}", "0")),
                         ),
                     ),
                 # nested sections continue in body
@@ -545,8 +571,14 @@ At the printed k-points, which lie exactly on grid vertices, the Delaunay piecew
 This resolves the velocity mismatch as a simplex-choice issue at grid vertices, not a units, k-grid, `hbar`, Hartree conversion, or `2π` issue.
 """,
                     ),
-                    Table(
-                        id="section_velocity_delaunay_interpolation_probe",
+                    DiagnosticSection(
+                        id="ashcroft_velocity_details",
+                        title="Velocity details",
+                        description="Direct Delaunay output and sampled k-point bookkeeping.",
+                        collapsed=True,
+                        body=(
+                            Table(
+                                id="section_velocity_delaunay_interpolation_probe",
                         title="Direct Delaunay interpolation",
                         description=(
                             "Direct `find_simplex` reproduction of Vincent's Delaunay plane-fit interpolation. "
@@ -613,8 +645,8 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             for row in delaunay_adjacent_probe
                         ),
                     ),
-                    Table(
-                        id="section_velocity_k_grid",
+                            Table(
+                                id="section_velocity_k_grid",
                         title="Agreed sampled k-points",
                         description="The printed velocity samples lie on the epsilon[0,j] path.",
                         headers=("sample", "kx [m^-1]", "ky [m^-1]", "path"),
@@ -626,6 +658,8 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 f"epsilon[0,{i}] = {i} * b2 / 100",
                             ))
                             for i in range(len(target_k))
+                        ),
+                            ),
                         ),
                     ),
                 ),
@@ -816,8 +850,15 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             for row in vincent_strong_weak_temperature_rows
                         ),
                     ),
-                    Table(
-                        id="section_conductivity_normalisation_hypotheses",
+                # nested sections continue in body
+                    DiagnosticSection(
+                        id="ashcroft_conductivity_details",
+                        title="Conductivity details",
+                        description="Raw local tensors and continuum-convention comparison.",
+                        collapsed=True,
+                        body=(
+                            Table(
+                                id="section_conductivity_normalisation_hypotheses",
                         title="Measure convention check",
                         description=(
                             "Global rescalings applied to the current local tensor. "
@@ -850,13 +891,6 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             TableRow(("trace ratio local/Vincent", "1.00000000e+00", f"{np.trace(local_sigma) / np.trace(sigma):.8e}", f"{np.trace(best_conductivity) / np.trace(sigma):.8e}")),
                         ),
                     ),
-                # nested sections continue in body
-                    DiagnosticSection(
-                        id="ashcroft_conductivity_details",
-                        title="Conductivity details",
-                        description="Raw local tensors and continuum-convention comparison.",
-                        collapsed=True,
-                        body=(
                             Table(
                                 id="section_conductivity_normalisation",
                                 title="Conductivity normalisation",
