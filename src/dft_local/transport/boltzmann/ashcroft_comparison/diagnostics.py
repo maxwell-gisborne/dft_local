@@ -1027,6 +1027,105 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                     ),
                 ),
             ),
+            DiagnosticSection(
+                id="ashcroft_lattice_resolved_conductivity",
+                title="Lattice-resolved strong spectral conductivity",
+                description=(
+                    "Mode-by-mode decomposition of the strong spectral DC formula. "
+                    "This section exposes the lattice-index components and checks that "
+                    "resumming over (a,b) recovers the strong spectral tensor."
+                ),
+                collapsed=False,
+                body=(
+                    ProseBlock(
+                        id="ashcroft_lattice_resolved_conductivity_summary",
+                        title="Mode decomposition",
+                        markdown=rich(
+                            "This section treats the strong spectral DC conductivity as a sum over Fourier lattice modes ",
+                            TypstMath("$ (a,b) $", display=False, name="ashcroft_lattice_modes_ab"),
+                            ". The occupation coefficient, velocity coefficient, and field-response factor are multiplied mode by mode; summing the resulting tensors should recover the strong spectral zero-field conductivity.",
+                        ),
+                    ),
+                    Table(
+                        id="section_lattice_resolved_strong_spectral_dc",
+                        title="Lattice-resolved strong spectral DC resummation",
+                        description=(
+                            "Exposes the thesis lattice-index components for the strong spectral DC formula. "
+                            "The per-(a,b) tensor contributions are summed here and compared against the "
+                            "already displayed strong spectral zero-field tensor."
+                        ),
+                        headers=("quantity", "value", "note"),
+                        rows=(
+                            TableRow((
+                                "mode count",
+                                f"{strong_dc.conductivity_mode_tensor_S.shape[0] * strong_dc.conductivity_mode_tensor_S.shape[1]}",
+                                "number of FFT lattice modes (a,b)",
+                            )),
+                            TableRow((
+                                "resummed trace [S/m]",
+                                f"{np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real / ((2.0 * np.pi) ** 2)):.8e}",
+                                "sum over all lattice-mode contributions, grid-measure display convention",
+                            )),
+                            TableRow((
+                                "strong trace [S/m]",
+                                f"{strong_grid_trace:.8e}",
+                                "same strong spectral zero-field tensor shown above",
+                            )),
+                            TableRow((
+                                "max resummation error [S/m]",
+                                f"{np.max(np.abs((np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)) - strong_dc.conductivity_tensor_S) / ((2.0 * np.pi) ** 2))):.8e}",
+                                "should be roundoff-level if per-mode components sum correctly",
+                            )),
+                            TableRow((
+                                "zero-mode response norm",
+                                f"{np.linalg.norm(strong_dc.response_factor[tuple(np.argwhere(np.all(strong_dc.mode_indices == 0, axis=-1))[0])]):.8e}",
+                                "the (a,b)=(0,0) mode has R=0, so it cannot contribute to the derivative",
+                            )),
+                            TableRow((
+                                "largest mode contribution norm [S/m]",
+                                f"{np.max(np.linalg.norm(strong_dc.conductivity_mode_tensor_S.real / ((2.0 * np.pi) ** 2), axis=(-2, -1))):.8e}",
+                                "largest single lattice-mode tensor contribution after display scaling",
+                            )),
+                        ),
+                    ),
+                    Table(
+                        id="section_lattice_resolved_top_modes",
+                        title="Top lattice-mode conductivity contributions",
+                        description=(
+                            "Largest individual (a,b) contributions to the strong spectral DC tensor. "
+                            "These rows show which Fourier lattice modes dominate the resummed conductivity."
+                        ),
+                        headers=("rank", "a", "b", "|R| [m]", "Re xx [S/m]", "Re yy [S/m]", "tensor norm [S/m]"),
+                        rows=tuple(
+                            TableRow((
+                                f"{rank}",
+                                f"{int(strong_dc.mode_indices[index][0])}",
+                                f"{int(strong_dc.mode_indices[index][1])}",
+                                f"{np.linalg.norm(strong_dc.lattice_vectors_m[index]):.8e}",
+                                f"{(strong_dc.conductivity_mode_tensor_S[index].real / ((2.0 * np.pi) ** 2))[0, 0]:.8e}",
+                                f"{(strong_dc.conductivity_mode_tensor_S[index].real / ((2.0 * np.pi) ** 2))[1, 1]:.8e}",
+                                f"{np.linalg.norm(strong_dc.conductivity_mode_tensor_S[index].real / ((2.0 * np.pi) ** 2)):.8e}",
+                            ))
+                            for rank, index in enumerate(
+                                [
+                                    tuple(idx)
+                                    for idx in np.argwhere(
+                                        np.ones(strong_dc.conductivity_mode_tensor_S.shape[:2], dtype=bool)
+                                    )[
+                                        np.argsort(
+                                            np.linalg.norm(
+                                                strong_dc.conductivity_mode_tensor_S.real / ((2.0 * np.pi) ** 2),
+                                                axis=(-2, -1),
+                                            ).ravel()
+                                        )[::-1][:12]
+                                    ]
+                                ],
+                                start=1,
+                            )
+                        ),
+                    ),
+                ),
+            ),
         ),
     )
 

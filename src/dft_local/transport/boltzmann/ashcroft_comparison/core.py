@@ -1108,12 +1108,25 @@ class BandIndexedStrongDcResult:
     relaxation_time_s: float
     area_bz_per_m2: float
     electric_field_V_per_m: np.ndarray
+    mode_indices: np.ndarray
+    lattice_vectors_m: np.ndarray
     occupation: np.ndarray
     occupation_coefficients: np.ndarray
     velocity_coefficients_m_per_s_per_m2: np.ndarray
     response_factor: np.ndarray
+    conductivity_mode_tensor_S: np.ndarray
     conductivity_tensor_S: np.ndarray
     imaginary_leakage_S: float
+
+
+def lattice_mode_indices(shape: tuple[int, int]) -> np.ndarray:
+    """Return integer FFT mode indices ``(a,b)`` in FFT mode order."""
+
+    n1, n2 = shape
+    a_modes = (np.fft.fftfreq(n1) * float(n1)).astype(int)
+    b_modes = (np.fft.fftfreq(n2) * float(n2)).astype(int)
+    aa, bb = np.meshgrid(a_modes, b_modes, indexing="ij")
+    return np.stack((aa, bb), axis=-1)
 
 
 def lattice_mode_vectors_m(primitive_lattice_vectors_bohr: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
@@ -1123,12 +1136,8 @@ def lattice_mode_vectors_m(primitive_lattice_vectors_bohr: np.ndarray, shape: tu
     if ai_m.shape != (2, 2):
         raise ValueError(f"Expected primitive lattice shape (2, 2), got {ai_m.shape}")
 
-    n1, n2 = shape
-    a_modes = np.fft.fftfreq(n1) * float(n1)
-    b_modes = np.fft.fftfreq(n2) * float(n2)
-    aa, bb = np.meshgrid(a_modes, b_modes, indexing="ij")
-
-    return aa[..., None] * ai_m[0] + bb[..., None] * ai_m[1]
+    mode_indices = lattice_mode_indices(shape)
+    return mode_indices[..., 0, None] * ai_m[0] + mode_indices[..., 1, None] * ai_m[1]
 
 
 def band_indexed_strong_dc_from_velocity_grid(
@@ -1203,15 +1212,18 @@ def band_indexed_strong_dc_from_velocity_grid(
     for beta in range(2):
         response[..., beta] = -1j * scale * r_vectors[..., beta] / (denominator * denominator)
 
-    sigma = np.empty((2, 2), dtype=np.complex128)
+    sigma_modes = np.empty(epsilon_J.shape + (2, 2), dtype=np.complex128)
+    mode_prefactor = spin_degeneracy * ELECTRON_CHARGE_C * area_bz
     for alpha in range(2):
         for beta in range(2):
-            sigma[alpha, beta] = (
-                spin_degeneracy
-                * ELECTRON_CHARGE_C
-                * area_bz
-                * np.sum(occupation_coeff * velocity_coeff[..., alpha] * response[..., beta])
+            sigma_modes[..., alpha, beta] = (
+                mode_prefactor
+                * occupation_coeff
+                * velocity_coeff[..., alpha]
+                * response[..., beta]
             )
+
+    sigma = np.sum(sigma_modes, axis=(0, 1))
 
     return BandIndexedStrongDcResult(
         chemical_potential_J=float(chemical_potential_J),
@@ -1219,10 +1231,13 @@ def band_indexed_strong_dc_from_velocity_grid(
         relaxation_time_s=float(relaxation_time_s),
         area_bz_per_m2=float(area_bz),
         electric_field_V_per_m=field,
+        mode_indices=lattice_mode_indices(epsilon_J.shape),
+        lattice_vectors_m=r_vectors,
         occupation=occupation,
         occupation_coefficients=occupation_coeff,
         velocity_coefficients_m_per_s_per_m2=velocity_coeff,
         response_factor=response,
+        conductivity_mode_tensor_S=sigma_modes,
         conductivity_tensor_S=sigma,
         imaginary_leakage_S=float(np.linalg.norm(sigma.imag)),
     )

@@ -699,6 +699,7 @@ def test_ashcroft_streamlined_panel_structure() -> None:
         "ashcroft_local_calculation_check",
         "ashcroft_velocity_comparison",
         "ashcroft_conductivity_comparison",
+        "ashcroft_lattice_resolved_conductivity",
     ]
 
     assert "analytic checks" in result.summary
@@ -741,7 +742,7 @@ def test_ashcroft_local_calculation_check_contains_validation_evidence() -> None
     assert "section_conductivity_temperature_response" in nested_table_ids
     assert "section_conductivity_contribution_localisation" in nested_table_ids
 
-    markdown = "\n".join(
+    markdown = "".join(
         str(block.markdown)
         for block in (*local.markdowns, *local.body)
         if hasattr(block, "markdown")
@@ -776,7 +777,7 @@ def test_ashcroft_velocity_comparison_contains_delaunay_resolution() -> None:
     assert "section_velocity_delaunay_interpolation_probe" in all_table_ids
     assert "section_velocity_k_grid" in all_table_ids
 
-    markdown = "\n".join(
+    markdown = "".join(
         block.markdown
         for block in (*velocity.markdowns, *velocity.body)
         if hasattr(block, "markdown")
@@ -816,6 +817,8 @@ def test_ashcroft_conductivity_comparison_contains_measure_result() -> None:
     assert "section_conductivity_fermi_window" in table_ids
     assert "section_best_conductivity_reconstruction" in table_ids
     assert "section_band_indexed_strong_dc" in table_ids
+    assert "section_lattice_resolved_strong_spectral_dc" not in table_ids
+    assert "section_lattice_resolved_top_modes" not in table_ids
     assert "section_vincent_strong_weak_temperature_sweep" in table_ids
     assert "section_conductivity_normalisation_hypotheses" in all_table_ids
     assert "section_conductivity_shape_summary" in all_table_ids
@@ -825,7 +828,7 @@ def test_ashcroft_conductivity_comparison_contains_measure_result() -> None:
     assert "section_conductivity_local_tensor" in nested_table_ids
     assert "section_conductivity_target" in nested_table_ids
 
-    markdown = "\n".join(
+    markdown = "".join(
         str(block.markdown)
         for block in (*conductivity.markdowns, *conductivity.body)
         if hasattr(block, "markdown")
@@ -875,7 +878,7 @@ def test_ashcroft_computed_result_typst_math_compiles() -> None:
         except Exception as exc:  # noqa: BLE001 - collect all compile failures
             failures.append(f"{label}: {exc}")
 
-    assert not failures, "\n".join(failures)
+    assert not failures, "".join(failures)
 
 
 def test_ashcroft_rendered_result_has_no_typst_error_fallbacks() -> None:
@@ -1018,3 +1021,112 @@ def test_ashcroft_overview_renders_dataset_unit_provenance_when_context_availabl
     assert rows["working energy unit"] == "eV"
     assert rows["disk length unit"] == "bohr"
     assert rows["working length unit"] == "angstrom"
+
+def test_band_indexed_strong_dc_exposes_lattice_resolved_resummation() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        HARTREE_TO_J,
+        band_indexed_strong_dc_from_velocity_grid,
+        velocity_from_epsilon_grid,
+    )
+
+    data = load_vincent_input_data()
+    reference = vincent_reference()
+    epsilon = data.epsilon_of_k
+    velocity = np.stack(
+        velocity_from_epsilon_grid(epsilon, data.primitive_lattice_vectors_bohr),
+        axis=-1,
+    )
+
+    result = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=float(np.mean(epsilon) * HARTREE_TO_J),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+
+    assert result.mode_indices.shape == epsilon.shape + (2,)
+    assert result.lattice_vectors_m.shape == epsilon.shape + (2,)
+    assert result.conductivity_mode_tensor_S.shape == epsilon.shape + (2, 2)
+
+    resummed = np.sum(result.conductivity_mode_tensor_S, axis=(0, 1))
+    np.testing.assert_allclose(
+        resummed,
+        result.conductivity_tensor_S,
+        rtol=1e-12,
+        atol=1e-18,
+    )
+
+
+def test_band_indexed_strong_dc_zero_mode_has_no_response() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        HARTREE_TO_J,
+        band_indexed_strong_dc_from_velocity_grid,
+        velocity_from_epsilon_grid,
+    )
+
+    data = load_vincent_input_data()
+    reference = vincent_reference()
+    epsilon = data.epsilon_of_k
+    velocity = np.stack(
+        velocity_from_epsilon_grid(epsilon, data.primitive_lattice_vectors_bohr),
+        axis=-1,
+    )
+
+    result = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=float(np.mean(epsilon) * HARTREE_TO_J),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+
+    zero = tuple(np.argwhere(np.all(result.mode_indices == 0, axis=-1))[0])
+    np.testing.assert_allclose(result.lattice_vectors_m[zero], np.zeros(2), atol=0.0)
+    np.testing.assert_allclose(result.response_factor[zero], np.zeros(2), atol=0.0)
+    np.testing.assert_allclose(result.conductivity_mode_tensor_S[zero], np.zeros((2, 2)), atol=0.0)
+
+
+def test_lattice_mode_indices_match_lattice_vectors() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        BOHR_TO_M,
+        HARTREE_TO_J,
+        band_indexed_strong_dc_from_velocity_grid,
+    )
+
+    data = load_vincent_input_data()
+    reference = vincent_reference()
+    epsilon = data.epsilon_of_k
+
+    result = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        np.zeros(epsilon.shape + (2,), dtype=float),
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=float(np.mean(epsilon) * HARTREE_TO_J),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+
+    ai_m = np.asarray(data.primitive_lattice_vectors_bohr, dtype=float) * BOHR_TO_M
+    expected = (
+        result.mode_indices[..., 0, None] * ai_m[0]
+        + result.mode_indices[..., 1, None] * ai_m[1]
+    )
+
+    np.testing.assert_allclose(result.lattice_vectors_m, expected, rtol=0.0, atol=0.0)
+
+def test_ashcroft_has_top_level_lattice_resolved_conductivity_section() -> None:
+    specs = {spec.id: spec for spec in load_diagnostics()}
+    result = specs["transport.boltzmann.ashcroft_comparison.overview"].compute(None, {})
+
+    lattice_section = _section_by_id(result, "ashcroft_lattice_resolved_conductivity")
+    table_ids = {table.id for table in lattice_section.tables} | {
+        block.id
+        for block in lattice_section.body
+        if hasattr(block, "id")
+    }
+
+    assert "section_lattice_resolved_strong_spectral_dc" in table_ids
+    assert "section_lattice_resolved_top_modes" in table_ids
