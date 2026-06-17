@@ -7,26 +7,53 @@ ELECTRON_CHARGE_C = 1.602176634e-19
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Annotated
 
 import numpy as np
 from scipy.spatial import Delaunay
 
+from dft_local.core.units import (
+    ATOMIC_UNITS,
+    CONDUCTIVITY,
+    DIMENSIONLESS,
+    ENERGY,
+    KSPACE_AREA,
+    LENGTH,
+    SI_UNITS,
+    VELOCITY,
+    WAVEVECTOR,
+    UnitContext,
+    qarray,
+)
+
+
+EnergyGrid = Annotated[np.ndarray, qarray(ENERGY, ("k1", "k2"), role="2D energy grid")]
+PrimitiveLattice = Annotated[np.ndarray, qarray(LENGTH, ("lattice", "cartesian"), role="primitive lattice vectors")]
+CartesianKPoints = Annotated[np.ndarray, qarray(WAVEVECTOR, ("sample", "cartesian"), role="cartesian k-points")]
+VelocityVector = Annotated[np.ndarray, qarray(VELOCITY, ("cartesian",), role="cartesian velocity vector")]
+VelocitySamples = Annotated[np.ndarray, qarray(VELOCITY, ("sample", "cartesian"), role="velocity samples")]
+VelocityGrid = Annotated[np.ndarray, qarray(VELOCITY, ("k1", "k2", "cartesian"), role="velocity grid")]
+ConductivityTensor = Annotated[np.ndarray, qarray(CONDUCTIVITY, ("cartesian", "cartesian"), role="conductivity tensor")]
+KResolvedConductivityTensor = Annotated[np.ndarray, qarray(CONDUCTIVITY * KSPACE_AREA.inverse(), ("k1", "k2", "cartesian", "cartesian"), role="k-resolved conductivity tensor")]
+DimensionlessGrid = Annotated[np.ndarray, qarray(DIMENSIONLESS, ("k1", "k2"), role="dimensionless grid")]
 
 @dataclass(frozen=True, slots=True)
 class VincentReference:
     temperature_K: float
     relaxation_time_s: float
     electric_field_V_per_m: np.ndarray
-    expected_conductivity_S_per_m: np.ndarray
+    expected_conductivity_S_per_m: ConductivityTensor
     max_fermi_weight: float
     min_fermi_weight: float
     mean_fermi_weight: float
+    unit_context: UnitContext = SI_UNITS
 
 
 @dataclass(frozen=True, slots=True)
 class VincentInputData:
-    primitive_lattice_vectors_bohr: np.ndarray
-    epsilon_of_k: np.ndarray
+    primitive_lattice_vectors_bohr: PrimitiveLattice
+    epsilon_of_k: EnergyGrid
+    unit_context: UnitContext = ATOMIC_UNITS
 
 
 def vincent_reference() -> VincentReference:
@@ -106,8 +133,8 @@ def relative_error(actual: np.ndarray, expected: np.ndarray) -> np.ndarray:
 E_CHARGE_C = 1.602176634e-19
 HBAR_J_S = 1.054571817e-34
 KB_J_PER_K = 1.380649e-23
-HARTREE_TO_J = 4.3597447222071e-18
-BOHR_TO_M = 0.52917721092e-10
+HARTREE_TO_J = ATOMIC_UNITS.energy.scale_to_si
+BOHR_TO_M = ATOMIC_UNITS.length.scale_to_si
 
 
 def reciprocal_grid_fractional(shape: tuple[int, int], endpoint: bool = False) -> tuple[np.ndarray, np.ndarray]:
@@ -687,14 +714,14 @@ def search_baseline_subtracted_velocity_samples(
 
 @dataclass(frozen=True, slots=True)
 class VelocitySystematicErrorProbe:
-    target_k_per_m: np.ndarray
-    target_v_m_per_s: np.ndarray
-    local_v_m_per_s: np.ndarray
-    delta_v_m_per_s: np.ndarray
+    target_k_per_m: CartesianKPoints
+    target_v_m_per_s: VelocitySamples
+    local_v_m_per_s: VelocitySamples
+    delta_v_m_per_s: VelocitySamples
     percent_error: np.ndarray
-    delta_step_m_per_s: np.ndarray
+    delta_step_m_per_s: VelocitySamples
     rms_error_m_per_s: float
-    mean_delta_m_per_s: np.ndarray
+    mean_delta_m_per_s: VelocityVector
 
 
 def velocity_systematic_error_probe(
@@ -735,9 +762,9 @@ class VelocityGridMatch:
     target_index: int
     row: int
     col: int
-    local_velocity_m_per_s: np.ndarray
-    target_velocity_m_per_s: np.ndarray
-    delta_m_per_s: np.ndarray
+    local_velocity_m_per_s: VelocityVector
+    target_velocity_m_per_s: VelocityVector
+    delta_m_per_s: VelocityVector
     error_m_per_s: float
 
 
@@ -747,8 +774,8 @@ class VelocityOffsetPathMatch:
     start_col: int
     step_row: int
     step_col: int
-    local_velocity_m_per_s: np.ndarray
-    delta_m_per_s: np.ndarray
+    local_velocity_m_per_s: VelocityVector
+    delta_m_per_s: VelocityVector
     rms_error_m_per_s: float
 
 
@@ -1094,10 +1121,10 @@ class ConductivityResult:
     k_cell_area_per_m2: float
     prefactor_S_m2_per_J: float
     fermi_weight: np.ndarray
-    velocity_m_per_s: np.ndarray
+    velocity_m_per_s: VelocityGrid
     raw_velocity_weight_tensor: np.ndarray
     weighted_velocity_tensor: np.ndarray
-    conductivity_tensor_S: np.ndarray
+    conductivity_tensor_S: ConductivityTensor
 
 
 
@@ -1111,12 +1138,12 @@ class BandIndexedStrongDcResult:
     mode_indices: np.ndarray
     lattice_vectors_m: np.ndarray
     occupation: np.ndarray
-    velocity_m_per_s: np.ndarray
+    velocity_m_per_s: VelocityGrid
     occupation_coefficients: np.ndarray
     velocity_coefficients_m_per_s_per_m2: np.ndarray
     response_factor: np.ndarray
-    conductivity_mode_tensor_S: np.ndarray
-    conductivity_tensor_S: np.ndarray
+    conductivity_mode_tensor_S: KResolvedConductivityTensor
+    conductivity_tensor_S: ConductivityTensor
     imaginary_leakage_S: float
 
 

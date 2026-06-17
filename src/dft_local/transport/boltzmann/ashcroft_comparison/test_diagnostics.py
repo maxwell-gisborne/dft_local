@@ -1300,3 +1300,44 @@ def test_strong_dc_response_factor_matches_lattice_vectors() -> None:
 
     np.testing.assert_allclose(result.response_factor, expected, rtol=1.0e-12, atol=0.0)
 
+
+def test_ashcroft_unit_constants_match_core_unit_system() -> None:
+    from dft_local.core.units import ATOMIC_UNITS
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import BOHR_TO_M, HARTREE_TO_J
+
+    assert HARTREE_TO_J == ATOMIC_UNITS.energy.scale_to_si
+    assert BOHR_TO_M == ATOMIC_UNITS.length.scale_to_si
+
+
+def test_ashcroft_input_and_result_fields_have_quantity_schema() -> None:
+    from dft_local.core.units import CONDUCTIVITY, ENERGY, KSPACE_AREA, LENGTH, VELOCITY, WAVEVECTOR, quantity_array_specs
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        BandIndexedStrongDcResult,
+        ConductivityResult,
+        VincentInputData,
+        VincentReference,
+        VelocitySystematicErrorProbe,
+    )
+
+    input_specs = quantity_array_specs(VincentInputData)
+    assert input_specs["epsilon_of_k"].dimension == ENERGY
+    assert input_specs["epsilon_of_k"].axes == ("k1", "k2")
+    assert input_specs["primitive_lattice_vectors_bohr"].dimension == LENGTH
+    assert input_specs["primitive_lattice_vectors_bohr"].axes == ("lattice", "cartesian")
+
+    reference_specs = quantity_array_specs(VincentReference)
+    assert reference_specs["expected_conductivity_S_per_m"].dimension == CONDUCTIVITY
+
+    probe_specs = quantity_array_specs(VelocitySystematicErrorProbe)
+    assert probe_specs["target_k_per_m"].dimension == WAVEVECTOR
+    assert probe_specs["target_v_m_per_s"].dimension == VELOCITY
+    assert probe_specs["target_v_m_per_s"].axes == ("sample", "cartesian")
+    assert probe_specs["mean_delta_m_per_s"].dimension == VELOCITY
+    assert probe_specs["mean_delta_m_per_s"].axes == ("cartesian",)
+
+    conductivity_specs = quantity_array_specs(ConductivityResult)
+    assert conductivity_specs["velocity_m_per_s"].dimension == VELOCITY
+
+    strong_specs = quantity_array_specs(BandIndexedStrongDcResult)
+    assert strong_specs["velocity_m_per_s"].dimension == VELOCITY
+    assert strong_specs["conductivity_mode_tensor_S"].dimension == CONDUCTIVITY * KSPACE_AREA.inverse()
