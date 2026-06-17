@@ -1111,6 +1111,7 @@ class BandIndexedStrongDcResult:
     mode_indices: np.ndarray
     lattice_vectors_m: np.ndarray
     occupation: np.ndarray
+    velocity_m_per_s: np.ndarray
     occupation_coefficients: np.ndarray
     velocity_coefficients_m_per_s_per_m2: np.ndarray
     response_factor: np.ndarray
@@ -1234,6 +1235,7 @@ def band_indexed_strong_dc_from_velocity_grid(
         mode_indices=lattice_mode_indices(epsilon_J.shape),
         lattice_vectors_m=r_vectors,
         occupation=occupation,
+        velocity_m_per_s=velocity,
         occupation_coefficients=occupation_coeff,
         velocity_coefficients_m_per_s_per_m2=velocity_coeff,
         response_factor=response,

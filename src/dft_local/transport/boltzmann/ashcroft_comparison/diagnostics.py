@@ -1047,6 +1047,65 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         ),
                     ),
                     Table(
+                        id="section_lattice_resolved_component_reconstruction",
+                        title="Component reconstruction checks",
+                        description=(
+                            "Checks that the lattice-mode components used by the strong spectral formula "
+                            "reconstruct their sampled grid objects before they are multiplied into conductivity contributions."
+                        ),
+                        headers=("component", "reconstruction", "max absolute error", "note"),
+                        rows=(
+                            TableRow((
+                                "Gamma",
+                                "FFT(Gamma_alpha) -> v_alpha(k)",
+                                f"{np.max(np.abs(np.stack(tuple(np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., alpha]).real for alpha in range(2)), axis=-1) - strong_dc.velocity_m_per_s)):.8e}",
+                                "velocity coefficient reconstructs the sampled velocity grid passed into the strong formula",
+                            )),
+                            TableRow((
+                                "rho_tilde",
+                                "IFFT(N rho_tilde) -> f0(k)",
+                                f"{np.max(np.abs(np.fft.ifft2(strong_dc.occupation_coefficients * strong_dc.occupation_coefficients.size).real - strong_dc.occupation)):.8e}",
+                                "occupation coefficient reconstructs the sampled Fermi occupation",
+                            )),
+                            TableRow((
+                                "F",
+                                "closed-form F_beta(R,E)",
+                                "0.00000000e+00",
+                                "response factor is stored directly from the closed-form lattice-vector formula",
+                            )),
+                        ),
+                    ),
+                    Table(
+                        id="section_lattice_resolved_sample_velocity_reconstruction",
+                        title="Sample velocity reconstruction from Gamma",
+                        description=(
+                            "Selected grid samples showing that the stored velocity coefficient Gamma reconstructs "
+                            "the sampled velocity field used by the strong spectral conductivity calculation."
+                        ),
+                        headers=("sample", "grid index", "vx [m/s]", "vx from Gamma", "delta vx", "vy [m/s]", "vy from Gamma", "delta vy"),
+                        rows=tuple(
+                            TableRow((
+                                f"{sample}",
+                                f"({i}, {j})",
+                                f"{strong_dc.velocity_m_per_s[i, j, 0]:.8e}",
+                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[i, j]:.8e}",
+                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[i, j] - strong_dc.velocity_m_per_s[i, j, 0]:.8e}",
+                                f"{strong_dc.velocity_m_per_s[i, j, 1]:.8e}",
+                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[i, j]:.8e}",
+                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[i, j] - strong_dc.velocity_m_per_s[i, j, 1]:.8e}",
+                            ))
+                            for sample, (i, j) in enumerate(
+                                (
+                                    (0, 0),
+                                    (0, 1),
+                                    (0, 2),
+                                    (strong_dc.velocity_m_per_s.shape[0] // 2, strong_dc.velocity_m_per_s.shape[1] // 2),
+                                    (strong_dc.velocity_m_per_s.shape[0] - 1, strong_dc.velocity_m_per_s.shape[1] - 1),
+                                )
+                            )
+                        ),
+                    ),
+                    Table(
                         id="section_lattice_resolved_strong_spectral_dc",
                         title="Lattice-resolved strong spectral DC resummation",
                         description=(

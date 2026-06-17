@@ -1128,6 +1128,8 @@ def test_ashcroft_has_top_level_lattice_resolved_conductivity_section() -> None:
         if hasattr(block, "id")
     }
 
+    assert "section_lattice_resolved_component_reconstruction" in table_ids
+    assert "section_lattice_resolved_sample_velocity_reconstruction" in table_ids
     assert "section_lattice_resolved_strong_spectral_dc" in table_ids
     assert "section_lattice_resolved_top_modes" in table_ids
 
@@ -1182,4 +1184,116 @@ def test_lattice_resolved_resums_strong_spectral_not_weak_chain_rule() -> None:
     ) / abs(np.trace(weak.conductivity_tensor_S))
 
     assert relative_trace_delta > 1.0e-2
+
+def test_strong_dc_gamma_reconstructs_sample_velocity_grid() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        HARTREE_TO_J,
+        band_indexed_strong_dc_from_velocity_grid,
+        velocity_from_epsilon_grid,
+        vincent_reference,
+    )
+
+    data = load_vincent_input_data()
+    reference = vincent_reference()
+    epsilon = data.epsilon_of_k
+    velocity = np.stack(
+        velocity_from_epsilon_grid(epsilon, data.primitive_lattice_vectors_bohr),
+        axis=-1,
+    )
+
+    result = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=float(np.mean(epsilon) * HARTREE_TO_J),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+
+    reconstructed = np.empty_like(velocity)
+    for alpha in range(2):
+        reconstructed[..., alpha] = np.fft.fft2(
+            result.velocity_coefficients_m_per_s_per_m2[..., alpha]
+        ).real
+
+    np.testing.assert_allclose(reconstructed, velocity, rtol=1.0e-12, atol=1.0e-6)
+
+
+def test_strong_dc_occupation_coefficients_reconstruct_sample_occupation() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        HARTREE_TO_J,
+        band_indexed_strong_dc_from_velocity_grid,
+        fermi_factor,
+        velocity_from_epsilon_grid,
+        vincent_reference,
+    )
+
+    data = load_vincent_input_data()
+    reference = vincent_reference()
+    epsilon = data.epsilon_of_k
+    velocity = np.stack(
+        velocity_from_epsilon_grid(epsilon, data.primitive_lattice_vectors_bohr),
+        axis=-1,
+    )
+    mu = float(np.mean(epsilon) * HARTREE_TO_J)
+
+    result = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=mu,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+
+    expected = fermi_factor(epsilon * HARTREE_TO_J, mu, reference.temperature_K)
+    reconstructed = np.fft.ifft2(
+        result.occupation_coefficients * result.occupation_coefficients.size
+    ).real
+
+    np.testing.assert_allclose(reconstructed, expected, rtol=1.0e-12, atol=1.0e-12)
+    np.testing.assert_allclose(reconstructed, result.occupation, rtol=1.0e-12, atol=1.0e-12)
+
+
+def test_strong_dc_response_factor_matches_lattice_vectors() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        ELECTRON_CHARGE_C,
+        HARTREE_TO_J,
+        HBAR_J_S,
+        band_indexed_strong_dc_from_velocity_grid,
+        velocity_from_epsilon_grid,
+        vincent_reference,
+    )
+
+    data = load_vincent_input_data()
+    reference = vincent_reference()
+    epsilon = data.epsilon_of_k
+    velocity = np.stack(
+        velocity_from_epsilon_grid(epsilon, data.primitive_lattice_vectors_bohr),
+        axis=-1,
+    )
+    field = np.array([2.0e5, -1.0e5], dtype=float)
+
+    result = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=float(np.mean(epsilon) * HARTREE_TO_J),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=field,
+    )
+
+    scale = ELECTRON_CHARGE_C * reference.relaxation_time_s / HBAR_J_S
+    field_dot_r = np.einsum("...a,a->...", result.lattice_vectors_m, field)
+    denominator = 1.0 - 1j * scale * field_dot_r
+    expected = np.empty_like(result.response_factor)
+    for beta in range(2):
+        expected[..., beta] = -1j * scale * result.lattice_vectors_m[..., beta] / (
+            denominator * denominator
+        )
+
+    np.testing.assert_allclose(result.response_factor, expected, rtol=1.0e-12, atol=0.0)
 
