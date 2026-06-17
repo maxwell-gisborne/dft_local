@@ -1063,7 +1063,7 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             )),
                             TableRow((
                                 "resummed trace [S/m]",
-                                f"{np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real / ((2.0 * np.pi) ** 2)):.8e}",
+                                f"{np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real):.8e}",
                                 "sum over all lattice-mode contributions, grid-measure display convention",
                             )),
                             TableRow((
@@ -1078,17 +1078,17 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             )),
                             TableRow((
                                 "resummed minus best trace [S/m]",
-                                f"{np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real / ((2.0 * np.pi) ** 2)) - np.trace(best_conductivity):.8e}",
+                                f"{np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real) - np.trace(best_conductivity):.8e}",
                                 "checks whether the modal strong spectral decomposition also reconstructs the best weak-chain tensor",
                             )),
                             TableRow((
                                 "resummed vs best trace error",
-                                f"{100.0 * (np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real / ((2.0 * np.pi) ** 2)) - np.trace(best_conductivity)) / np.trace(best_conductivity):.8e}%",
+                                f"{100.0 * (np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real) - np.trace(best_conductivity)) / np.trace(best_conductivity):.8e}%",
                                 "nonzero if strong spectral derivative differs from the weak chain-rule formula",
                             )),
                             TableRow((
                                 "max resummation error [S/m]",
-                                f"{np.max(np.abs((np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)) - strong_dc.conductivity_tensor_S) / ((2.0 * np.pi) ** 2))):.8e}",
+                                f"{np.max(np.abs(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)) - strong_dc.conductivity_tensor_S)):.8e}",
                                 "should be roundoff-level if per-mode components sum correctly",
                             )),
                             TableRow((
@@ -1098,7 +1098,7 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             )),
                             TableRow((
                                 "largest mode contribution norm [S/m]",
-                                f"{np.max(np.linalg.norm(strong_dc.conductivity_mode_tensor_S.real / ((2.0 * np.pi) ** 2), axis=(-2, -1))):.8e}",
+                                f"{np.max(np.linalg.norm(strong_dc.conductivity_mode_tensor_S.real, axis=(-2, -1))):.8e}",
                                 "largest single lattice-mode tensor contribution after display scaling",
                             )),
                         ),
@@ -1117,9 +1117,9 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 f"{int(strong_dc.mode_indices[index][0])}",
                                 f"{int(strong_dc.mode_indices[index][1])}",
                                 f"{np.linalg.norm(strong_dc.lattice_vectors_m[index]):.8e}",
-                                f"{(strong_dc.conductivity_mode_tensor_S[index].real / ((2.0 * np.pi) ** 2))[0, 0]:.8e}",
-                                f"{(strong_dc.conductivity_mode_tensor_S[index].real / ((2.0 * np.pi) ** 2))[1, 1]:.8e}",
-                                f"{np.linalg.norm(strong_dc.conductivity_mode_tensor_S[index].real / ((2.0 * np.pi) ** 2)):.8e}",
+                                f"{strong_dc.conductivity_mode_tensor_S[index].real[0, 0]:.8e}",
+                                f"{strong_dc.conductivity_mode_tensor_S[index].real[1, 1]:.8e}",
+                                f"{np.linalg.norm(strong_dc.conductivity_mode_tensor_S[index].real):.8e}",
                             ))
                             for rank, index in enumerate(
                                 [
@@ -1129,7 +1129,7 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                     )[
                                         np.argsort(
                                             np.linalg.norm(
-                                                strong_dc.conductivity_mode_tensor_S.real / ((2.0 * np.pi) ** 2),
+                                                strong_dc.conductivity_mode_tensor_S.real,
                                                 axis=(-2, -1),
                                             ).ravel()
                                         )[::-1][:12]
