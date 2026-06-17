@@ -1086,8 +1086,10 @@ def test_display_quantity_uses_compact_scientific_formatting() -> None:
 
     html = render_result(result)
 
-    assert "3.61689e-4" in html
-    assert "2.43757e4" in html
+    assert "3.61689" in html
+    assert "10<sup>-4</sup>" in html
+    assert "2.43757" in html
+    assert "10<sup>4</sup>" in html
     assert "1.14529" in html
     assert "data-unit=''" in html
     assert "<span class='display-unit'></span>" not in html

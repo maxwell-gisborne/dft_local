@@ -53,7 +53,7 @@ def render_display_value(value: Any) -> str:
         )
         return (
             f"<span class='display-quantity' data-unit='{escape(unit_symbol)}'>"
-            f"{escape(fmt(value.value))}"
+            f"{render_formatted_number_html(fmt(value.value))}"
             f"{unit_html}"
             "</span>"
         )
@@ -124,6 +124,33 @@ def fmt_float(value: float, *, sigfigs: int = 6) -> str:
         return f"{mantissa}e{exponent}"
 
     return f"{value:.{sigfigs}g}"
+
+
+def render_formatted_number_html(text: str) -> str:
+    """Render a formatted number string as HTML.
+
+    Plain strings are escaped. Scientific notation from fmt_float, such as
+    "3.61689e-4", is displayed as "3.61689 × 10⁻⁴" using a superscript.
+    """
+
+    if "e" not in text and "E" not in text:
+        return escape(text)
+
+    base, sep, exponent = text.lower().partition("e")
+    if not sep:
+        return escape(text)
+
+    try:
+        exponent_int = int(exponent)
+    except ValueError:
+        return escape(text)
+
+    return (
+        f"{escape(base)}"
+        " <span class='scientific-times'>×</span> "
+        "10"
+        f"<sup>{escape(str(exponent_int))}</sup>"
+    )
 
 
 def _nice(value: float) -> str:
