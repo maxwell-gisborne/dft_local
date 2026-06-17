@@ -30,6 +30,7 @@ from dft_local.transport.boltzmann.ashcroft_comparison.core import (
     swapped_field_shift,
     velocity_systematic_error_probe,
     velocity_two_pi_hypothesis_errors,
+    vincent_delaunay_velocity_grid,
     vincent_delaunay_velocity_sample_probe,
     vincent_delaunay_adjacent_simplex_velocity_probe,
     vincent_reference,
@@ -69,6 +70,17 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     strong_dc = band_indexed_strong_dc_from_velocity_grid(
         vincent_inputs.epsilon_of_k,
         local_conductivity.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local_conductivity.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+
+    delaunay_velocity_grid = vincent_delaunay_velocity_grid(vincent_inputs.epsilon_of_k, ai)
+    delaunay_strong_dc = band_indexed_strong_dc_from_velocity_grid(
+        vincent_inputs.epsilon_of_k,
+        delaunay_velocity_grid,
         ai,
         chemical_potential_J=local_conductivity.chemical_potential_J,
         temperature_K=reference.temperature_K,
@@ -1103,6 +1115,40 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                     (strong_dc.velocity_m_per_s.shape[0] - 1, strong_dc.velocity_m_per_s.shape[1] - 1),
                                 )
                             )
+                        ),
+                    ),
+                    Table(
+                        id="section_lattice_resolved_gamma_vincent_samples",
+                        title="Gamma reconstruction against Vincent velocity samples",
+                        description=(
+                            "Compares Vincent's printed velocity samples with velocities reconstructed from Gamma. "
+                            "The current Gamma reconstructs the finite-difference velocity grid; the Delaunay Gamma "
+                            "reconstructs a velocity grid built with Vincent-style Delaunay plane fits."
+                        ),
+                        headers=(
+                            "sample",
+                            "target vx",
+                            "target vy",
+                            "Gamma-current vx",
+                            "Gamma-current vy",
+                            "current error",
+                            "Gamma-Delaunay vx",
+                            "Gamma-Delaunay vy",
+                            "Delaunay error",
+                        ),
+                        rows=tuple(
+                            TableRow((
+                                f"{sample}",
+                                f"{delaunay_velocity_probe['target'][sample, 0]:.8e}",
+                                f"{delaunay_velocity_probe['target'][sample, 1]:.8e}",
+                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample]:.8e}",
+                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample]:.8e}",
+                                f"{np.linalg.norm(np.array((np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample])) - delaunay_velocity_probe['target'][sample]):.8e}",
+                                f"{np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample]:.8e}",
+                                f"{np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample]:.8e}",
+                                f"{np.linalg.norm(np.array((np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample])) - delaunay_velocity_probe['target'][sample]):.8e}",
+                            ))
+                            for sample in range(len(delaunay_velocity_probe["target"]))
                         ),
                     ),
                     Table(
