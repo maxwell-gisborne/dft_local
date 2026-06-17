@@ -4,13 +4,17 @@ import numpy as np
 
 from dft_local.core.units import (
     DisplayQuantity,
+    CONDUCTIVITY,
     ENERGY,
     JOULE,
     KELVIN,
     KSPACE_AREA,
+    LENGTH,
     SECOND,
     TEMPERATURE,
     TIME,
+    VELOCITY,
+    WAVEVECTOR,
     Unit,
 )
 
@@ -28,6 +32,50 @@ SIEMENS_M2_PER_J = Unit(
     dimension=KSPACE_AREA.inverse(),
     scale_to_si=1.0,
 )
+
+SIEMENS_PER_METER = Unit(
+    symbol="S/m",
+    dimension=CONDUCTIVITY,
+    scale_to_si=1.0,
+)
+METER_PER_SECOND = Unit(
+    symbol="m/s",
+    dimension=VELOCITY,
+    scale_to_si=1.0,
+)
+METER = Unit(
+    symbol="m",
+    dimension=LENGTH,
+    scale_to_si=1.0,
+)
+
+
+PER_METER = Unit(
+    symbol="m^-1",
+    dimension=WAVEVECTOR,
+    scale_to_si=1.0,
+)
+
+
+def _dq_wavevector(value: float, name: str) -> DisplayQuantity:
+    return DisplayQuantity(float(value), WAVEVECTOR, PER_METER, name=name)
+
+
+def _dq_conductivity(value: float, name: str) -> DisplayQuantity:
+    return DisplayQuantity(float(value), CONDUCTIVITY, SIEMENS_PER_METER, name=name)
+
+
+def _dq_velocity(value: float, name: str) -> DisplayQuantity:
+    return DisplayQuantity(float(value), VELOCITY, METER_PER_SECOND, name=name)
+
+
+def _dq_length(value: float, name: str) -> DisplayQuantity:
+    return DisplayQuantity(float(value), LENGTH, METER, name=name)
+
+
+def _dq_temperature(value: float, name: str) -> DisplayQuantity:
+    return DisplayQuantity(float(value), TEMPERATURE, KELVIN, name=name)
+
 
 from dft_local.transport.boltzmann.ashcroft_comparison.core import (
     band_indexed_strong_dc_from_velocity_grid,
@@ -303,7 +351,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         TableRow(("analytic linear derivative test", "passed in unit tests", "validates derivative basis transform")),
         TableRow(("periodic sinusoidal end-to-end test", "passed in unit tests", "validates derivative -> Fermi window -> tensor assembly")),
         TableRow(("k-grid mapping", "epsilon[0,j] = j * b2 / 100", "matches Vincent's listed k-points")),
-        TableRow(("Vincent velocity interpolation", "Delaunay plane-fit interpolation", f"RMS sample error = {best_velocity_rms:.6e} m/s")),
+        TableRow(("Vincent velocity interpolation", "Delaunay plane-fit interpolation", _dq_velocity(best_velocity_rms, "RMS sample error"))),
         TableRow(("2π velocity scaling", "rejected", "not the explanation for printed sample velocities")),
     )
 
@@ -436,8 +484,8 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                                 description="Implemented central Cartesian derivative compared with exact central-periodic finite-difference derivative.",
                                 headers=("quantity", "error"),
                                 rows=(
-                                    TableRow(("max abs vx error [m/s]", f"{analytic_probe['max_abs_vx_error']:.8e}")),
-                                    TableRow(("max abs vy error [m/s]", f"{analytic_probe['max_abs_vy_error']:.8e}")),
+                                    TableRow(("max abs vx error", _dq_velocity(analytic_probe["max_abs_vx_error"], "max abs vx error"))),
+                                    TableRow(("max abs vy error", _dq_velocity(analytic_probe["max_abs_vy_error"], "max abs vy error"))),
                                     TableRow(("relative velocity-field error", f"{analytic_probe['relative_velocity_error']:.8e}")),
                                 ),
                             ),
@@ -449,21 +497,21 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                                 rows=(
                                     TableRow((
                                         "x",
-                                        f"{analytic_probe['sigma_expected'][0, 0]:.8e}",
-                                        f"{analytic_probe['sigma_expected'][0, 1]:.8e}",
-                                        f"{analytic_probe['sigma_actual'][0, 0]:.8e}",
-                                        f"{analytic_probe['sigma_actual'][0, 1]:.8e}",
-                                        f"{analytic_probe['sigma_delta'][0, 0]:.8e}",
-                                        f"{analytic_probe['sigma_delta'][0, 1]:.8e}",
+                                        _dq_conductivity(analytic_probe["sigma_expected"][0, 0], "expected xx"),
+                                        _dq_conductivity(analytic_probe["sigma_expected"][0, 1], "expected xy"),
+                                        _dq_conductivity(analytic_probe["sigma_actual"][0, 0], "actual xx"),
+                                        _dq_conductivity(analytic_probe["sigma_actual"][0, 1], "actual xy"),
+                                        _dq_conductivity(analytic_probe["sigma_delta"][0, 0], "delta xx"),
+                                        _dq_conductivity(analytic_probe["sigma_delta"][0, 1], "delta xy"),
                                     )),
                                     TableRow((
                                         "y",
-                                        f"{analytic_probe['sigma_expected'][1, 0]:.8e}",
-                                        f"{analytic_probe['sigma_expected'][1, 1]:.8e}",
-                                        f"{analytic_probe['sigma_actual'][1, 0]:.8e}",
-                                        f"{analytic_probe['sigma_actual'][1, 1]:.8e}",
-                                        f"{analytic_probe['sigma_delta'][1, 0]:.8e}",
-                                        f"{analytic_probe['sigma_delta'][1, 1]:.8e}",
+                                        _dq_conductivity(analytic_probe["sigma_expected"][1, 0], "expected yx"),
+                                        _dq_conductivity(analytic_probe["sigma_expected"][1, 1], "expected yy"),
+                                        _dq_conductivity(analytic_probe["sigma_actual"][1, 0], "actual yx"),
+                                        _dq_conductivity(analytic_probe["sigma_actual"][1, 1], "actual yy"),
+                                        _dq_conductivity(analytic_probe["sigma_delta"][1, 0], "delta yx"),
+                                        _dq_conductivity(analytic_probe["sigma_delta"][1, 1], "delta yy"),
                                     )),
                                     TableRow((
                                         "relative tensor error",
@@ -507,7 +555,7 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                         ),
                         headers=(
                             "eta",
-                            "E [V/m]",
+                            "E",
                             "weak trace",
                             "strong trace",
                             "relative tensor discrepancy",
@@ -520,13 +568,13 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                             TableRow((
                                 f"{row['eta']:.3e}",
                                 f"{row['field_V_per_m']:.3e}",
-                                f"{row['weak_trace']:.8e}",
-                                f"{row['strong_trace']:.8e}",
+                                _dq_conductivity(row["weak_trace"], "weak trace"),
+                                _dq_conductivity(row["strong_trace"], "strong trace"),
                                 f"{row['relative_tensor_discrepancy']:.8e}",
                                 f"{row['relative_trace_discrepancy']:.8e}",
-                                f"{row['strong_xx']:.8e}",
-                                f"{row['strong_yy']:.8e}",
-                                f"{row['imaginary_leakage']:.3e}",
+                                _dq_conductivity(row["strong_xx"], "strong xx"),
+                                _dq_conductivity(row["strong_yy"], "strong yy"),
+                                _dq_conductivity(row["imaginary_leakage"], "imaginary leakage"),
                             ))
                             for row in analytic_probe["strong_weak_field_rows"]
                         ),
@@ -549,9 +597,9 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                         ),
                         rows=tuple(
                             TableRow((
-                                f"{row['temperature_K']:.1f}",
-                                f"{row['weak_trace']:.8e}",
-                                f"{row['strong_trace']:.8e}",
+                                _dq_temperature(row["temperature_K"], "temperature"),
+                                _dq_conductivity(row["weak_trace"], "weak trace"),
+                                _dq_conductivity(row["strong_trace"], "strong trace"),
                                 f"{row['relative_trace_discrepancy']:.8e}",
                                 f"{row['df0_dkx_relative_mismatch']:.8e}",
                                 f"{row['df0_dky_relative_mismatch']:.8e}",
@@ -593,12 +641,12 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                                 headers=("T [K]", "max f(1-f)", "mean f(1-f)", "trace", "xx", "yy"),
                                 rows=tuple(
                                     TableRow((
-                                        f"{row['temperature_K']:.1f}",
+                                        _dq_temperature(row["temperature_K"], "temperature"),
                                         f"{row['max_fermi_weight']:.8e}",
                                         f"{row['mean_fermi_weight']:.8e}",
-                                        f"{row['trace']:.8e}",
-                                        f"{row['xx']:.8e}",
-                                        f"{row['yy']:.8e}",
+                                        _dq_conductivity(row["trace"], "trace"),
+                                        _dq_conductivity(row["xx"], "xx"),
+                                        _dq_conductivity(row["yy"], "yy"),
                                     ))
                                     for row in conductivity_temperature_rows
                                 ),
@@ -648,7 +696,7 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         title="Direct Delaunay interpolation",
                         description=(
                             "Direct `find_simplex` reproduction of Vincent's Delaunay plane-fit interpolation. "
-                            f"RMS error = {delaunay_velocity_probe['rms_error']:.6e} m/s."
+                            "The RMS error is reported in the typed velocity diagnostics tables."
                         ),
                         headers=(
                             "sample",
@@ -664,12 +712,12 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         rows=tuple(
                             TableRow((
                                 str(i),
-                                f"{delaunay_velocity_probe['target'][i, 0]:.8e}",
-                                f"{delaunay_velocity_probe['target'][i, 1]:.8e}",
-                                f"{delaunay_velocity_probe['local'][i, 0]:.8e}",
-                                f"{delaunay_velocity_probe['local'][i, 1]:.8e}",
-                                f"{delaunay_velocity_probe['delta'][i, 0]:.8e}",
-                                f"{delaunay_velocity_probe['delta'][i, 1]:.8e}",
+                                _dq_velocity(delaunay_velocity_probe["target"][i, 0], "target vx"),
+                                _dq_velocity(delaunay_velocity_probe["target"][i, 1], "target vy"),
+                                _dq_velocity(delaunay_velocity_probe["local"][i, 0], "local vx"),
+                                _dq_velocity(delaunay_velocity_probe["local"][i, 1], "local vy"),
+                                _dq_velocity(delaunay_velocity_probe["delta"][i, 0], "delta vx"),
+                                _dq_velocity(delaunay_velocity_probe["delta"][i, 1], "delta vy"),
                                 f"{delaunay_velocity_probe['percent'][i, 0]:.3f}",
                                 f"{delaunay_velocity_probe['percent'][i, 1]:.3f}",
                             ))
@@ -719,8 +767,8 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         rows=tuple(
                             TableRow((
                                 str(i),
-                                f"{target_k[i, 0]:.8e}",
-                                f"{target_k[i, 1]:.8e}",
+                                _dq_wavevector(target_k[i, 0], "kx"),
+                                _dq_wavevector(target_k[i, 1], "ky"),
                                 f"epsilon[0,{i}] = {i} * b2 / 100",
                             ))
                             for i in range(len(target_k))
@@ -799,33 +847,33 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         rows=(
                             TableRow((
                                 "x",
-                                f"{sigma[0, 0]:.8e}",
-                                f"{sigma[0, 1]:.8e}",
-                                f"{best_conductivity[0, 0]:.8e}",
-                                f"{best_conductivity[0, 1]:.8e}",
-                                f"{best_conductivity_delta[0, 0]:.8e}",
-                                f"{best_conductivity_delta[0, 1]:.8e}",
+                                _dq_conductivity(sigma[0, 0], "Vincent xx"),
+                                _dq_conductivity(sigma[0, 1], "Vincent xy"),
+                                _dq_conductivity(best_conductivity[0, 0], "local-grid xx"),
+                                _dq_conductivity(best_conductivity[0, 1], "local-grid xy"),
+                                _dq_conductivity(best_conductivity_delta[0, 0], "delta xx"),
+                                _dq_conductivity(best_conductivity_delta[0, 1], "delta xy"),
                                 f"{best_conductivity_percent_error[0, 0]:.3f}",
                                 f"{best_conductivity_percent_error[0, 1]:.3f}",
                             )),
                             TableRow((
                                 "y",
-                                f"{sigma[1, 0]:.8e}",
-                                f"{sigma[1, 1]:.8e}",
-                                f"{best_conductivity[1, 0]:.8e}",
-                                f"{best_conductivity[1, 1]:.8e}",
-                                f"{best_conductivity_delta[1, 0]:.8e}",
-                                f"{best_conductivity_delta[1, 1]:.8e}",
+                                _dq_conductivity(sigma[1, 0], "Vincent yx"),
+                                _dq_conductivity(sigma[1, 1], "Vincent yy"),
+                                _dq_conductivity(best_conductivity[1, 0], "local-grid yx"),
+                                _dq_conductivity(best_conductivity[1, 1], "local-grid yy"),
+                                _dq_conductivity(best_conductivity_delta[1, 0], "delta yx"),
+                                _dq_conductivity(best_conductivity_delta[1, 1], "delta yy"),
                                 f"{best_conductivity_percent_error[1, 0]:.3f}",
                                 f"{best_conductivity_percent_error[1, 1]:.3f}",
                             )),
                             TableRow((
                                 "trace",
-                                f"{np.trace(sigma):.8e}",
+                                _dq_conductivity(np.trace(sigma), "Vincent trace"),
                                 "",
-                                f"{np.trace(best_conductivity):.8e}",
+                                _dq_conductivity(np.trace(best_conductivity), "local-grid trace"),
                                 "",
-                                f"{np.trace(best_conductivity) - np.trace(sigma):.8e}",
+                                _dq_conductivity(np.trace(best_conductivity) - np.trace(sigma), "delta trace"),
                                 "",
                                 f"{100.0 * (np.trace(best_conductivity) - np.trace(sigma)) / np.trace(sigma):.3f}",
                                 "",
@@ -850,38 +898,38 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             "Tests whether Vincent's reported tensor is closer to the weak chain-rule formula, "
                             "the spectral strong-DC zero-field construction, or the shifted Eq. 8.30 chain-rule construction."
                         ),
-                        headers=("method", "trace [S/m]", "trace error vs Vincent", "xx [S/m]", "yy [S/m]", "note"),
+                        headers=("method", "trace", "trace error vs Vincent", "xx", "yy", "note"),
                         rows=(
                             TableRow((
                                 "Vincent target",
-                                f"{np.trace(sigma):.8e}",
+                                _dq_conductivity(np.trace(sigma), "Vincent trace"),
                                 "0.00000000e+00",
-                                f"{sigma[0, 0]:.8e}",
-                                f"{sigma[1, 1]:.8e}",
+                                _dq_conductivity(sigma[0, 0], "Vincent xx"),
+                                _dq_conductivity(sigma[1, 1], "Vincent yy"),
                                 "reported reference",
                             )),
                             TableRow((
                                 "weak chain-rule grid",
-                                f"{np.trace(best_conductivity):.8e}",
+                                _dq_conductivity(np.trace(best_conductivity), "weak trace"),
                                 f"{100.0 * (np.trace(best_conductivity) - np.trace(sigma)) / np.trace(sigma):.8e}%",
-                                f"{best_conductivity[0, 0]:.8e}",
-                                f"{best_conductivity[1, 1]:.8e}",
+                                _dq_conductivity(best_conductivity[0, 0], "weak xx"),
+                                _dq_conductivity(best_conductivity[1, 1], "weak yy"),
                                 "E -> 0 analytic Fermi window",
                             )),
                             TableRow((
                                 "strong spectral zero-field",
-                                f"{strong_grid_trace:.8e}",
+                                _dq_conductivity(strong_grid_trace, "strong trace"),
                                 f"{strong_grid_trace_percent_error:.8e}%",
-                                f"{strong_grid_sigma[0, 0]:.8e}",
-                                f"{strong_grid_sigma[1, 1]:.8e}",
+                                _dq_conductivity(strong_grid_sigma[0, 0], "strong xx"),
+                                _dq_conductivity(strong_grid_sigma[1, 1], "strong yy"),
                                 "Fourier derivative of sampled periodic occupation",
                             )),
                             TableRow((
                                 "strong shifted Eq. 8.30",
-                                f"{shifted_830_trace:.8e}",
+                                _dq_conductivity(shifted_830_trace, "shifted trace"),
                                 f"{shifted_830_trace_percent_error:.8e}%",
-                                f"{shifted_830_sigma[0, 0]:.8e}",
-                                f"{shifted_830_sigma[1, 1]:.8e}",
+                                _dq_conductivity(shifted_830_sigma[0, 0], "shifted xx"),
+                                _dq_conductivity(shifted_830_sigma[1, 1], "shifted yy"),
                                 "finite-field shifted chain-rule quadrature",
                             )),
                         ),
@@ -908,33 +956,33 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         rows=(
                             TableRow((
                                 "x",
-                                f"{sigma[0, 0]:.8e}",
-                                f"{sigma[0, 1]:.8e}",
-                                f"{strong_grid_sigma[0, 0]:.8e}",
-                                f"{strong_grid_sigma[0, 1]:.8e}",
-                                f"{strong_grid_sigma_delta[0, 0]:.8e}",
-                                f"{strong_grid_sigma_delta[0, 1]:.8e}",
+                                _dq_conductivity(sigma[0, 0], "Vincent xx"),
+                                _dq_conductivity(sigma[0, 1], "Vincent xy"),
+                                _dq_conductivity(strong_grid_sigma[0, 0], "strong-grid xx"),
+                                _dq_conductivity(strong_grid_sigma[0, 1], "strong-grid xy"),
+                                _dq_conductivity(strong_grid_sigma_delta[0, 0], "delta xx"),
+                                _dq_conductivity(strong_grid_sigma_delta[0, 1], "delta xy"),
                                 f"{strong_grid_sigma_percent_error[0, 0]:.3f}",
                                 f"{strong_grid_sigma_percent_error[0, 1]:.3f}",
                             )),
                             TableRow((
                                 "y",
-                                f"{sigma[1, 0]:.8e}",
-                                f"{sigma[1, 1]:.8e}",
-                                f"{strong_grid_sigma[1, 0]:.8e}",
-                                f"{strong_grid_sigma[1, 1]:.8e}",
-                                f"{strong_grid_sigma_delta[1, 0]:.8e}",
-                                f"{strong_grid_sigma_delta[1, 1]:.8e}",
+                                _dq_conductivity(sigma[1, 0], "Vincent yx"),
+                                _dq_conductivity(sigma[1, 1], "Vincent yy"),
+                                _dq_conductivity(strong_grid_sigma[1, 0], "strong-grid yx"),
+                                _dq_conductivity(strong_grid_sigma[1, 1], "strong-grid yy"),
+                                _dq_conductivity(strong_grid_sigma_delta[1, 0], "delta yx"),
+                                _dq_conductivity(strong_grid_sigma_delta[1, 1], "delta yy"),
                                 f"{strong_grid_sigma_percent_error[1, 0]:.3f}",
                                 f"{strong_grid_sigma_percent_error[1, 1]:.3f}",
                             )),
                             TableRow((
                                 "trace",
-                                f"{np.trace(sigma):.8e}",
+                                _dq_conductivity(np.trace(sigma), "Vincent trace"),
                                 "",
-                                f"{strong_grid_trace:.8e}",
+                                _dq_conductivity(strong_grid_trace, "strong-grid trace"),
                                 "",
-                                f"{strong_grid_trace - np.trace(sigma):.8e}",
+                                _dq_conductivity(strong_grid_trace - np.trace(sigma), "delta trace"),
                                 "",
                                 f"{strong_grid_trace_percent_error:.3f}",
                                 "",
@@ -943,7 +991,7 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 "imaginary leakage",
                                 "",
                                 "",
-                                f"{strong_dc.imaginary_leakage_S / ((2.0 * np.pi) ** 2):.8e}",
+                                _dq_conductivity(strong_dc.imaginary_leakage_S / ((2.0 * np.pi) ** 2), "imaginary leakage"),
                                 "",
                                 "",
                                 "",
@@ -970,9 +1018,9 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         ),
                         rows=tuple(
                             TableRow((
-                                f"{row['temperature_K']:.1f}",
-                                f"{row['weak_trace']:.8e}",
-                                f"{row['strong_trace']:.8e}",
+                                _dq_temperature(row["temperature_K"], "temperature"),
+                                _dq_conductivity(row["weak_trace"], "weak trace"),
+                                _dq_conductivity(row["strong_trace"], "strong trace"),
                                 f"{row['relative_trace_discrepancy']:.8e}",
                                 f"{row['df0_dkx_relative_mismatch']:.8e}",
                                 f"{row['df0_dky_relative_mismatch']:.8e}",
@@ -994,16 +1042,16 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             "Global rescalings applied to the current local tensor. "
                             f"Vincent/local trace factor = {missing_trace_factor:.8e}."
                         ),
-                        headers=("hypothesis", "factor", "trace [S/m]", "trace ratio local/Vincent", "xx [S/m]", "yy [S/m]"),
+                        headers=("hypothesis", "factor", "trace", "trace ratio local/Vincent", "xx", "yy"),
                         rows=tuple(
                             TableRow(
                                 (
                                     name,
                                     f"{factor:.8e}",
-                                    f"{np.trace(local_sigma * factor):.8e}",
+                                    _dq_conductivity(np.trace(local_sigma * factor), f"{name} trace"),
                                     f"{np.trace(local_sigma * factor) / trace_target:.8e}",
-                                    f"{(local_sigma * factor)[0, 0]:.8e}",
-                                    f"{(local_sigma * factor)[1, 1]:.8e}",
+                                    _dq_conductivity((local_sigma * factor)[0, 0], f"{name} xx"),
+                                    _dq_conductivity((local_sigma * factor)[1, 1], f"{name} yy"),
                                 )
                             )
                             for name, factor in normalisation_hypotheses
@@ -1097,8 +1145,8 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 ),
                                 headers=("component", "x", "y"),
                                 rows=(
-                                    TableRow(("x", f"{local_sigma[0, 0]:.8e}", f"{local_sigma[0, 1]:.8e}")),
-                                    TableRow(("y", f"{local_sigma[1, 0]:.8e}", f"{local_sigma[1, 1]:.8e}")),
+                                    TableRow(("x", _dq_conductivity(local_sigma[0, 0], "local xx"), f"{local_sigma[0, 1]:.8e}")),
+                                    TableRow(("y", _dq_conductivity(local_sigma[1, 0], "local yx"), f"{local_sigma[1, 1]:.8e}")),
                                 ),
                             ),
                             Table(
@@ -1106,13 +1154,13 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 title=rich(
                                     "Conductivity ",
                                     TypstMath("$ sigma_(alpha beta) $", name="ashcroft_target_conductivity_title_sigma"),
-                                    " [S/m]",
+                                    "",
                                 ),
                                 description="Reference tensor from Vincent's recorded output.",
                                 headers=("component", "x", "y"),
                                 rows=(
-                                    TableRow(("x", f"{sigma[0, 0]:.8e}", f"{sigma[0, 1]:.8e}")),
-                                    TableRow(("y", f"{sigma[1, 0]:.8e}", f"{sigma[1, 1]:.8e}")),
+                                    TableRow(("x", _dq_conductivity(sigma[0, 0], "target xx"), f"{sigma[0, 1]:.8e}")),
+                                    TableRow(("y", _dq_conductivity(sigma[1, 0], "target yx"), f"{sigma[1, 1]:.8e}")),
                                 ),
                             ),
                         ),
@@ -1174,17 +1222,17 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             "Selected grid samples showing that the stored velocity coefficient Gamma reconstructs "
                             "the sampled velocity field used by the strong spectral conductivity calculation."
                         ),
-                        headers=("sample", "grid index", "vx [m/s]", "vx from Gamma", "delta vx", "vy [m/s]", "vy from Gamma", "delta vy"),
+                        headers=("sample", "grid index", "vx", "vx from Gamma", "delta vx", "vy", "vy from Gamma", "delta vy"),
                         rows=tuple(
                             TableRow((
                                 f"{sample}",
                                 f"({i}, {j})",
-                                f"{strong_dc.velocity_m_per_s[i, j, 0]:.8e}",
-                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[i, j]:.8e}",
-                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[i, j] - strong_dc.velocity_m_per_s[i, j, 0]:.8e}",
-                                f"{strong_dc.velocity_m_per_s[i, j, 1]:.8e}",
-                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[i, j]:.8e}",
-                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[i, j] - strong_dc.velocity_m_per_s[i, j, 1]:.8e}",
+                                _dq_velocity(strong_dc.velocity_m_per_s[i, j, 0], "vx"),
+                                _dq_velocity(np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[i, j], "vx from Gamma"),
+                                _dq_velocity(np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[i, j] - strong_dc.velocity_m_per_s[i, j, 0], "delta vx"),
+                                _dq_velocity(strong_dc.velocity_m_per_s[i, j, 1], "vy"),
+                                _dq_velocity(np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[i, j], "vy from Gamma"),
+                                _dq_velocity(np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[i, j] - strong_dc.velocity_m_per_s[i, j, 1], "delta vy"),
                             ))
                             for sample, (i, j) in enumerate(
                                 (
@@ -1219,14 +1267,14 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         rows=tuple(
                             TableRow((
                                 f"{sample}",
-                                f"{delaunay_velocity_probe['target'][sample, 0]:.8e}",
-                                f"{delaunay_velocity_probe['target'][sample, 1]:.8e}",
-                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample]:.8e}",
-                                f"{np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample]:.8e}",
-                                f"{np.linalg.norm(np.array((np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample])) - delaunay_velocity_probe['target'][sample]):.8e}",
-                                f"{np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample]:.8e}",
-                                f"{np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample]:.8e}",
-                                f"{np.linalg.norm(np.array((np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample])) - delaunay_velocity_probe['target'][sample]):.8e}",
+                                _dq_velocity(delaunay_velocity_probe["target"][sample, 0], "target vx"),
+                                _dq_velocity(delaunay_velocity_probe["target"][sample, 1], "target vy"),
+                                _dq_velocity(np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], "Gamma-current vx"),
+                                _dq_velocity(np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample], "Gamma-current vy"),
+                                _dq_velocity(np.linalg.norm(np.array((np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], np.fft.fft2(strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample])) - delaunay_velocity_probe["target"][sample]), "Gamma-current error"),
+                                _dq_velocity(np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], "Gamma-Delaunay vx"),
+                                _dq_velocity(np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample], "Gamma-Delaunay vy"),
+                                _dq_velocity(np.linalg.norm(np.array((np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 0]).real[0, sample], np.fft.fft2(delaunay_strong_dc.velocity_coefficients_m_per_s_per_m2[..., 1]).real[0, sample])) - delaunay_velocity_probe["target"][sample]), "Gamma-Delaunay error"),
                             ))
                             for sample in range(len(delaunay_velocity_probe["target"]))
                         ),
@@ -1256,19 +1304,47 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         rows=tuple(
                             TableRow((
                                 f"{row['sample']}",
-                                f"{row['target'][0]:.8e}",
-                                f"{row['target'][1]:.8e}",
+                                _dq_velocity(row["target"][0], "target vx"),
+                                _dq_velocity(row["target"][1], "target vy"),
                                 f"{row['find_simplex']}",
-                                f"{row['find_simplex_velocity'][0]:.8e}",
-                                f"{row['find_simplex_velocity'][1]:.8e}",
-                                f"{row['find_simplex_error']:.8e}",
+                                _dq_velocity(row["find_simplex_velocity"][0], "find vx"),
+                                _dq_velocity(row["find_simplex_velocity"][1], "find vy"),
+                                _dq_velocity(row["find_simplex_error"], "find error"),
                                 f"{row['best_adjacent_simplex']}",
-                                f"{row['best_adjacent_velocity'][0]:.8e}",
-                                f"{row['best_adjacent_velocity'][1]:.8e}",
-                                f"{row['best_adjacent_error']:.8e}",
+                                _dq_velocity(row["best_adjacent_velocity"][0], "best vx"),
+                                _dq_velocity(row["best_adjacent_velocity"][1], "best vy"),
+                                _dq_velocity(row["best_adjacent_error"], "best error"),
                                 f"{row['adjacent_count']}",
                             ))
                             for row in delaunay_adjacent_probe
+                        ),
+                    ),
+                    Table(
+                        id="section_lattice_resolved_residual_scalar_summary",
+                        title="Residual scalar summary",
+                        description="Typed scalar values used by the residual-error conclusion.",
+                        headers=("quantity", "value", "note"),
+                        rows=(
+                            TableRow((
+                                "find_simplex max sample error",
+                                _dq_velocity(np.max(adjacent_find_errors), "find_simplex max sample error"),
+                                "default Delaunay simplex convention at grid vertices",
+                            )),
+                            TableRow((
+                                "best-adjacent max sample error",
+                                _dq_velocity(np.max(adjacent_best_errors), "best-adjacent max sample error"),
+                                "best adjacent simplex at each printed Vincent sample",
+                            )),
+                            TableRow((
+                                "strong/modal trace",
+                                _dq_conductivity(np.trace(strong_grid_sigma), "strong/modal trace"),
+                                "strong spectral zero-field tensor",
+                            )),
+                            TableRow((
+                                "weak-chain trace",
+                                _dq_conductivity(np.trace(best_conductivity), "weak-chain trace"),
+                                "best Vincent-grid weak chain-rule tensor",
+                            )),
                         ),
                     ),
                     MarkdownBlock(
@@ -1279,17 +1355,15 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             "The Vincent velocity/conductivity reproduction residual is explained by the "
                             "Delaunay vertex ambiguity. Vincent's printed velocity samples sit exactly on "
                             "grid vertices, where the piecewise-linear Delaunay gradient is multi-valued. "
-                            "Using the default `find_simplex` convention gives a maximum sample velocity error of "
-                            f"{np.max(adjacent_find_errors):.8e} m/s, while choosing the best adjacent simplex "
-                            f"reduces the maximum sample error to {np.max(adjacent_best_errors):.8e} m/s. "
+                            "Using the default `find_simplex` convention gives the maximum sample velocity error shown in the typed scalar summary table, "
+                            "while choosing the best adjacent simplex reduces that error to roundoff scale. "
                             f"That is an error reduction factor of about {adjacent_error_ratio:.3e}. "
                             "This reproduces the printed sample velocities to roundoff, so the few-percent "
                             "Vincent reproduction residual is a simplex-selection effect, not a Fourier, ",
                             TypstMath("$ Gamma $", name="ashcroft_gamma_inline"),
                             ", or unit problem.\n\n"
                             "The strong spectral/modal versus weak-chain residual is different. "
-                            f"The strong/modal trace is {np.trace(strong_grid_sigma):.8e} S/m, while the "
-                            f"weak-chain trace is {np.trace(best_conductivity):.8e} S/m. "
+                            "The typed scalar summary table gives the strong/modal and weak-chain traces. "
                             f"The relative difference is "
                             f"{100.0 * (np.trace(strong_grid_sigma) - np.trace(best_conductivity)) / np.trace(best_conductivity):.8e}%. "
                             "This is not explained by the Delaunay simplex ambiguity. The modal components "
@@ -1326,23 +1400,23 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 "number of FFT lattice modes (a,b)",
                             )),
                             TableRow((
-                                "resummed trace [S/m]",
-                                f"{np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real):.8e}",
+                                "resummed trace",
+                                _dq_conductivity(np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real), "resummed trace"),
                                 "sum over all lattice-mode contributions, grid-measure display convention",
                             )),
                             TableRow((
-                                "strong trace [S/m]",
-                                f"{strong_grid_trace:.8e}",
+                                "strong trace",
+                                _dq_conductivity(strong_grid_trace, "strong trace"),
                                 "same strong spectral zero-field tensor shown above",
                             )),
                             TableRow((
-                                "best weak-chain trace [S/m]",
-                                f"{np.trace(best_conductivity):.8e}",
+                                "best weak-chain trace",
+                                _dq_conductivity(np.trace(best_conductivity), "best weak-chain trace"),
                                 "non-modal weak chain-rule grid tensor used as the best Vincent-grid reconstruction",
                             )),
                             TableRow((
-                                "resummed minus best trace [S/m]",
-                                f"{np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real) - np.trace(best_conductivity):.8e}",
+                                "resummed minus best trace",
+                                _dq_conductivity(np.trace(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)).real) - np.trace(best_conductivity), "resummed minus best trace"),
                                 "checks whether the modal strong spectral decomposition also reconstructs the best weak-chain tensor",
                             )),
                             TableRow((
@@ -1351,8 +1425,8 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 "nonzero if strong spectral derivative differs from the weak chain-rule formula",
                             )),
                             TableRow((
-                                "max resummation error [S/m]",
-                                f"{np.max(np.abs(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)) - strong_dc.conductivity_tensor_S)):.8e}",
+                                "max resummation error",
+                                _dq_conductivity(np.max(np.abs(np.sum(strong_dc.conductivity_mode_tensor_S, axis=(0, 1)) - strong_dc.conductivity_tensor_S)), "max resummation error"),
                                 "should be roundoff-level if per-mode components sum correctly",
                             )),
                             TableRow((
@@ -1361,8 +1435,8 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 "the (a,b)=(0,0) mode has R=0, so it cannot contribute to the derivative",
                             )),
                             TableRow((
-                                "largest mode contribution norm [S/m]",
-                                f"{np.max(np.linalg.norm(strong_dc.conductivity_mode_tensor_S.real, axis=(-2, -1))):.8e}",
+                                "largest mode contribution norm",
+                                _dq_conductivity(np.max(np.linalg.norm(strong_dc.conductivity_mode_tensor_S.real, axis=(-2, -1))), "largest mode contribution norm"),
                                 "largest single lattice-mode tensor contribution after display scaling",
                             )),
                         ),
@@ -1374,16 +1448,16 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             "Largest individual (a,b) contributions to the strong spectral DC tensor. "
                             "These rows show which Fourier lattice modes dominate the resummed conductivity."
                         ),
-                        headers=("rank", "a", "b", "|R| [m]", "Re xx [S/m]", "Re yy [S/m]", "tensor norm [S/m]"),
+                        headers=("rank", "a", "b", "|R|", "Re xx", "Re yy", "tensor norm"),
                         rows=tuple(
                             TableRow((
                                 f"{rank}",
                                 f"{int(strong_dc.mode_indices[index][0])}",
                                 f"{int(strong_dc.mode_indices[index][1])}",
-                                f"{np.linalg.norm(strong_dc.lattice_vectors_m[index]):.8e}",
-                                f"{strong_dc.conductivity_mode_tensor_S[index].real[0, 0]:.8e}",
-                                f"{strong_dc.conductivity_mode_tensor_S[index].real[1, 1]:.8e}",
-                                f"{np.linalg.norm(strong_dc.conductivity_mode_tensor_S[index].real):.8e}",
+                                _dq_length(np.linalg.norm(strong_dc.lattice_vectors_m[index]), "|R|"),
+                                _dq_conductivity(strong_dc.conductivity_mode_tensor_S[index].real[0, 0], "Re xx"),
+                                _dq_conductivity(strong_dc.conductivity_mode_tensor_S[index].real[1, 1], "Re yy"),
+                                _dq_conductivity(np.linalg.norm(strong_dc.conductivity_mode_tensor_S[index].real), "tensor norm"),
                             ))
                             for rank, index in enumerate(
                                 [

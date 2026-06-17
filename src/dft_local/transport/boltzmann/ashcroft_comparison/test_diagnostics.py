@@ -906,7 +906,7 @@ def test_ashcroft_conductivity_detail_header_uses_mixed_text_and_typst_sigma() -
     assert "ashcroft_target_conductivity_title_sigma" in html
     assert "data-typst-source='$ sigma_(alpha beta) $'" in html
     assert "Conductivity <span class='typst-math inline'" in html
-    assert " [S/m]" in html
+    assert "data-unit='S/m'" in html
     assert "typst-error" not in html
 
 
@@ -1352,3 +1352,5 @@ def test_ashcroft_scalar_unit_rows_render_display_quantities() -> None:
     assert "data-unit='m^-2'" in html
     assert "data-unit='K'" in html
     assert "data-unit='s'" in html
+    assert "data-unit='S/m'" in html
+    assert "data-unit='m/s'" in html
