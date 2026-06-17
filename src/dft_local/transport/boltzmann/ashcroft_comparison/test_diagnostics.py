@@ -1130,3 +1130,56 @@ def test_ashcroft_has_top_level_lattice_resolved_conductivity_section() -> None:
 
     assert "section_lattice_resolved_strong_spectral_dc" in table_ids
     assert "section_lattice_resolved_top_modes" in table_ids
+
+def test_lattice_resolved_resums_strong_spectral_not_weak_chain_rule() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        HARTREE_TO_J,
+        band_indexed_strong_dc_from_velocity_grid,
+        conductivity_from_velocity_grid,
+        velocity_from_epsilon_grid,
+        vincent_reference,
+    )
+
+    data = load_vincent_input_data()
+    reference = vincent_reference()
+    epsilon = data.epsilon_of_k
+    velocity = np.stack(
+        velocity_from_epsilon_grid(epsilon, data.primitive_lattice_vectors_bohr),
+        axis=-1,
+    )
+    mu = float(np.mean(epsilon) * HARTREE_TO_J)
+
+    weak = conductivity_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=mu,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+    strong = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=mu,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+
+    resummed_grid_measure = np.sum(strong.conductivity_mode_tensor_S, axis=(0, 1)) / ((2.0 * np.pi) ** 2)
+    strong_grid_measure = strong.conductivity_tensor_S / ((2.0 * np.pi) ** 2)
+
+    np.testing.assert_allclose(
+        resummed_grid_measure,
+        strong_grid_measure,
+        rtol=1e-12,
+        atol=1e-18,
+    )
+
+    relative_trace_delta = abs(
+        np.trace(resummed_grid_measure.real) - np.trace(weak.conductivity_tensor_S)
+    ) / abs(np.trace(weak.conductivity_tensor_S))
+
+    assert relative_trace_delta > 1.0e-2
+
