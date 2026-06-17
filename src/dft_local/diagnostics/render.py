@@ -376,6 +376,30 @@ def table_row_dom_id(table_id: object, row_index: int, row: object) -> str:
 
 
 
+
+def table_records_json(table: Table) -> str:
+    records = [
+        {
+            str(header): fmt(cell)
+            for header, cell in zip(table.headers, row.cells, strict=False)
+        }
+        for row in table.rows
+    ]
+    return json.dumps(records, ensure_ascii=False, indent=2)
+
+
+def render_table_copy_button(table: Table) -> str:
+    payload = escape(table_records_json(table), quote=True)
+    title = escape(str(table.title), quote=True)
+    return (
+        "<button type='button' class='table-copy-json' "
+        f"data-table-json='{payload}' "
+        f"aria-label='Copy {title} table as JSON' "
+        f"title='Copy {title} table as JSON'>"
+        "⧉"
+        "</button>"
+    )
+
 def render_table(table) -> str:
     has_step = "step" in table.headers
     step_index = table.headers.index("step") if has_step else -1
@@ -386,7 +410,9 @@ def render_table(table) -> str:
     parts: list[str] = []
     parts.append(
         f"<section id='{escape(str(table.id))}' class='diagnostic-table-section'>"
+        "<div class='diagnostic-table-header'>"
         f"<h2>{render_user_string(table.title)}</h2>"
+        "</div>"
     )
     parts.append(f"<p>{render_user_string(table.description)}</p>")
 
@@ -399,7 +425,11 @@ def render_table(table) -> str:
         )
 
     selectable_attr = " data-dft-selectable-table" if has_step else ""
-    parts.append(f"<div class='table-breakout' tabindex='0'><table data-dft-table='{escape(str(table.id))}'{selectable_attr}><thead><tr>")
+    parts.append(
+        f"<div class='table-breakout' tabindex='0'>"
+        f"{render_table_copy_button(table)}"
+        f"<table data-dft-table='{escape(str(table.id))}'{selectable_attr}><thead><tr>"
+    )
     if has_step:
         parts.append("<th>select</th>")
 
@@ -1199,11 +1229,57 @@ details.diagnostic-section .diagnostic-paper details.diagnostic-section {
 
 
 /* Reusable horizontal overflow treatment for wide diagnostic tables. */
+.diagnostic-paper .diagnostic-table-header {
+  display: block;
+  border-bottom: 1px solid var(--rule);
+}
+
+.diagnostic-paper .diagnostic-table-header h2 {
+  margin: 0;
+  border-bottom: 0;
+}
+
+.diagnostic-paper .table-copy-json {
+  appearance: none;
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  z-index: 2;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: rgba(255, 253, 248, 0.92);
+  color: #374151;
+  cursor: pointer;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0;
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(2px);
+}
+
+.diagnostic-paper .table-copy-json:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.diagnostic-paper .table-copy-json.copied {
+  color: #166534;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
 .diagnostic-paper .diagnostic-table-section {
   min-width: 0;
 }
 
 .diagnostic-paper .table-breakout {
+  position: relative;
   max-width: min(96vw, 1200px);
   width: max-content;
   min-width: 100%;
@@ -1264,6 +1340,48 @@ THREE_IMPORT_MAP = """  <script type="importmap">
 """
 
 
+TABLE_COPY_SCRIPT = """  <script>
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest(".table-copy-json[data-table-json]");
+  if (!button) {
+    return;
+  }
+
+  const originalText = button.textContent;
+  const payload = button.dataset.tableJson || "[]";
+
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(payload);
+    } else {
+      const textarea = document.createElement("textarea");
+      textarea.value = payload;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+    }
+
+    button.textContent = "Copied";
+    button.classList.add("copied");
+    window.setTimeout(() => {
+      button.textContent = originalText;
+      button.classList.remove("copied");
+    }, 1200);
+  } catch (error) {
+    button.textContent = "Copy failed";
+    window.setTimeout(() => {
+      button.textContent = originalText;
+    }, 1600);
+  }
+});
+  </script>
+"""
+
+
 def render_page(title: str, body: str) -> str:
     return (
         "<!doctype html>\n"
@@ -1275,6 +1393,7 @@ def render_page(title: str, body: str) -> str:
         f"{THREE_IMPORT_MAP}\n"
         f"{DATASTAR_SCRIPT}\n"
         "  <script type='module' src='/static/dft-local-components.js'></script>\n"
+        f"{TABLE_COPY_SCRIPT}\n"
         "</head>\n"
         "<body>\n"
         "<main class='diagnostic-paper'>\n"

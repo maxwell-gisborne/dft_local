@@ -1012,3 +1012,55 @@ def test_static_datastar_js_is_served() -> None:
     assert headers["status"] == "200 OK"
     assert ("Content-Type", "text/javascript; charset=utf-8") in headers["headers"]
     assert "datastar" in body.lower()
+
+def test_rendered_tables_have_json_copy_button() -> None:
+    import json
+    import re
+    from html import unescape
+
+    from dft_local.diagnostics.models import DiagnosticResult, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    result = DiagnosticResult(
+        title="copy test",
+        summary="summary",
+        sections=(),
+        body=(
+            Table(
+                id="copy_table",
+                title="Copy Table",
+                description="copyable",
+                headers=("name", "value"),
+                rows=(
+                    TableRow(("alpha", 1.25)),
+                    TableRow(("beta", "text")),
+                ),
+            ),
+        ),
+    )
+
+    html = render_result(result)
+
+    assert "class='table-copy-json'" in html
+    assert "data-table-json=" in html
+    assert "aria-label='Copy Copy Table table as JSON'" in html
+    assert ">⧉</button>" in html
+
+    match = re.search(r"data-table-json='([^']+)'", html)
+    assert match is not None
+
+    records = json.loads(unescape(match.group(1)))
+    assert records == [
+        {"name": "alpha", "value": "1.25"},
+        {"name": "beta", "value": "text"},
+    ]
+
+
+def test_render_page_includes_table_copy_script() -> None:
+    from dft_local.diagnostics.render import render_page
+
+    html = render_page("copy test", "<p>body</p>")
+
+    assert "table-copy-json[data-table-json]" in html
+    assert "navigator.clipboard.writeText" in html
+    assert "Copy failed" in html
