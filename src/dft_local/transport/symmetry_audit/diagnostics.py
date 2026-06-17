@@ -67,6 +67,8 @@ class KernelAudit:
     common_count: int
     missing_count: int
     extra_count: int
+    global_abs: float
+    global_rel: float
     max_abs: float
     mean_abs: float
     max_rel: float
@@ -87,6 +89,8 @@ class TranslationAudit:
     common_count: int
     missing_count: int
     extra_count: int
+    global_abs: float
+    global_rel: float
     max_abs: float
     mean_abs: float
     max_rel: float
@@ -167,7 +171,7 @@ def _compare_block_maps(
     left: dict[KernelKey, np.ndarray],
     right: dict[KernelKey, np.ndarray],
     eps: float = 1.0e-300,
-) -> tuple[int, int, int, int, int, float, float, float, float, KernelKey | None]:
+) -> tuple[int, int, int, int, int, float, float, float, float, float, float, KernelKey | None]:
     left_support = set(left)
     right_support = set(right)
     common = left_support & right_support
@@ -176,16 +180,26 @@ def _compare_block_maps(
 
     abs_errors: list[float] = []
     rel_errors: list[float] = []
+    diff_sq = 0.0
+    left_sq = 0.0
+    right_sq = 0.0
     worst_h: KernelKey | None = None
     worst_rel = -1.0
 
     for h in common:
         a = left[h]
         b = right[h]
+        diff = a - b
 
-        abs_err = float(np.linalg.norm(a - b))
-        denom = max(float(np.linalg.norm(a)), float(np.linalg.norm(b)), eps)
+        abs_err = float(np.linalg.norm(diff))
+        left_norm = float(np.linalg.norm(a))
+        right_norm = float(np.linalg.norm(b))
+        denom = max(left_norm, right_norm, eps)
         rel_err = abs_err / denom
+
+        diff_sq += abs_err * abs_err
+        left_sq += left_norm * left_norm
+        right_sq += right_norm * right_norm
 
         abs_errors.append(abs_err)
         rel_errors.append(rel_err)
@@ -195,11 +209,15 @@ def _compare_block_maps(
             worst_h = h
 
     if abs_errors:
+        global_abs = float(np.sqrt(diff_sq))
+        global_rel = global_abs / max(float(np.sqrt(left_sq)), float(np.sqrt(right_sq)), eps)
         max_abs = float(np.max(abs_errors))
         mean_abs = float(np.mean(abs_errors))
         max_rel = float(np.max(rel_errors))
         mean_rel = float(np.mean(rel_errors))
     else:
+        global_abs = np.nan
+        global_rel = np.nan
         max_abs = np.nan
         mean_abs = np.nan
         max_rel = np.nan
@@ -211,6 +229,8 @@ def _compare_block_maps(
         len(common),
         len(missing),
         len(extra),
+        global_abs,
+        global_rel,
         max_abs,
         mean_abs,
         max_rel,
@@ -237,6 +257,8 @@ def audit_kernel(
         common_count,
         missing_count,
         extra_count,
+        global_abs,
+        global_rel,
         max_abs,
         mean_abs,
         max_rel,
@@ -259,6 +281,8 @@ def audit_kernel(
         common_count=common_count,
         missing_count=missing_count,
         extra_count=extra_count,
+        global_abs=global_abs,
+        global_rel=global_rel,
         max_abs=max_abs,
         mean_abs=mean_abs,
         max_rel=max_rel,
@@ -295,6 +319,50 @@ def _starred_anchor_kernel(matrix: Any, labels: Any, anchor_atom: int, matrix_na
     ).star_symmetrised(matrix_name=f"{matrix_name} star")
 
 
+def _label_radius(key: KernelKey) -> tuple[int, int, int, int]:
+    m, n, eps = key
+
+    return (
+        max(abs(m), abs(n), abs(m - n)),
+        abs(m) + abs(n),
+        eps,
+        m * m + n * n,
+    )
+
+
+def _central_translation_anchors(ctx: Any, *, max_anchors: int) -> list[int]:
+    """Return core-bulk anchors nearest to the reference label.
+
+    ``core_bulk_atoms()`` is in atom-index order, not geometric/group-label
+    centrality order.  Taking the first entries can pick far-edge atoms such as
+    ``(16, -9, eps)``, causing support mismatches that mostly measure finite
+    flake truncation.  For a translation audit, compare nearby translated rows
+    first.
+    """
+
+    labels = ctx.state.labels
+    anchor_atom = int(labels.anchor_atom)
+
+    candidates = [
+        int(a)
+        for a in labels.geometry.core_bulk_atoms()
+        if (
+            int(a) != anchor_atom
+            and bool(labels.visited[int(a)])
+            and labels.element(int(a)).eps == 0
+        )
+    ]
+
+    candidates.sort(
+        key=lambda a: (
+            _label_radius(labels.element(a).as_tuple()),
+            int(a),
+        )
+    )
+
+    return candidates[:max_anchors]
+
+
 def audit_translation_rows(ctx: Any, *, max_anchors: int) -> tuple[TranslationAudit, ...]:
     """Compare kernel rows from translated bulk anchors against the reference anchor.
 
@@ -305,8 +373,7 @@ def audit_translation_rows(ctx: Any, *, max_anchors: int) -> tuple[TranslationAu
 
     labels = ctx.state.labels
     anchor_atom = int(labels.anchor_atom)
-    anchors = [int(a) for a in labels.geometry.core_bulk_atoms() if int(a) != anchor_atom]
-    anchors = anchors[:max_anchors]
+    anchors = _central_translation_anchors(ctx, max_anchors=max_anchors)
 
     object_builders = (
         (
@@ -353,6 +420,8 @@ def audit_translation_rows(ctx: Any, *, max_anchors: int) -> tuple[TranslationAu
                 common_count,
                 missing_count,
                 extra_count,
+                global_abs,
+                global_rel,
                 max_abs,
                 mean_abs,
                 max_rel,
@@ -376,6 +445,8 @@ def audit_translation_rows(ctx: Any, *, max_anchors: int) -> tuple[TranslationAu
                     common_count=common_count,
                     missing_count=missing_count,
                     extra_count=extra_count,
+                    global_abs=global_abs,
+                    global_rel=global_rel,
                     max_abs=max_abs,
                     mean_abs=mean_abs,
                     max_rel=max_rel,
@@ -393,14 +464,14 @@ def _fmt_key(key: KernelKey | None) -> str:
     return f"({key[0]}, {key[1]}, {key[2]})"
 
 
-def _status_for_error(max_rel: float, missing_count: int, extra_count: int) -> str:
+def _status_for_error(global_rel: float, missing_count: int, extra_count: int) -> str:
     if missing_count or extra_count:
         return "support mismatch"
-    if not np.isfinite(max_rel):
+    if not np.isfinite(global_rel):
         return "no common support"
-    if max_rel < 1.0e-10:
+    if global_rel < 1.0e-10:
         return "green"
-    if max_rel < 1.0e-7:
+    if global_rel < 1.0e-7:
         return "yellow"
     return "red"
 
@@ -427,12 +498,14 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             a.object_name,
             a.kind,
             a.automorphism,
-            _status_for_error(a.max_rel, a.missing_count, a.extra_count),
+            _status_for_error(a.global_rel, a.missing_count, a.extra_count),
             a.support_size,
             a.image_support_size,
             a.common_count,
             a.missing_count,
             a.extra_count,
+            a.global_abs,
+            a.global_rel,
             a.max_abs,
             a.mean_abs,
             a.max_rel,
@@ -450,12 +523,14 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             _fmt_key(a.anchor_label),
             a.compared_to_atom,
             _fmt_key(a.compared_to_label),
-            _status_for_error(a.max_rel, a.missing_count, a.extra_count),
+            _status_for_error(a.global_rel, a.missing_count, a.extra_count),
             a.support_size,
             a.other_support_size,
             a.common_count,
             a.missing_count,
             a.extra_count,
+            a.global_abs,
+            a.global_rel,
             a.max_abs,
             a.mean_abs,
             a.max_rel,
@@ -469,15 +544,15 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     reflection_failures = sum(
         1
         for a in audits
-        if a.kind == "reflection" and (a.missing_count or a.extra_count or (np.isfinite(a.max_rel) and a.max_rel >= 1.0e-7))
+        if a.kind == "reflection" and (a.missing_count or a.extra_count or (np.isfinite(a.global_rel) and a.global_rel >= 1.0e-7))
     )
     translation_support_failures = sum(1 for a in translation_audits if a.missing_count or a.extra_count)
     translation_value_failures = sum(
         1
         for a in translation_audits
         if not (a.missing_count or a.extra_count)
-        and np.isfinite(a.max_rel)
-        and a.max_rel >= 1.0e-7
+        and np.isfinite(a.global_rel)
+        and a.global_rel >= 1.0e-7
     )
 
     return DiagnosticResult(
@@ -490,7 +565,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             Card("point automorphisms", len(edge_generator_automorphisms()), "neutral", "All permutations of d1, d2, d3."),
             Card("reflection failures", reflection_failures, "neutral", "Reflection rows with support or large value mismatch."),
             Card("point support failures", support_failures, "neutral", "Rows where transformed support differs."),
-            Card("translation anchors", min(max_anchors, len(ctx.state.labels.geometry.core_bulk_atoms())), "neutral", "Core-bulk anchors compared to reference row."),
+            Card("translation anchors", len(translation_audits) // 4, "neutral", "Nearest same-sublattice eps=0 core-bulk translated anchors compared to reference row."),
             Card("translation support failures", translation_support_failures, "neutral", "Anchor rows with different relative support."),
             Card("translation value failures", translation_value_failures, "neutral", "Anchor rows with max relative block error >= 1e-7."),
         ),
@@ -518,6 +593,12 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                             "common",
                             "missing",
                             "extra",
+                            "global abs",
+                            "global rel",
+                            "global abs",
+                            "global rel",
+                            "global abs",
+                            "global rel",
                             "max abs",
                             "mean abs",
                             "max rel",
@@ -526,7 +607,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                             "worst alpha(h)",
                         ),
                         rows=point_rows,
-                        numeric=frozenset({4, 5, 6, 7, 8, 9, 10, 11, 12}),
+                        numeric=frozenset({4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14}),
                     ),
                 ),
             ),
@@ -534,8 +615,8 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 id="translation_row_audit",
                 title="Translation row audit",
                 description=(
-                    "Translation symmetry is checked by extracting anchored relative kernels from many core-bulk atoms. "
-                    "For a homogeneous operator, each translated row should give the same K(h) as the reference anchor."
+                    "Translation symmetry is checked by extracting anchored relative kernels from nearby eps=0 core-bulk atoms. "
+                    "For a homogeneous operator, each same-sublattice translated row should give the same K(h) as the reference anchor."
                 ),
                 tables=(
                     Table(
@@ -561,14 +642,14 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                             "worst h",
                         ),
                         rows=translation_rows,
-                        numeric=frozenset({1, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14}),
+                        numeric=frozenset({1, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}),
                     ),
                 ),
             ),
         ),
         notes=(
             "Point-group audit currently uses identity channel transforms. If an automorphism acts nontrivially on local orbital/channel basis, add U_alpha around the block comparison.",
-            "Translation audit is row homogeneity, not a map h -> alpha(h). Left translation cancels in h = g_a^-1 g_b.",
+            "Translation audit is row homogeneity over eps=0 same-sublattice anchors, not a map h -> alpha(h). Left translation cancels in h = g_a^-1 g_b.",
             "Symbol covariance and band/projector symmetry checks should be added after this local support/value audit is trusted.",
         ),
     )
