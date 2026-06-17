@@ -1131,6 +1131,7 @@ def test_ashcroft_has_top_level_lattice_resolved_conductivity_section() -> None:
     assert "section_lattice_resolved_component_reconstruction" in table_ids
     assert "section_lattice_resolved_sample_velocity_reconstruction" in table_ids
     assert "section_lattice_resolved_gamma_vincent_samples" in table_ids
+    assert "section_lattice_resolved_adjacent_simplex_velocity_resolution" in table_ids
     assert "section_lattice_resolved_strong_spectral_dc" in table_ids
     assert "section_lattice_resolved_top_modes" in table_ids
 

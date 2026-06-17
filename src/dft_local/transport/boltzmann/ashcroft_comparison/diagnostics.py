@@ -1152,6 +1152,46 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                         ),
                     ),
                     Table(
+                        id="section_lattice_resolved_adjacent_simplex_velocity_resolution",
+                        title="Adjacent-simplex resolution of Vincent velocity samples",
+                        description=(
+                            "Vincent's printed velocity samples sit on Delaunay grid vertices, where a piecewise-linear "
+                            "interpolant has multiple adjacent triangle gradients. This table compares the default "
+                            "find_simplex gradient with the best adjacent simplex gradient."
+                        ),
+                        headers=(
+                            "sample",
+                            "target vx",
+                            "target vy",
+                            "find_simplex",
+                            "find vx",
+                            "find vy",
+                            "find error",
+                            "best simplex",
+                            "best vx",
+                            "best vy",
+                            "best error",
+                            "adjacent count",
+                        ),
+                        rows=tuple(
+                            TableRow((
+                                f"{row['sample']}",
+                                f"{row['target'][0]:.8e}",
+                                f"{row['target'][1]:.8e}",
+                                f"{row['find_simplex']}",
+                                f"{row['find_simplex_velocity'][0]:.8e}",
+                                f"{row['find_simplex_velocity'][1]:.8e}",
+                                f"{row['find_simplex_error']:.8e}",
+                                f"{row['best_adjacent_simplex']}",
+                                f"{row['best_adjacent_velocity'][0]:.8e}",
+                                f"{row['best_adjacent_velocity'][1]:.8e}",
+                                f"{row['best_adjacent_error']:.8e}",
+                                f"{row['adjacent_count']}",
+                            ))
+                            for row in delaunay_adjacent_probe
+                        ),
+                    ),
+                    Table(
                         id="section_lattice_resolved_strong_spectral_dc",
                         title="Lattice-resolved strong spectral DC resummation",
                         description=(
