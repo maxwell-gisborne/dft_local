@@ -1100,6 +1100,134 @@ class ConductivityResult:
     conductivity_tensor_S: np.ndarray
 
 
+
+@dataclass(frozen=True, slots=True)
+class BandIndexedStrongDcResult:
+    chemical_potential_J: float
+    temperature_K: float
+    relaxation_time_s: float
+    area_bz_per_m2: float
+    electric_field_V_per_m: np.ndarray
+    occupation: np.ndarray
+    occupation_coefficients: np.ndarray
+    velocity_coefficients_m_per_s_per_m2: np.ndarray
+    response_factor: np.ndarray
+    conductivity_tensor_S: np.ndarray
+    imaginary_leakage_S: float
+
+
+def lattice_mode_vectors_m(primitive_lattice_vectors_bohr: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
+    """Return real-space lattice vectors R_(a,b) in FFT mode order."""
+
+    ai_m = np.asarray(primitive_lattice_vectors_bohr, dtype=float) * BOHR_TO_M
+    if ai_m.shape != (2, 2):
+        raise ValueError(f"Expected primitive lattice shape (2, 2), got {ai_m.shape}")
+
+    n1, n2 = shape
+    a_modes = np.fft.fftfreq(n1) * float(n1)
+    b_modes = np.fft.fftfreq(n2) * float(n2)
+    aa, bb = np.meshgrid(a_modes, b_modes, indexing="ij")
+
+    return aa[..., None] * ai_m[0] + bb[..., None] * ai_m[1]
+
+
+def band_indexed_strong_dc_from_velocity_grid(
+    epsilon_Ha: np.ndarray,
+    velocity_m_per_s: np.ndarray,
+    primitive_lattice_vectors_bohr: np.ndarray,
+    *,
+    chemical_potential_J: float,
+    temperature_K: float,
+    relaxation_time_s: float,
+    electric_field_V_per_m: np.ndarray | None = None,
+    spin_degeneracy: float = 1.0,
+) -> BandIndexedStrongDcResult:
+    """Compute the band-indexed steady strong-DC lattice-mode formula.
+
+    This implements the thesis Section 7.5 formula in the single-band grid
+    convention used by the Ashcroft comparison domain.  The lattice index
+    ``(a,b)`` is the FFT/Fourier mode index, not an atom-pair index.
+
+    At zero applied field this should reconstruct the weak DC formula, up to
+    the same reciprocal-space normalisation convention used by the comparison.
+    """
+
+    epsilon_J = np.asarray(epsilon_Ha, dtype=np.float64) * HARTREE_TO_J
+    velocity = np.asarray(velocity_m_per_s, dtype=np.float64)
+
+    if epsilon_J.ndim != 2:
+        raise ValueError(f"Expected a 2D epsilon grid, got shape {epsilon_J.shape}")
+
+    if velocity.shape != epsilon_J.shape + (2,):
+        raise ValueError(
+            f"velocity shape {velocity.shape} does not match epsilon shape {epsilon_J.shape} + (2,)"
+        )
+
+    field = (
+        np.zeros(2, dtype=np.float64)
+        if electric_field_V_per_m is None
+        else np.asarray(electric_field_V_per_m, dtype=np.float64)
+    )
+    if field.shape != (2,):
+        raise ValueError(f"Expected electric field shape (2,), got {field.shape}")
+
+    reciprocal_bohr = reciprocal_lattice_vectors_from_primitives(primitive_lattice_vectors_bohr)
+    reciprocal_per_m = reciprocal_bohr / BOHR_TO_M
+    area_bz = abs(float(np.linalg.det(reciprocal_per_m)))
+
+    occupation = fermi_factor(epsilon_J, chemical_potential_J, temperature_K)
+
+    # Thesis convention:
+    #   f0(k) = sum_R f0_tilde[R] exp(+i R.k)
+    # Therefore f0_tilde is the positive-phase Fourier coefficient.
+    occupation_coeff = np.fft.fft2(occupation) / float(occupation.size)
+
+    # Thesis convention:
+    #   Gamma_alpha[R] = (1 / A_BZ) int exp(+i R.k) v_alpha(k) dk
+    # and
+    #   v_alpha(k) = A_BZ sum_R Gamma_alpha[R] exp(-i R.k)
+    #
+    # The discrete average is the numerical analogue of (1 / A_BZ) int dk.
+    # Do not divide by A_BZ again.
+    velocity_coeff = np.empty(velocity.shape, dtype=np.complex128)
+    for alpha in range(2):
+        velocity_coeff[..., alpha] = np.fft.ifft2(velocity[..., alpha])
+
+    r_vectors = lattice_mode_vectors_m(primitive_lattice_vectors_bohr, epsilon_J.shape)
+    field_dot_r = np.einsum("...a,a->...", r_vectors, field)
+
+    scale = ELECTRON_CHARGE_C * relaxation_time_s / HBAR_J_S
+    denominator = 1.0 - 1j * scale * field_dot_r
+
+    response = np.empty(epsilon_J.shape + (2,), dtype=np.complex128)
+    for beta in range(2):
+        response[..., beta] = -1j * scale * r_vectors[..., beta] / (denominator * denominator)
+
+    sigma = np.empty((2, 2), dtype=np.complex128)
+    for alpha in range(2):
+        for beta in range(2):
+            sigma[alpha, beta] = (
+                spin_degeneracy
+                * ELECTRON_CHARGE_C
+                * area_bz
+                * np.sum(occupation_coeff * velocity_coeff[..., alpha] * response[..., beta])
+            )
+
+    return BandIndexedStrongDcResult(
+        chemical_potential_J=float(chemical_potential_J),
+        temperature_K=float(temperature_K),
+        relaxation_time_s=float(relaxation_time_s),
+        area_bz_per_m2=float(area_bz),
+        electric_field_V_per_m=field,
+        occupation=occupation,
+        occupation_coefficients=occupation_coeff,
+        velocity_coefficients_m_per_s_per_m2=velocity_coeff,
+        response_factor=response,
+        conductivity_tensor_S=sigma,
+        imaginary_leakage_S=float(np.linalg.norm(sigma.imag)),
+    )
+
+
 def fermi_factor(epsilon_J: np.ndarray, chemical_potential_J: float, temperature_K: float) -> np.ndarray:
     beta_arg = (epsilon_J - chemical_potential_J) / (KB_J_K * temperature_K)
 
@@ -1561,6 +1689,120 @@ def analytic_sinusoidal_conductivity_probe() -> dict[str, object]:
     vx, vy = central_cartesian_velocity_grid(epsilon_Ha, ai)
     velocity_actual = np.stack((vx, vy), axis=-1)
 
+    # Spectral velocity uses the same Fourier-mode derivative convention as
+    # the strong steady-DC construction. This is the clean weak-field limit
+    # comparison: weak DC and strong DC should agree when their derivatives
+    # are computed in the same basis.
+    epsilon_J = epsilon_Ha * HARTREE_TO_J
+    epsilon_fft = np.fft.fft2(epsilon_J)
+    r_vectors = lattice_mode_vectors_m(ai, epsilon_Ha.shape)
+    velocity_spectral = np.empty(epsilon_Ha.shape + (2,), dtype=np.float64)
+    for beta in range(2):
+        d_epsilon_dk = np.fft.ifft2(1j * r_vectors[..., beta] * epsilon_fft).real
+        velocity_spectral[..., beta] = d_epsilon_dk / HBAR_J_S
+
+    weak_spectral = conductivity_from_velocity_grid(
+        epsilon_Ha,
+        velocity_spectral,
+        ai,
+        chemical_potential_J=chemical_potential_J,
+        temperature_K=temperature_K,
+        relaxation_time_s=tau_s,
+    )
+    strong_zero_field = band_indexed_strong_dc_from_velocity_grid(
+        epsilon_Ha,
+        velocity_spectral,
+        ai,
+        chemical_potential_J=chemical_potential_J,
+        temperature_K=temperature_K,
+        relaxation_time_s=tau_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+    strong_zero_field_continuum = strong_zero_field.conductivity_tensor_S.real / ((2.0 * np.pi) ** 2)
+    weak_limit_delta = strong_zero_field_continuum - weak_spectral.conductivity_tensor_S
+    weak_limit_norm = float(np.linalg.norm(weak_spectral.conductivity_tensor_S))
+
+    # Compare the weak linear-response tensor with the finite-field differential
+    # strong-DC tensor.  The field is reported both in V/m and as the natural
+    # dimensionless parameter eta = (e tau / hbar) E |a_1|.
+    field_rows: list[dict[str, float]] = []
+    scale = ELECTRON_CHARGE_C * tau_s / HBAR_J_S
+    a1_m = float(np.linalg.norm(ai[0] * BOHR_TO_M))
+    weak_trace = float(np.trace(weak_spectral.conductivity_tensor_S))
+    for eta in (0.0, 1.0e-3, 1.0e-2, 1.0e-1, 3.0e-1, 1.0):
+        field_strength = eta / (scale * a1_m) if scale * a1_m != 0.0 else 0.0
+        strong_field = band_indexed_strong_dc_from_velocity_grid(
+            epsilon_Ha,
+            velocity_spectral,
+            ai,
+            chemical_potential_J=chemical_potential_J,
+            temperature_K=temperature_K,
+            relaxation_time_s=tau_s,
+            electric_field_V_per_m=np.array([field_strength, 0.0]),
+        )
+        strong_field_continuum = strong_field.conductivity_tensor_S.real / ((2.0 * np.pi) ** 2)
+        delta = strong_field_continuum - weak_spectral.conductivity_tensor_S
+        field_rows.append({
+            "eta": float(eta),
+            "field_V_per_m": float(field_strength),
+            "weak_trace": weak_trace,
+            "strong_trace": float(np.trace(strong_field_continuum)),
+            "relative_tensor_discrepancy": float(np.linalg.norm(delta) / weak_limit_norm),
+            "relative_trace_discrepancy": float((np.trace(strong_field_continuum) - weak_trace) / weak_trace),
+            "strong_xx": float(strong_field_continuum[0, 0]),
+            "strong_yy": float(strong_field_continuum[1, 1]),
+            "imaginary_leakage": float(strong_field.imaginary_leakage_S),
+        })
+
+    temperature_sweep_rows: list[dict[str, float]] = []
+    for sweep_temperature_K in (50.0, 100.0, 200.0, 300.0, 600.0, 1000.0, 2000.0, 5000.0):
+        sweep_weak = conductivity_from_velocity_grid(
+            epsilon_Ha,
+            velocity_spectral,
+            ai,
+            chemical_potential_J=chemical_potential_J,
+            temperature_K=sweep_temperature_K,
+            relaxation_time_s=tau_s,
+        )
+        sweep_strong = band_indexed_strong_dc_from_velocity_grid(
+            epsilon_Ha,
+            velocity_spectral,
+            ai,
+            chemical_potential_J=chemical_potential_J,
+            temperature_K=sweep_temperature_K,
+            relaxation_time_s=tau_s,
+            electric_field_V_per_m=np.zeros(2),
+        )
+        sweep_strong_continuum = sweep_strong.conductivity_tensor_S.real / ((2.0 * np.pi) ** 2)
+
+        occupation_sweep = fermi_factor(epsilon_J, chemical_potential_J, sweep_temperature_K)
+        occupation_sweep_fft = np.fft.fft2(occupation_sweep)
+        window_sweep = fermi_window(epsilon_J, chemical_potential_J, sweep_temperature_K)
+
+        derivative_mismatches = []
+        for beta in range(2):
+            spectral_df0_dk = np.fft.ifft2(1j * r_vectors[..., beta] * occupation_sweep_fft).real
+            chain_df0_dk = (
+                -window_sweep
+                * HBAR_J_S
+                * velocity_spectral[..., beta]
+                / (KB_J_K * sweep_temperature_K)
+            )
+            derivative_mismatches.append(
+                float(np.linalg.norm(spectral_df0_dk - chain_df0_dk) / np.linalg.norm(chain_df0_dk))
+            )
+
+        sweep_weak_trace = float(np.trace(sweep_weak.conductivity_tensor_S))
+        sweep_strong_trace = float(np.trace(sweep_strong_continuum))
+        temperature_sweep_rows.append({
+            "temperature_K": float(sweep_temperature_K),
+            "weak_trace": sweep_weak_trace,
+            "strong_trace": sweep_strong_trace,
+            "relative_trace_discrepancy": float((sweep_strong_trace - sweep_weak_trace) / sweep_weak_trace),
+            "df0_dkx_relative_mismatch": derivative_mismatches[0],
+            "df0_dky_relative_mismatch": derivative_mismatches[1],
+        })
+
     result = conductivity_from_epsilon_grid(
         epsilon_Ha,
         ai,
@@ -1600,6 +1842,14 @@ def analytic_sinusoidal_conductivity_probe() -> dict[str, object]:
         "sigma_actual": sigma_actual,
         "sigma_delta": sigma_delta,
         "relative_sigma_error": float(np.linalg.norm(sigma_delta) / sigma_norm),
+        "weak_spectral_sigma": weak_spectral.conductivity_tensor_S,
+        "strong_zero_field_grid_sigma": strong_zero_field.conductivity_tensor_S.real,
+        "strong_zero_field_continuum_sigma": strong_zero_field_continuum,
+        "weak_limit_delta": weak_limit_delta,
+        "relative_weak_limit_error": float(np.linalg.norm(weak_limit_delta) / weak_limit_norm),
+        "strong_zero_field_imaginary_leakage": strong_zero_field.imaginary_leakage_S,
+        "strong_weak_field_rows": field_rows,
+        "strong_weak_temperature_rows": temperature_sweep_rows,
         "expected_offdiag_abs": float(max(abs(sigma_expected[0, 1]), abs(sigma_expected[1, 0]))),
         "actual_offdiag_abs": float(max(abs(sigma_actual[0, 1]), abs(sigma_actual[1, 0]))),
     }

@@ -370,6 +370,61 @@ def test_conductivity_from_velocity_grid_matches_manual_discrete_formula() -> No
     np.testing.assert_allclose(result.conductivity_tensor_S, expected)
 
 
+
+def test_band_indexed_strong_dc_zero_field_reconstructs_weak_dc() -> None:
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        band_indexed_strong_dc_from_velocity_grid,
+        conductivity_from_velocity_grid,
+        velocity_from_epsilon_grid,
+        HARTREE_TO_J,
+    )
+
+    data = load_vincent_input_data()
+    epsilon = data.epsilon_of_k
+    velocity = np.stack(
+        velocity_from_epsilon_grid(epsilon, data.primitive_lattice_vectors_bohr),
+        axis=-1,
+    )
+
+    reference = vincent_reference()
+    mu = float(np.mean(epsilon) * HARTREE_TO_J)
+
+    weak = conductivity_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=mu,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+
+    strong = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        velocity,
+        data.primitive_lattice_vectors_bohr,
+        chemical_potential_J=mu,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+
+    scaled_strong = strong.conductivity_tensor_S / ((2.0 * np.pi) ** 2)
+
+    assert np.all(np.isfinite(scaled_strong))
+    imag_over_real = np.linalg.norm(scaled_strong.imag) / np.linalg.norm(scaled_strong.real)
+    assert imag_over_real < 1.0e-6
+
+    # The steady strong formula differentiates the Fourier-expanded
+    # equilibrium occupation.  The existing weak helper uses finite-difference
+    # velocities and the local Fermi window pointwise.  On the finite Vincent
+    # grid these are close but not algebraically identical; the diagnostic tab
+    # reports this residual rather than baking it into a false exact identity.
+    relative_trace_delta = abs(
+        np.trace(scaled_strong.real) - np.trace(weak.conductivity_tensor_S)
+    ) / abs(np.trace(weak.conductivity_tensor_S))
+    assert relative_trace_delta < 0.10
+
+
 def test_vincent_fermi_window_statistics_are_reproduced() -> None:
     from dft_local.transport.boltzmann.ashcroft_comparison.core import (
         HARTREE_TO_J,

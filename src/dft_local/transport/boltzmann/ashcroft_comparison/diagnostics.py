@@ -6,6 +6,14 @@ from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSecti
 from dft_local.diagnostics.user_strings import TypstMath, rich
 
 from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+    band_indexed_strong_dc_from_velocity_grid,
+    conductivity_from_velocity_grid,
+    fermi_factor,
+    fermi_window,
+    lattice_mode_vectors_m,
+    HARTREE_TO_J,
+    HBAR_J_S,
+    KB_J_K,
     conductivity_from_epsilon_grid,
     conductivity_contribution_probe,
     conductivity_derivative_sensitivity_probe,
@@ -56,6 +64,105 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         relaxation_time_s=reference.relaxation_time_s,
     )
     local_sigma = local_conductivity.conductivity_tensor_S
+
+    strong_dc = band_indexed_strong_dc_from_velocity_grid(
+        vincent_inputs.epsilon_of_k,
+        local_conductivity.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local_conductivity.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+    strong_sigma = strong_dc.conductivity_tensor_S / ((2.0 * np.pi) ** 2)
+    strong_grid_sigma = strong_dc.conductivity_tensor_S.real
+    strong_grid_sigma_delta = strong_grid_sigma - sigma
+    strong_grid_sigma_percent_error = np.where(
+        sigma != 0.0,
+        100.0 * strong_grid_sigma_delta / sigma,
+        np.nan,
+    )
+    strong_grid_trace = float(np.trace(strong_grid_sigma))
+    strong_grid_trace_percent_error = (
+        100.0 * (strong_grid_trace - float(np.trace(sigma))) / float(np.trace(sigma))
+    )
+
+    vincent_strong_weak_temperature_rows = []
+    epsilon_J = vincent_inputs.epsilon_of_k * HARTREE_TO_J
+    epsilon_fft = np.fft.fft2(epsilon_J)
+    r_vectors = lattice_mode_vectors_m(ai, vincent_inputs.epsilon_of_k.shape)
+    velocity_spectral = np.empty(vincent_inputs.epsilon_of_k.shape + (2,), dtype=np.float64)
+    for beta in range(2):
+        d_epsilon_dk = np.fft.ifft2(1j * r_vectors[..., beta] * epsilon_fft).real
+        velocity_spectral[..., beta] = d_epsilon_dk / HBAR_J_S
+
+    for sweep_temperature_K in (50.0, 100.0, 200.0, 300.0, 600.0, 1000.0, 2000.0, 5000.0):
+        sweep_weak = conductivity_from_velocity_grid(
+            vincent_inputs.epsilon_of_k,
+            velocity_spectral,
+            ai,
+            chemical_potential_J=local_conductivity.chemical_potential_J,
+            temperature_K=sweep_temperature_K,
+            relaxation_time_s=reference.relaxation_time_s,
+        )
+        sweep_strong = band_indexed_strong_dc_from_velocity_grid(
+            vincent_inputs.epsilon_of_k,
+            velocity_spectral,
+            ai,
+            chemical_potential_J=local_conductivity.chemical_potential_J,
+            temperature_K=sweep_temperature_K,
+            relaxation_time_s=reference.relaxation_time_s,
+            electric_field_V_per_m=np.zeros(2),
+        )
+        sweep_strong_continuum = sweep_strong.conductivity_tensor_S.real / ((2.0 * np.pi) ** 2)
+
+        occupation = fermi_factor(
+            epsilon_J,
+            local_conductivity.chemical_potential_J,
+            sweep_temperature_K,
+        )
+        occupation_fft = np.fft.fft2(occupation)
+        window = fermi_window(
+            epsilon_J,
+            local_conductivity.chemical_potential_J,
+            sweep_temperature_K,
+        )
+
+        derivative_mismatches = []
+        for beta in range(2):
+            spectral_df0_dk = np.fft.ifft2(1j * r_vectors[..., beta] * occupation_fft).real
+            chain_df0_dk = (
+                -window
+                * HBAR_J_S
+                * velocity_spectral[..., beta]
+                / (KB_J_K * sweep_temperature_K)
+            )
+            derivative_mismatches.append(
+                float(np.linalg.norm(spectral_df0_dk - chain_df0_dk) / np.linalg.norm(chain_df0_dk))
+            )
+
+        weak_trace_sweep = float(np.trace(sweep_weak.conductivity_tensor_S))
+        strong_trace_sweep = float(np.trace(sweep_strong_continuum))
+        vincent_strong_weak_temperature_rows.append({
+            "temperature_K": float(sweep_temperature_K),
+            "weak_trace": weak_trace_sweep,
+            "strong_trace": strong_trace_sweep,
+            "relative_trace_discrepancy": float((strong_trace_sweep - weak_trace_sweep) / weak_trace_sweep),
+            "df0_dkx_relative_mismatch": derivative_mismatches[0],
+            "df0_dky_relative_mismatch": derivative_mismatches[1],
+        })
+
+    strong_sigma_delta = strong_sigma.real - sigma
+    strong_sigma_percent_error = np.where(
+        sigma != 0.0,
+        100.0 * strong_sigma_delta / sigma,
+        np.nan,
+    )
+    strong_trace = float(np.trace(strong_sigma.real))
+    strong_trace_percent_error = (
+        100.0 * (strong_trace - float(np.trace(sigma))) / float(np.trace(sigma))
+    )
+
     sigma_abs_error = local_sigma - sigma
     sigma_percent_error = np.where(sigma != 0.0, 100.0 * sigma_abs_error / sigma, np.nan)
     sigma_ratio = np.where(sigma != 0.0, local_sigma / sigma, np.nan)
@@ -285,6 +392,68 @@ This validates the local derivative, unit conversions, Fermi window, tensor asse
                                 "",
                                 "",
                             )),
+                        ),
+                    ),
+                    Table(
+                        id="section_strong_weak_dc_field_sweep",
+                        title="Strong versus weak DC field sweep",
+                        description=(
+                            "Analytic periodic-band comparison of the weak linear-response tensor "
+                            "against the finite-field strong steady-DC differential tensor. "
+                            "The field is applied in the x direction. eta = (e tau / hbar) E |a_1|."
+                        ),
+                        headers=(
+                            "eta",
+                            "E [V/m]",
+                            "weak trace",
+                            "strong trace",
+                            "relative tensor discrepancy",
+                            "relative trace discrepancy",
+                            "strong xx",
+                            "strong yy",
+                            "imag leakage",
+                        ),
+                        rows=tuple(
+                            TableRow((
+                                f"{row['eta']:.3e}",
+                                f"{row['field_V_per_m']:.3e}",
+                                f"{row['weak_trace']:.8e}",
+                                f"{row['strong_trace']:.8e}",
+                                f"{row['relative_tensor_discrepancy']:.8e}",
+                                f"{row['relative_trace_discrepancy']:.8e}",
+                                f"{row['strong_xx']:.8e}",
+                                f"{row['strong_yy']:.8e}",
+                                f"{row['imaginary_leakage']:.3e}",
+                            ))
+                            for row in analytic_probe["strong_weak_field_rows"]
+                        ),
+                    ),
+                    Table(
+                        id="section_strong_weak_temperature_sweep",
+                        title="Strong versus weak DC temperature sweep",
+                        description=(
+                            "Analytic periodic-band comparison at E = 0. This checks when the "
+                            "spectral derivative of f0(k) agrees with the pointwise chain-rule "
+                            "derivative used by the weak DC formula."
+                        ),
+                        headers=(
+                            "T [K]",
+                            "weak trace",
+                            "strong trace",
+                            "strong/weak - 1",
+                            "df0/dkx mismatch",
+                            "df0/dky mismatch",
+                        ),
+                        rows=tuple(
+                            TableRow((
+                                f"{row['temperature_K']:.1f}",
+                                f"{row['weak_trace']:.8e}",
+                                f"{row['strong_trace']:.8e}",
+                                f"{row['relative_trace_discrepancy']:.8e}",
+                                f"{row['df0_dkx_relative_mismatch']:.8e}",
+                                f"{row['df0_dky_relative_mismatch']:.8e}",
+                            ))
+                            for row in analytic_probe["strong_weak_temperature_rows"]
                         ),
                     ),
                     Table(
@@ -551,6 +720,100 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 f"{100.0 * (np.trace(best_conductivity) - np.trace(sigma)) / np.trace(sigma):.3f}",
                                 "",
                             )),
+                        ),
+                    ),
+                    Table(
+                        id="section_band_indexed_strong_dc",
+                        title="Band-indexed strong steady DC check",
+                        description=(
+                            "Zero-field limit of the thesis Section 7.5 lattice-index steady DC formula. "
+                            "The result is displayed in Vincent's grid-measure convention, matching the existing "
+                            "best-conductivity reconstruction table."
+                        ),
+                        headers=(
+                            "component",
+                            "Vincent x",
+                            "Vincent y",
+                            "strong-grid x",
+                            "strong-grid y",
+                            "delta x",
+                            "delta y",
+                            "% err x",
+                            "% err y",
+                        ),
+                        rows=(
+                            TableRow((
+                                "x",
+                                f"{sigma[0, 0]:.8e}",
+                                f"{sigma[0, 1]:.8e}",
+                                f"{strong_grid_sigma[0, 0]:.8e}",
+                                f"{strong_grid_sigma[0, 1]:.8e}",
+                                f"{strong_grid_sigma_delta[0, 0]:.8e}",
+                                f"{strong_grid_sigma_delta[0, 1]:.8e}",
+                                f"{strong_grid_sigma_percent_error[0, 0]:.3f}",
+                                f"{strong_grid_sigma_percent_error[0, 1]:.3f}",
+                            )),
+                            TableRow((
+                                "y",
+                                f"{sigma[1, 0]:.8e}",
+                                f"{sigma[1, 1]:.8e}",
+                                f"{strong_grid_sigma[1, 0]:.8e}",
+                                f"{strong_grid_sigma[1, 1]:.8e}",
+                                f"{strong_grid_sigma_delta[1, 0]:.8e}",
+                                f"{strong_grid_sigma_delta[1, 1]:.8e}",
+                                f"{strong_grid_sigma_percent_error[1, 0]:.3f}",
+                                f"{strong_grid_sigma_percent_error[1, 1]:.3f}",
+                            )),
+                            TableRow((
+                                "trace",
+                                f"{np.trace(sigma):.8e}",
+                                "",
+                                f"{strong_grid_trace:.8e}",
+                                "",
+                                f"{strong_grid_trace - np.trace(sigma):.8e}",
+                                "",
+                                f"{strong_grid_trace_percent_error:.3f}",
+                                "",
+                            )),
+                            TableRow((
+                                "imaginary leakage",
+                                "",
+                                "",
+                                f"{strong_dc.imaginary_leakage_S / ((2.0 * np.pi) ** 2):.8e}",
+                                "",
+                                "",
+                                "",
+                                "",
+                                "",
+                            )),
+                        ),
+                    ),
+                    Table(
+                        id="section_vincent_strong_weak_temperature_sweep",
+                        title="Vincent-grid strong versus weak DC temperature sweep",
+                        description=(
+                            "Vincent dataset at E = 0. This shows how the strong formula, which "
+                            "differentiates the Fourier-expanded f0(k), departs from the weak "
+                            "chain-rule formula when the Fermi occupation is sharp on the finite grid."
+                        ),
+                        headers=(
+                            "T [K]",
+                            "weak trace",
+                            "strong trace",
+                            "strong/weak - 1",
+                            "df0/dkx mismatch",
+                            "df0/dky mismatch",
+                        ),
+                        rows=tuple(
+                            TableRow((
+                                f"{row['temperature_K']:.1f}",
+                                f"{row['weak_trace']:.8e}",
+                                f"{row['strong_trace']:.8e}",
+                                f"{row['relative_trace_discrepancy']:.8e}",
+                                f"{row['df0_dkx_relative_mismatch']:.8e}",
+                                f"{row['df0_dky_relative_mismatch']:.8e}",
+                            ))
+                            for row in vincent_strong_weak_temperature_rows
                         ),
                     ),
                     Table(
