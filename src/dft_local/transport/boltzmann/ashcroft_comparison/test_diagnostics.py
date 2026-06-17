@@ -1341,3 +1341,14 @@ def test_ashcroft_input_and_result_fields_have_quantity_schema() -> None:
     strong_specs = quantity_array_specs(BandIndexedStrongDcResult)
     assert strong_specs["velocity_m_per_s"].dimension == VELOCITY
     assert strong_specs["conductivity_mode_tensor_S"].dimension == CONDUCTIVITY * KSPACE_AREA.inverse()
+
+def test_ashcroft_scalar_unit_rows_render_display_quantities() -> None:
+    from dft_local.diagnostics.render import render_result
+    from dft_local.transport.boltzmann.ashcroft_comparison.diagnostics import compute_overview
+
+    html = render_result(compute_overview(None, {}))
+
+    assert "data-unit='J'" in html
+    assert "data-unit='m^-2'" in html
+    assert "data-unit='K'" in html
+    assert "data-unit='s'" in html

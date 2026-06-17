@@ -2,8 +2,32 @@ from __future__ import annotations
 
 import numpy as np
 
+from dft_local.core.units import (
+    DisplayQuantity,
+    ENERGY,
+    JOULE,
+    KELVIN,
+    KSPACE_AREA,
+    SECOND,
+    TEMPERATURE,
+    TIME,
+    Unit,
+)
+
 from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSection, DiagnosticSpec, MarkdownBlock, ProseBlock, Table, TableRow, TypstMathBlock
 from dft_local.diagnostics.user_strings import TypstMath, rich
+
+
+PER_SQUARE_METER = Unit(
+    symbol="m^-2",
+    dimension=KSPACE_AREA,
+    scale_to_si=1.0,
+)
+SIEMENS_M2_PER_J = Unit(
+    symbol="S m^2 J^-1",
+    dimension=KSPACE_AREA.inverse(),
+    scale_to_si=1.0,
+)
 
 from dft_local.transport.boltzmann.ashcroft_comparison.core import (
     band_indexed_strong_dc_from_velocity_grid,
@@ -740,7 +764,17 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             TableRow(("max f(1-f)", f"{reference.max_fermi_weight:.8e}", f"{np.max(fermi_weight):.8e}", f"{np.max(fermi_weight) - reference.max_fermi_weight:.8e}")),
                             TableRow(("min f(1-f)", f"{reference.min_fermi_weight:.8e}", f"{np.min(fermi_weight):.8e}", f"{np.min(fermi_weight) - reference.min_fermi_weight:.8e}")),
                             TableRow(("mean f(1-f)", f"{reference.mean_fermi_weight:.8e}", f"{np.mean(fermi_weight):.8e}", f"{np.mean(fermi_weight) - reference.mean_fermi_weight:.8e}")),
-                            TableRow(("mu [J]", "mean epsilon", f"{local_conductivity.chemical_potential_J:.8e}", "")),
+                            TableRow((
+                                "mu",
+                                "mean epsilon",
+                                DisplayQuantity(
+                                    local_conductivity.chemical_potential_J,
+                                    ENERGY,
+                                    JOULE,
+                                    name="mu",
+                                ),
+                                "",
+                            )),
                         ),
                     ),
                     Table(
@@ -993,10 +1027,42 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 description="Normalisation factors used after the raw velocity-weight tensor is summed over the grid.",
                                 headers=("quantity", "value"),
                                 rows=(
-                                    TableRow(("k-cell area [m^-2]", f"{local_conductivity.k_cell_area_per_m2:.8e}")),
-                                    TableRow(("prefactor", f"{local_conductivity.prefactor_S_m2_per_J:.8e}")),
-                                    TableRow(("temperature [K]", f"{local_conductivity.temperature_K:.8e}")),
-                                    TableRow(("relaxation time [s]", f"{local_conductivity.relaxation_time_s:.8e}")),
+                                    TableRow((
+                                        "k-cell area",
+                                        DisplayQuantity(
+                                            local_conductivity.k_cell_area_per_m2,
+                                            KSPACE_AREA,
+                                            PER_SQUARE_METER,
+                                            name="k-cell area",
+                                        ),
+                                    )),
+                                    TableRow((
+                                        "prefactor",
+                                        DisplayQuantity(
+                                            local_conductivity.prefactor_S_m2_per_J,
+                                            KSPACE_AREA.inverse(),
+                                            SIEMENS_M2_PER_J,
+                                            name="prefactor",
+                                        ),
+                                    )),
+                                    TableRow((
+                                        "temperature",
+                                        DisplayQuantity(
+                                            local_conductivity.temperature_K,
+                                            TEMPERATURE,
+                                            KELVIN,
+                                            name="temperature",
+                                        ),
+                                    )),
+                                    TableRow((
+                                        "relaxation time",
+                                        DisplayQuantity(
+                                            local_conductivity.relaxation_time_s,
+                                            TIME,
+                                            SECOND,
+                                            name="relaxation time",
+                                        ),
+                                    )),
                                     TableRow((
                                         "continuum measure convention",
                                         rich(TypstMath("$ (d^2 k) / ((2 pi)^2) $", name="ashcroft_normalisation_table_continuum_measure")),
