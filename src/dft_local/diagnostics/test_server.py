@@ -1057,6 +1057,42 @@ def test_rendered_tables_have_json_copy_button() -> None:
 
 
 
+
+def test_display_quantity_uses_compact_scientific_formatting() -> None:
+    from dft_local.core.units import DIMENSIONLESS, DisplayQuantity, Unit
+    from dft_local.diagnostics.models import DiagnosticResult, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    unitless = Unit(symbol="", dimension=DIMENSIONLESS, scale_to_si=1.0)
+    result = DiagnosticResult(
+        title="format test",
+        summary="summary",
+        sections=(),
+        body=(
+            Table(
+                id="format_table",
+                title="Format Table",
+                description="formatting",
+                headers=("name", "value"),
+                rows=(
+                    TableRow(("tiny", DisplayQuantity(3.61688594e-4, DIMENSIONLESS, unitless, name="tiny"))),
+                    TableRow(("large", DisplayQuantity(24375.6681, DIMENSIONLESS, unitless, name="large"))),
+                    TableRow(("ordinary", DisplayQuantity(1.14528992, DIMENSIONLESS, unitless, name="ordinary"))),
+                    TableRow(("one", DisplayQuantity(1.0, DIMENSIONLESS, unitless, name="one"))),
+                ),
+            ),
+        ),
+    )
+
+    html = render_result(result)
+
+    assert "3.61689e-4" in html
+    assert "2.43757e4" in html
+    assert "1.14529" in html
+    assert "data-unit=''" in html
+    assert "<span class='display-unit'></span>" not in html
+
+
 def test_rendered_table_json_copy_unwraps_display_quantities() -> None:
     import json
     import re

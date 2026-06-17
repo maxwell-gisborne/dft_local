@@ -45,10 +45,16 @@ def render_display_value(value: Any) -> str:
     """Render a value that appears in a table cell or compact value slot."""
 
     if isinstance(value, DisplayQuantity):
+        unit_symbol = value.unit.symbol
+        unit_html = (
+            f" <span class='display-unit'>{escape(unit_symbol)}</span>"
+            if unit_symbol
+            else ""
+        )
         return (
-            f"<span class='display-quantity' data-unit='{escape(value.unit.symbol)}'>"
-            f"{escape(fmt(value.value))} "
-            f"<span class='display-unit'>{escape(value.unit.symbol)}</span>"
+            f"<span class='display-quantity' data-unit='{escape(unit_symbol)}'>"
+            f"{escape(fmt(value.value))}"
+            f"{unit_html}"
             "</span>"
         )
 
@@ -73,17 +79,51 @@ def fmt(value: Any) -> str:
             )
         return ", ".join(f"{key}={fmt(val)}" for key, val in value.items())
 
-    if isinstance(value, float):
-        if value == 0.0:
-            return "0"
-        if abs(value) < 1e-4 or abs(value) > 1e5:
-            return f"{value:.6e}"
-        return f"{value:.6g}"
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(fmt(item) for item in value) + "]"
 
-    if isinstance(value, complex):
-        return f"{value.real:.6e} + {value.imag:.6e} i"
+    if isinstance(value, bool):
+        return str(value)
+
+    if isinstance(value, int):
+        return str(value)
+
+    if isinstance(value, float):
+        return fmt_float(value)
+
+    item = getattr(value, "item", None)
+    if callable(item):
+        try:
+            scalar = item()
+        except Exception:
+            scalar = None
+        else:
+            if scalar is not value and isinstance(scalar, (bool, int, float)):
+                return fmt(scalar)
 
     return str(value)
+
+
+def fmt_float(value: float, *, sigfigs: int = 6) -> str:
+    if math.isnan(value):
+        return "nan"
+    if math.isinf(value):
+        return "inf" if value > 0.0 else "-inf"
+    if value == 0.0:
+        return "0"
+
+    magnitude = abs(value)
+
+    # Fixed notation is easier to read for ordinary O(1) values.
+    # Scientific notation is clearer for residuals, tiny errors, and large scales.
+    if magnitude < 1.0e-3 or magnitude >= 1.0e4:
+        text = f"{value:.{sigfigs - 1}e}"
+        mantissa, exponent = text.split("e")
+        mantissa = mantissa.rstrip("0").rstrip(".")
+        exponent = str(int(exponent))
+        return f"{mantissa}e{exponent}"
+
+    return f"{value:.{sigfigs}g}"
 
 
 def _nice(value: float) -> str:
