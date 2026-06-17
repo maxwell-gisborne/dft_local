@@ -218,6 +218,20 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     best_velocity_percent_error = delaunay_velocity_probe["percent"]
     best_velocity_rms = float(delaunay_velocity_probe["rms_error"])
 
+    adjacent_find_errors = np.array(
+        [float(row["find_simplex_error"]) for row in delaunay_adjacent_probe],
+        dtype=float,
+    )
+    adjacent_best_errors = np.array(
+        [float(row["best_adjacent_error"]) for row in delaunay_adjacent_probe],
+        dtype=float,
+    )
+    adjacent_error_ratio = (
+        float(np.max(adjacent_find_errors) / np.max(adjacent_best_errors))
+        if np.max(adjacent_best_errors) != 0.0
+        else np.inf
+    )
+
     best_conductivity = local_sigma * two_pi_squared
     best_conductivity_delta = best_conductivity - sigma
     best_conductivity_percent_error = np.where(
@@ -1189,6 +1203,45 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 f"{row['adjacent_count']}",
                             ))
                             for row in delaunay_adjacent_probe
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="section_lattice_resolved_residual_error_conclusion",
+                        title="Residual-error conclusion",
+                        markdown=rich(
+                            "The remaining discrepancies split into two different effects. "
+                            "The Vincent velocity/conductivity reproduction residual is explained by the "
+                            "Delaunay vertex ambiguity. Vincent's printed velocity samples sit exactly on "
+                            "grid vertices, where the piecewise-linear Delaunay gradient is multi-valued. "
+                            "Using the default `find_simplex` convention gives a maximum sample velocity error of "
+                            f"{np.max(adjacent_find_errors):.8e} m/s, while choosing the best adjacent simplex "
+                            f"reduces the maximum sample error to {np.max(adjacent_best_errors):.8e} m/s. "
+                            f"That is an error reduction factor of about {adjacent_error_ratio:.3e}. "
+                            "This reproduces the printed sample velocities to roundoff, so the few-percent "
+                            "Vincent reproduction residual is a simplex-selection effect, not a Fourier, ",
+                            TypstMath("$ Gamma $", name="ashcroft_gamma_inline"),
+                            ", or unit problem.\n\n"
+                            "The strong spectral/modal versus weak-chain residual is different. "
+                            f"The strong/modal trace is {np.trace(strong_grid_sigma):.8e} S/m, while the "
+                            f"weak-chain trace is {np.trace(best_conductivity):.8e} S/m. "
+                            f"The relative difference is "
+                            f"{100.0 * (np.trace(strong_grid_sigma) - np.trace(best_conductivity)) / np.trace(best_conductivity):.8e}%. "
+                            "This is not explained by the Delaunay simplex ambiguity. The modal components "
+                            "exactly reconstruct the strong spectral tensor, so this residual is a real "
+                            "difference between spectrally differentiating the sampled periodic occupation ",
+                            TypstMath("$ f_0(k) $", name="ashcroft_f0_k_inline"),
+                            " and using the weak chain-rule derivative ",
+                            TypstMath("$ f_0'(E) dif E / dif k $", name="ashcroft_weak_chain_derivative_inline"),
+                            ".\n\n"
+                            "The component checks support this interpretation: ",
+                            TypstMath("$ Gamma $", name="ashcroft_gamma_component_inline"),
+                            " reconstructs the sampled velocity grid to roundoff, ",
+                            TypstMath("$ tilde(rho) $", name="ashcroft_rho_tilde_inline"),
+                            " reconstructs the sampled Fermi occupation to roundoff, and ",
+                            TypstMath("$ F $", name="ashcroft_response_f_inline"),
+                            " is the stored closed-form lattice-vector response. Therefore the modal machinery "
+                            "is internally consistent; the remaining discrepancies come from model and derivative "
+                            "choices, not broken Fourier components.",
                         ),
                     ),
                     Table(
