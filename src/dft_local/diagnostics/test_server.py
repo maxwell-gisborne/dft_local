@@ -1056,6 +1056,109 @@ def test_rendered_tables_have_json_copy_button() -> None:
     ]
 
 
+
+def test_rendered_table_json_copy_unwraps_display_quantities() -> None:
+    import json
+    import re
+    from html import unescape
+
+    from dft_local.core.units import CONDUCTIVITY, DisplayQuantity, Unit
+    from dft_local.diagnostics.models import DiagnosticResult, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    siemens_per_meter = Unit(
+        symbol="S/m",
+        dimension=CONDUCTIVITY,
+        scale_to_si=1.0,
+    )
+    result = DiagnosticResult(
+        title="copy quantity test",
+        summary="summary",
+        sections=(),
+        body=(
+            Table(
+                id="copy_quantity_table",
+                title="copy quantity table",
+                description="copyable quantity table",
+                headers=("name", "value"),
+                rows=(
+                    TableRow((
+                        "sigma",
+                        DisplayQuantity(
+                            1.25,
+                            CONDUCTIVITY,
+                            siemens_per_meter,
+                            name="sigma",
+                        ),
+                    )),
+                ),
+            ),
+        ),
+    )
+
+    html = render_result(result)
+    match = re.search(r"data-table-json='([^']+)'", html)
+    assert match is not None
+
+    records = json.loads(unescape(match.group(1)))
+    assert records == [{"name": "sigma", "value": 1.25}]
+
+
+
+def test_rendered_table_json_copy_unwraps_unitless_display_quantities() -> None:
+    import json
+    import re
+    from html import unescape
+
+    from dft_local.core.units import DIMENSIONLESS, DisplayQuantity, Unit
+    from dft_local.diagnostics.models import DiagnosticResult, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    unitless = Unit(
+        symbol="",
+        dimension=DIMENSIONLESS,
+        scale_to_si=1.0,
+    )
+    result = DiagnosticResult(
+        title="copy unitless quantity test",
+        summary="summary",
+        sections=(),
+        body=(
+            Table(
+                id="copy_unitless_quantity_table",
+                title="copy unitless quantity table",
+                description="copyable unitless quantity table",
+                headers=("quantity", "value", "plain numeric string"),
+                rows=(
+                    TableRow((
+                        "ratio",
+                        DisplayQuantity(
+                            1.14528992,
+                            DIMENSIONLESS,
+                            unitless,
+                            name="ratio",
+                        ),
+                        "1.14528992e+00",
+                    )),
+                ),
+            ),
+        ),
+    )
+
+    html = render_result(result)
+    match = re.search(r"data-table-json='([^']+)'", html)
+    assert match is not None
+
+    records = json.loads(unescape(match.group(1)))
+    assert records == [
+        {
+            "quantity": "ratio",
+            "value": 1.14528992,
+            "plain numeric string": "1.14528992e+00",
+        }
+    ]
+
+
 def test_render_page_includes_table_copy_script() -> None:
     from dft_local.diagnostics.render import render_page
 

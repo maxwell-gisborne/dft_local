@@ -377,10 +377,27 @@ def table_row_dom_id(table_id: object, row_index: int, row: object) -> str:
 
 
 
+_PLAIN_NUMBER_RE = re.compile(
+    r"^[+-]?(?:(?:\\d+\\.\\d*)|(?:\\.\\d+)|(?:\\d+))(?:[eE][+-]?\\d+)?$"
+)
+
+
+def table_json_header_value(header: object) -> str:
+    # Headers are display labels. For JSON copy, drop bracketed display units
+    # such as "T [K]" or "E [V/m]" so copied keys name the quantity only.
+    return re.sub(r"\\s*\\[[^\\]]+\\]\\s*$", "", str(header))
+
+
+def table_json_cell_value(value: object) -> object:
+    if isinstance(value, DisplayQuantity):
+        return float(value.value)
+    return fmt(value)
+
+
 def table_records_json(table: Table) -> str:
     records = [
         {
-            str(header): fmt(cell)
+            str(header): table_json_cell_value(cell)
             for header, cell in zip(table.headers, row.cells, strict=False)
         }
         for row in table.rows
