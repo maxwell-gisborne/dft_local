@@ -7,6 +7,7 @@ from dft_local.diagnostics.user_strings import TypstMath, rich
 
 from dft_local.transport.boltzmann.ashcroft_comparison.core import (
     band_indexed_strong_dc_from_velocity_grid,
+    conductivity_830_shifted_chain_rule_from_velocity_grid,
     conductivity_from_velocity_grid,
     fermi_factor,
     fermi_window,
@@ -85,6 +86,21 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     strong_grid_trace = float(np.trace(strong_grid_sigma))
     strong_grid_trace_percent_error = (
         100.0 * (strong_grid_trace - float(np.trace(sigma))) / float(np.trace(sigma))
+    )
+
+    shifted_830 = conductivity_830_shifted_chain_rule_from_velocity_grid(
+        vincent_inputs.epsilon_of_k,
+        local_conductivity.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local_conductivity.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=reference.electric_field_V_per_m,
+    )
+    shifted_830_sigma = shifted_830.conductivity_tensor_S * ((2.0 * np.pi) ** 2)
+    shifted_830_trace = float(np.trace(shifted_830_sigma))
+    shifted_830_trace_percent_error = (
+        100.0 * (shifted_830_trace - float(np.trace(sigma))) / float(np.trace(sigma))
     )
 
     vincent_strong_weak_temperature_rows = []
@@ -294,12 +310,12 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                             "The weak formula is the linear-response DC conductivity. It assumes an infinitesimal electric field, so the current is obtained by contracting two velocities against the Fermi-window factor ",
                             TypstMath("$ - (diff f_0) / (diff epsilon) $", display=False, name="ashcroft_local_intro_fermi_window"),
                             ". The strong formula is the finite-field steady-state calculation. It first solves for the displaced occupation ",
-                            TypstMath("$ f_E(k) $", display=False, name="ashcroft_local_intro_displaced_occupation"),
+                            TypstMath("$ f_E (k) $", display=False, name="ashcroft_local_intro_displaced_occupation"),
                             ", computes the current from that occupation, and then recovers the weak tensor by differentiating the current at zero field. ",
                             "The local derivative is therefore checked in two ways. For the weak formula we use the chain rule, differentiating the band energy and then applying ",
                             TypstMath("$ (diff f_0) / (diff epsilon) $", display=False, name="ashcroft_local_intro_chain_rule"),
                             ". For the strong formula we also test the periodic spectral derivative of the sampled occupation ",
-                            TypstMath("$ f_0(k) $", display=False, name="ashcroft_local_intro_periodic_occupation"),
+                            TypstMath("$ f_0 (k) $", display=False, name="ashcroft_local_intro_periodic_occupation"),
                             ". These agree only when the Fermi occupation is smooth enough on the sampled periodic grid; at low temperature the Fermi window is sharp, so the periodic derivative can be under-resolved. ",
                             "The first continuum expression being discretised is the weak, linear-response formula:",
                         ),
@@ -753,6 +769,60 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                                 "",
                                 f"{100.0 * (np.trace(best_conductivity) - np.trace(sigma)) / np.trace(sigma):.3f}",
                                 "",
+                            )),
+                        ),
+                    ),
+                    ProseBlock(
+                        id="ashcroft_conductivity_method_comparison_summary",
+                        title="Method comparison result",
+                        markdown=rich(
+                            "The shifted Eq. 8.30 chain-rule calculation now tests the hypothesis that Vincent's tensor is closer to a finite-field shifted implementation than to the weak formula. ",
+                            "On the current grid it does not move toward Vincent: it agrees with the weak chain-rule result to within the small finite-field/quadrature error. ",
+                            "The remaining Vincent discrepancy is therefore already present in the weak/shifted-chain-rule calculation, while the spectral strong-zero-field construction is a separate and larger error caused by differentiating the sampled periodic occupation ",
+                            TypstMath("$ f_0(k) $", display=False, name="ashcroft_method_comparison_f0"),
+                            ".",
+                        ),
+                    ),
+                    Table(
+                        id="section_conductivity_method_comparison",
+                        title="Conductivity method comparison",
+                        description=(
+                            "Tests whether Vincent's reported tensor is closer to the weak chain-rule formula, "
+                            "the spectral strong-DC zero-field construction, or the shifted Eq. 8.30 chain-rule construction."
+                        ),
+                        headers=("method", "trace [S/m]", "trace error vs Vincent", "xx [S/m]", "yy [S/m]", "note"),
+                        rows=(
+                            TableRow((
+                                "Vincent target",
+                                f"{np.trace(sigma):.8e}",
+                                "0.00000000e+00",
+                                f"{sigma[0, 0]:.8e}",
+                                f"{sigma[1, 1]:.8e}",
+                                "reported reference",
+                            )),
+                            TableRow((
+                                "weak chain-rule grid",
+                                f"{np.trace(best_conductivity):.8e}",
+                                f"{100.0 * (np.trace(best_conductivity) - np.trace(sigma)) / np.trace(sigma):.8e}%",
+                                f"{best_conductivity[0, 0]:.8e}",
+                                f"{best_conductivity[1, 1]:.8e}",
+                                "E -> 0 analytic Fermi window",
+                            )),
+                            TableRow((
+                                "strong spectral zero-field",
+                                f"{strong_grid_trace:.8e}",
+                                f"{strong_grid_trace_percent_error:.8e}%",
+                                f"{strong_grid_sigma[0, 0]:.8e}",
+                                f"{strong_grid_sigma[1, 1]:.8e}",
+                                "Fourier derivative of sampled periodic occupation",
+                            )),
+                            TableRow((
+                                "strong shifted Eq. 8.30",
+                                f"{shifted_830_trace:.8e}",
+                                f"{shifted_830_trace_percent_error:.8e}%",
+                                f"{shifted_830_sigma[0, 0]:.8e}",
+                                f"{shifted_830_sigma[1, 1]:.8e}",
+                                "finite-field shifted chain-rule quadrature",
                             )),
                         ),
                     ),

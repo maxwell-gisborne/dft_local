@@ -1299,6 +1299,96 @@ def conductivity_from_velocity_grid(
     )
 
 
+def conductivity_830_shifted_chain_rule_from_velocity_grid(
+    epsilon_Ha: np.ndarray,
+    velocity_m_per_s: np.ndarray,
+    primitive_lattice_vectors_bohr: np.ndarray,
+    *,
+    chemical_potential_J: float,
+    temperature_K: float,
+    relaxation_time_s: float,
+    electric_field_V_per_m: np.ndarray,
+    spin_degeneracy: float = 1.0,
+    laguerre_order: int = 48,
+) -> ConductivityResult:
+    """Evaluate Vincent Eq. 8.30 by shifted-grid quadrature.
+
+    This is the finite-field, chain-rule form of the strong conductivity:
+    the base velocity v_alpha(k) is contracted with the shifted quantity
+    f0(k_s)(1 - f0(k_s)) v_beta(k_s), where
+    k_s = k + s e E / hbar.
+
+    The s integral is evaluated with Gauss-Laguerre quadrature after
+    substituting s = tau t, so the E -> 0 limit reconstructs the weak formula.
+    Shifted epsilon and velocity values are sampled with periodic bilinear
+    interpolation on the stored k grid.
+    """
+
+    epsilon_J = np.asarray(epsilon_Ha, dtype=np.float64) * HARTREE_TO_J
+    velocity = np.asarray(velocity_m_per_s, dtype=np.float64)
+    field = np.asarray(electric_field_V_per_m, dtype=np.float64)
+
+    if epsilon_J.ndim != 2:
+        raise ValueError(f"Expected a 2D epsilon grid, got shape {epsilon_J.shape}")
+
+    if velocity.shape != epsilon_J.shape + (2,):
+        raise ValueError(
+            f"velocity shape {velocity.shape} does not match epsilon shape {epsilon_J.shape} + (2,)"
+        )
+
+    if field.shape != (2,):
+        raise ValueError(f"Expected electric field shape (2,), got {field.shape}")
+
+    n1, n2 = epsilon_J.shape
+    ii, jj = np.meshgrid(
+        np.arange(n1, dtype=np.float64) / float(n1),
+        np.arange(n2, dtype=np.float64) / float(n2),
+        indexing="ij",
+    )
+    q_base = np.stack((ii, jj), axis=-1)
+
+    nodes, weights = np.polynomial.laguerre.laggauss(laguerre_order)
+
+    raw = np.zeros((2, 2), dtype=np.float64)
+    for node, weight in zip(nodes, weights, strict=True):
+        shift_per_m = (ELECTRON_CHARGE_C * relaxation_time_s * float(node) / HBAR_J_S) * field
+        q_shift = q_base + cartesian_k_to_fractional(shift_per_m, primitive_lattice_vectors_bohr)
+
+        shifted_epsilon_J = bilinear_periodic_sample(epsilon_J, q_shift)
+        shifted_fermi_weight = fermi_window(shifted_epsilon_J, chemical_potential_J, temperature_K)
+
+        shifted_velocity = np.empty_like(velocity)
+        for beta in range(2):
+            shifted_velocity[..., beta] = bilinear_periodic_sample(velocity[..., beta], q_shift)
+
+        raw += float(weight * node) * np.einsum(
+            "ija,ijb,ij->ab",
+            velocity,
+            shifted_velocity,
+            shifted_fermi_weight,
+        )
+
+    k_cell_area = reciprocal_cell_area_per_m2(primitive_lattice_vectors_bohr, epsilon_J.shape)
+    weighted = raw * k_cell_area
+    prefactor = spin_degeneracy * ELECTRON_CHARGE_C ** 2 * relaxation_time_s / (
+        (2.0 * np.pi) ** 2 * KB_J_K * temperature_K
+    )
+    sigma = prefactor * weighted
+
+    return ConductivityResult(
+        chemical_potential_J=float(chemical_potential_J),
+        temperature_K=float(temperature_K),
+        relaxation_time_s=float(relaxation_time_s),
+        k_cell_area_per_m2=float(k_cell_area),
+        prefactor_S_m2_per_J=float(prefactor),
+        fermi_weight=fermi_window(epsilon_J, chemical_potential_J, temperature_K),
+        velocity_m_per_s=velocity,
+        raw_velocity_weight_tensor=raw,
+        weighted_velocity_tensor=weighted,
+        conductivity_tensor_S=sigma,
+    )
+
+
 def conductivity_from_epsilon_grid(
     epsilon_Ha: np.ndarray,
     primitive_lattice_vectors_bohr: np.ndarray,
