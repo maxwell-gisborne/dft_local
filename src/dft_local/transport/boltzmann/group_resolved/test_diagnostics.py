@@ -147,6 +147,7 @@ def test_group_resolved_overview_is_ashcroft_free() -> None:
 
     assert "Ashcroft" not in html
     assert "finite-difference" not in html
+    assert "Finite-difference" not in html
     assert "legacy scalar-band" not in html
     assert "A sigma" not in html
     assert "A trace" not in html
