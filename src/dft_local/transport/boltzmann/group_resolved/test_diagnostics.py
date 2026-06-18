@@ -127,3 +127,18 @@ def test_group_resolved_overview_contains_strong_spectral_reference() -> None:
     assert "strong_spectral_dc_reference_table" in html
     assert "strong trace / weak trace" in html
     assert "relative tensor discrepancy" in html
+
+
+def test_group_resolved_overview_is_ashcroft_free() -> None:
+    from dft_local.diagnostics.server import load_default_context
+    from dft_local.diagnostics.render import render_result
+
+    ctx = load_default_context("test_run/run_dir/data")
+    spec = {spec.id: spec for spec in diagnostics()}["transport.boltzmann.group_resolved.overview"]
+    html = render_result(spec.compute(ctx, {"kernel": "average_star", "nu": "3", "nv": "3"}))
+
+    assert "Ashcroft" not in html
+    assert "finite-difference" not in html
+    assert "legacy scalar-band" not in html
+    assert "A sigma" not in html
+    assert "A trace" not in html
