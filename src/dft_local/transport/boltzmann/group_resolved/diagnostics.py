@@ -210,6 +210,59 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             name=name,
         )
 
+    h_hermitian_defects = []
+    s_hermitian_defects = []
+    s_min_eigs = []
+    s_max_eigs = []
+    s_condition_estimates = []
+
+    for problem in calc.problems:
+        Hk = np.asarray(problem.Hk)
+        Sk = np.asarray(problem.Sk)
+
+        h_hermitian_defects.append(float(np.linalg.norm(Hk - Hk.conj().T)))
+        s_hermitian_defects.append(float(np.linalg.norm(Sk - Sk.conj().T)))
+
+        s_eigs = np.linalg.eigvalsh(Sk)
+        s_min = float(np.min(s_eigs).real)
+        s_max = float(np.max(s_eigs).real)
+        s_min_eigs.append(s_min)
+        s_max_eigs.append(s_max)
+        s_condition_estimates.append(s_max / s_min if s_min != 0.0 else np.inf)
+
+    symbol_sanity_rows = (
+        TableRow((
+            "H Hermiticity defect",
+            unitless_quantity(np.max(h_hermitian_defects), "max H Hermiticity defect"),
+            unitless_quantity(np.mean(h_hermitian_defects), "mean H Hermiticity defect"),
+            "||H(k) - H(k)^†|| over sampled irreps",
+        )),
+        TableRow((
+            "S Hermiticity defect",
+            unitless_quantity(np.max(s_hermitian_defects), "max S Hermiticity defect"),
+            unitless_quantity(np.mean(s_hermitian_defects), "mean S Hermiticity defect"),
+            "||S(k) - S(k)^†|| over sampled irreps",
+        )),
+        TableRow((
+            "S minimum eigenvalue",
+            unitless_quantity(np.min(s_min_eigs), "minimum S eigenvalue"),
+            unitless_quantity(np.mean(s_min_eigs), "mean minimum S eigenvalue"),
+            "lowest eigenvalue of S(k)",
+        )),
+        TableRow((
+            "S maximum eigenvalue",
+            unitless_quantity(np.max(s_max_eigs), "maximum S eigenvalue"),
+            unitless_quantity(np.mean(s_max_eigs), "mean maximum S eigenvalue"),
+            "highest eigenvalue of S(k)",
+        )),
+        TableRow((
+            "S condition estimate",
+            unitless_quantity(np.max(s_condition_estimates), "maximum S condition estimate"),
+            unitless_quantity(np.mean(s_condition_estimates), "mean S condition estimate"),
+            "max eig(S(k)) / min eig(S(k))",
+        )),
+    )
+
     strong_reference_rows = []
     strong_reference_band_sigma = np.empty_like(resolved.sigma_band)
     strong_reference_band_raw_sigma = np.empty_like(resolved.sigma_band)
@@ -281,6 +334,25 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             Card("||sum bands - compact||", conductivity_quantity(np.linalg.norm(residual), "sum bands minus compact norm"), "ok"),
         ),
         sections=(
+            DiagnosticSection(
+                id="symbol_sanity_checks",
+                title="Symbol sanity checks",
+                description=(
+                    "Checks the local symbols before solving any eigenproblem. "
+                    "The Hamiltonian and overlap symbols should be Hermitian on the sampled irreps, "
+                    "and the overlap symbol should remain positive."
+                ),
+                tables=(
+                    Table(
+                        id="symbol_sanity_checks_table",
+                        title="H(k) and S(k) sanity checks",
+                        description="Global maxima and means over the sampled irrep grid.",
+                        headers=("quantity", "worst", "mean", "meaning"),
+                        rows=symbol_sanity_rows,
+                        numeric=frozenset((1, 2)),
+                    ),
+                ),
+            ),
             DiagnosticSection(
                 id="band_energy_surfaces",
                 title="Band energy surfaces",
