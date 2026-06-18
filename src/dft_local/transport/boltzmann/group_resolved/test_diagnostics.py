@@ -36,6 +36,9 @@ def test_group_resolved_overview_renders() -> None:
     assert "Symbol sanity checks" in html
     assert "H Hermiticity defect" in html
     assert "S minimum eigenvalue" in html
+    assert "Generalized eigensystem checks" in html
+    assert "generalized eigen residual" in html
+    assert "S-normalisation defect" in html
     assert "Selected energy-ordered band" in html
     assert "Band trace contributions" in html
     assert "sum bands - compact" in html

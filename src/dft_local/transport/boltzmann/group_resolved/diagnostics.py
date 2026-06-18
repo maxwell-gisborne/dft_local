@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, DisplayQuantity, VELOCITY
+from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, ENERGY, DisplayQuantity, VELOCITY
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -202,6 +202,14 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             name=name,
         )
 
+    def energy_quantity(value: complex | float, name: str) -> DisplayQuantity:
+        return DisplayQuantity(
+            value=float(np.real(value)),
+            dimension=ENERGY,
+            unit=calc.unit_context.unit_for_dimension(ENERGY),
+            name=name,
+        )
+
     def unitless_quantity(value: complex | float, name: str) -> DisplayQuantity:
         return DisplayQuantity(
             value=float(np.real(value)),
@@ -261,6 +269,56 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             unitless_quantity(np.mean(s_condition_estimates), "mean S condition estimate"),
             "max eig(S(k)) / min eig(S(k))",
         )),
+    )
+
+    eig_residuals = []
+    s_norm_defects = []
+    s_offdiag_defects = []
+
+    for ik, problem in enumerate(calc.problems):
+        Hk = np.asarray(problem.Hk)
+        Sk = np.asarray(problem.Sk)
+        energies_k = np.asarray(calc.energies[ik])
+        vectors_k = np.asarray(calc.vectors[ik])
+
+        gram = vectors_k.conj().T @ Sk @ vectors_k
+        s_offdiag_defects.append(float(np.max(np.abs(gram - np.diag(np.diag(gram))))))
+
+        for n in range(vectors_k.shape[1]):
+            phi = vectors_k[:, n]
+            residual_n = Hk @ phi - energies_k[n] * (Sk @ phi)
+            eig_residuals.append(float(np.linalg.norm(residual_n)))
+            s_norm_defects.append(float(abs(complex(phi.conj() @ Sk @ phi) - 1.0)))
+
+    eigensystem_sanity_rows = (
+        TableRow((
+            "generalized eigen residual",
+            unitless_quantity(np.max(eig_residuals), "max generalized eigen residual"),
+            unitless_quantity(np.mean(eig_residuals), "mean generalized eigen residual"),
+            "||H(k) phi_n(k) - E_n(k) S(k) phi_n(k)||",
+        )),
+        TableRow((
+            "S-normalisation defect",
+            unitless_quantity(np.max(s_norm_defects), "max S-normalisation defect"),
+            unitless_quantity(np.mean(s_norm_defects), "mean S-normalisation defect"),
+            "|phi_n(k)^† S(k) phi_n(k) - 1|",
+        )),
+        TableRow((
+            "S-orthogonality off-diagonal defect",
+            unitless_quantity(np.max(s_offdiag_defects), "max S-orthogonality off-diagonal defect"),
+            unitless_quantity(np.mean(s_offdiag_defects), "mean S-orthogonality off-diagonal defect"),
+            "max offdiag |phi_i(k)^† S(k) phi_j(k)|",
+        )),
+    )
+
+    eigensystem_energy_rows = tuple(
+        TableRow((
+            n,
+            energy_quantity(np.min(energy_grid[:, :, n]), f"band {n} minimum energy"),
+            energy_quantity(np.mean(energy_grid[:, :, n]), f"band {n} mean energy"),
+            energy_quantity(np.max(energy_grid[:, :, n]), f"band {n} maximum energy"),
+        ))
+        for n in range(nbands)
     )
 
     strong_reference_rows = []
@@ -418,6 +476,32 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         ),
                         rows=velocity_rows,
                         numeric=frozenset(range(10)),
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="generalized_eigensystem_checks",
+                title="Generalized eigensystem checks",
+                description=(
+                    "Checks the solved generalized eigenproblem before using eigenvectors in "
+                    "Hellmann-Feynman velocities or conductivity weights."
+                ),
+                tables=(
+                    Table(
+                        id="generalized_eigensystem_residual_table",
+                        title="Generalized eigensystem residuals",
+                        description="Residuals over all sampled irreps and energy-ordered bands.",
+                        headers=("quantity", "worst", "mean", "meaning"),
+                        rows=eigensystem_sanity_rows,
+                        numeric=frozenset((1, 2)),
+                    ),
+                    Table(
+                        id="generalized_eigensystem_energy_table",
+                        title="Energy range by band",
+                        description="Band energy ranges over the sampled irrep grid.",
+                        headers=("band", "min E", "mean E", "max E"),
+                        rows=eigensystem_energy_rows,
+                        numeric=frozenset((0, 1, 2, 3)),
                     ),
                 ),
             ),
