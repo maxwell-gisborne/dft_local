@@ -16,6 +16,13 @@ from dft_local.core.units import DisplayQuantity
 
 
 
+def _format_unit_html(symbol: str) -> str:
+    """Render plain unit exponents like eV^-1 as HTML superscripts."""
+
+    escaped = escape(symbol)
+    return re.sub(r"\^(-?\d+)", r"<sup>\1</sup>", escaped)
+
+
 def render_user_string(value: Any) -> str:
     """Render a user-facing string to safe HTML.
 
@@ -47,7 +54,7 @@ def render_display_value(value: Any) -> str:
     if isinstance(value, DisplayQuantity):
         unit_symbol = value.unit.symbol
         unit_html = (
-            f" <span class='display-unit'>{escape(unit_symbol)}</span>"
+            f" <span class='display-unit'>{_format_unit_html(unit_symbol)}</span>"
             if unit_symbol
             else ""
         )

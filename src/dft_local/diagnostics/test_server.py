@@ -1205,3 +1205,40 @@ def test_render_page_includes_table_copy_script() -> None:
     assert "table-copy-json[data-table-json]" in html
     assert "navigator.clipboard.writeText" in html
     assert "Copy failed" in html
+
+
+def test_display_quantity_unit_exponents_render_as_superscripts() -> None:
+    from dft_local.core.units import CONDUCTIVITY, DisplayQuantity, Unit
+    from dft_local.diagnostics.models import DiagnosticResult, DiagnosticSection, Table, TableRow
+    from dft_local.diagnostics.render import render_result
+
+    quantity = DisplayQuantity(
+        value=1.0,
+        dimension=CONDUCTIVITY,
+        unit=Unit("angstrom^-1 eV^-1 s^-1 C^2", CONDUCTIVITY, 1.0),
+        name="conductivity test",
+    )
+    result = DiagnosticResult(
+        title="unit render test",
+        summary="unit render test",
+        sections=(
+            DiagnosticSection(
+                id="units",
+                title="Units",
+                tables=(
+                    Table(
+                        id="unit_table",
+                        title="Unit table",
+                        description="Unit exponent rendering regression.",
+                        headers=("quantity",),
+                        rows=(TableRow((quantity,)),),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    html = render_result(result)
+
+    assert "angstrom<sup>-1</sup> eV<sup>-1</sup> s<sup>-1</sup> C<sup>2</sup>" in html
+    assert "data-unit='angstrom^-1 eV^-1 s^-1 C^2'" in html
