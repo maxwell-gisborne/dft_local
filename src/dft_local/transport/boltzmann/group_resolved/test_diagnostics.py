@@ -32,7 +32,7 @@ def test_group_resolved_overview_renders() -> None:
         },
     )
 
-    assert "Group-resolved Boltzmann conductivity" in html
+    assert "Symbol method internal consistency" in html
     assert "Selected energy-ordered band" in html
     assert "Band trace contributions" in html
     assert "sum bands - compact" in html

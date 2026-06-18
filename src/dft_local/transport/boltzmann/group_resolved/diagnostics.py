@@ -268,13 +268,14 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
 
 
     return DiagnosticResult(
-        title="Group-resolved Boltzmann conductivity",
+        title="Symbol method internal consistency",
         summary=(
-            "Band-labelled compact DC conductivity decomposition. "
-            "This page is the staging point for the lattice-index inverse-Fourier reconstruction."
+            "Internal diagnostic for the group-symbol construction: local symbols, "
+            "generalized Hellmann-Feynman velocities, weak conductivity, and strong spectral conductivity."
         ),
         cards=(
             Card("domain", "transport.boltzmann.group_resolved", "ok"),
+            Card("scope", "internal symbol method", "ok"),
             Card("kernel", kernel_choice, "ok"),
             Card("bands", resolved.sigma_band.shape[0], "ok"),
             Card("||sum bands - compact||", conductivity_quantity(np.linalg.norm(residual), "sum bands minus compact norm"), "ok"),
@@ -483,9 +484,9 @@ def diagnostics() -> tuple[DiagnosticSpec, ...]:
     return (
         DiagnosticSpec(
             id="transport.boltzmann.group_resolved.overview",
-            title="Group-resolved Boltzmann conductivity",
+            title="Symbol method internal consistency",
             group="transport.boltzmann.group_resolved",
-            description="Band-labelled compact target before lattice-index inverse-Fourier reconstruction.",
+            description="Internal consistency checks for the group-symbol conductivity construction.",
             inputs=(
                 InputSpec("kernel", "kernel", "select", "average_star", options=(("average_star", "average star"), ("average", "average"), ("anchored", "anchored"))),
                 InputSpec("nu", "nu", "int", 5),
