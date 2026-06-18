@@ -13,6 +13,9 @@ def test_ashcroft_vs_symbol_regions_renders() -> None:
     assert "Regional summary" in html
     assert "minimum-gap region" in html
     assert "symbol trace" in html
+    assert "Scalar-band comparison" in html
+    assert "relative tensor delta" in html
+    assert "max velocity delta" in html
 
 
 def test_ashcroft_vs_symbol_regions_registered() -> None:

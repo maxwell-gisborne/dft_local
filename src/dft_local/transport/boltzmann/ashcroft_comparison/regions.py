@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, ENERGY, DisplayQuantity
+from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, ENERGY, VELOCITY, DisplayQuantity
 from dft_local.diagnostics.models import Card, DiagnosticResult, DiagnosticSection, DiagnosticSpec, InputSpec, Table, TableRow
 from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 from dft_local.transport.boltzmann.calculation.diagnostics import conductivity_grid
@@ -36,6 +36,45 @@ def _conductivity(calc: BoltzmannConductivity, value: complex | float, name: str
         unit=calc.unit_context.unit_for_dimension(CONDUCTIVITY),
         name=name,
     )
+
+
+def _velocity(calc: BoltzmannConductivity, value: complex | float, name: str) -> DisplayQuantity:
+    return DisplayQuantity(
+        value=float(np.real(value)),
+        dimension=VELOCITY,
+        unit=calc.unit_context.unit_for_dimension(VELOCITY),
+        name=name,
+    )
+
+
+def _scalar_band_velocity_grid(energy_grid: np.ndarray, physical_k_grid: np.ndarray) -> np.ndarray:
+    """Finite-difference selected-band velocity from an energy surface.
+
+    This is intentionally the scalar-band/Ashcroft-style object: it differentiates
+    the already-ordered scalar band surface, so it is expected to be stable only
+    where the band is isolated and smooth.
+    """
+
+    d_e_du, d_e_dv = np.gradient(energy_grid, edge_order=2)
+
+    dk_du = np.gradient(physical_k_grid, axis=0, edge_order=2)
+    dk_dv = np.gradient(physical_k_grid, axis=1, edge_order=2)
+
+    velocity = np.empty(energy_grid.shape + (2,), dtype=float)
+    for i in range(energy_grid.shape[0]):
+        for j in range(energy_grid.shape[1]):
+            jac = np.stack((dk_du[i, j], dk_dv[i, j]), axis=1)
+            grad_q = np.array([d_e_du[i, j], d_e_dv[i, j]], dtype=float)
+            try:
+                velocity[i, j] = np.linalg.solve(jac.T, grad_q)
+            except np.linalg.LinAlgError:
+                velocity[i, j] = np.nan
+
+    return velocity
+
+
+def _region_tensor(weights: np.ndarray, velocities: np.ndarray, scalar_weights: np.ndarray) -> np.ndarray:
+    return np.einsum("ij,ija,ijb,ij->ab", weights, velocities, velocities, scalar_weights)
 
 
 def _region_mask_from_center(k1_grid: np.ndarray, k2_grid: np.ndarray, center: tuple[int, int], radius: int) -> np.ndarray:
@@ -99,6 +138,18 @@ def compute_regions(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     k2_grid = np.asarray(k2, dtype=float).reshape(nu, nv)
     energy_grid = np.asarray(calc.energies, dtype=float).reshape(nu, nv, nbands)
     sigma_k_grid = np.asarray(calc.sigma_k).reshape(nu, nv, 2, 2)
+    ac_weight_grid = np.real(np.asarray(calc.ac_weights)).reshape(nu, nv, nbands)
+    symbol_velocity_grid = np.asarray(calc.velocities, dtype=float).reshape(nu, nv, nbands, 2)
+
+    logical_k = np.stack((k1, k2), axis=-1)
+    physical_k = logical_k @ calc.irrep_to_physical_k.T
+    physical_k_grid = np.asarray(physical_k, dtype=float).reshape(nu, nv, 2)
+
+    scalar_energy_grid = energy_grid[:, :, band]
+    scalar_velocity_grid = _scalar_band_velocity_grid(scalar_energy_grid, physical_k_grid)
+    symbol_selected_velocity_grid = symbol_velocity_grid[:, :, band, :]
+    selected_weight_grid = ac_weight_grid[:, :, band]
+
 
     gaps = []
     for ik in range(calc.energies.shape[0]):
@@ -118,12 +169,36 @@ def compute_regions(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     )
 
     rows = []
+    comparison_rows = []
     for name, center in regions:
         mask = _region_mask_from_center(k1_grid, k2_grid, center, radius)
         region_weights = _normalised_region_weights(mask)
         region_sigma = np.einsum("ij,ijab->ab", region_weights, sigma_k_grid)
         region_energy = energy_grid[:, :, band][mask]
         region_gap = gap_grid[mask]
+
+        scalar_region_velocity = scalar_velocity_grid[mask]
+        symbol_region_velocity = symbol_selected_velocity_grid[mask]
+        finite_velocity = np.all(np.isfinite(scalar_region_velocity), axis=1)
+        max_velocity_delta = (
+            float(np.max(np.linalg.norm(scalar_region_velocity[finite_velocity] - symbol_region_velocity[finite_velocity], axis=1)))
+            if np.any(finite_velocity)
+            else np.nan
+        )
+
+        scalar_region_tensor = _region_tensor(
+            region_weights,
+            scalar_velocity_grid,
+            selected_weight_grid,
+        )
+        symbol_region_tensor = _region_tensor(
+            region_weights,
+            symbol_selected_velocity_grid,
+            selected_weight_grid,
+        )
+        tensor_delta = scalar_region_tensor - symbol_region_tensor
+        symbol_norm = float(np.linalg.norm(symbol_region_tensor))
+        relative_tensor_delta = float(np.linalg.norm(tensor_delta) / symbol_norm) if symbol_norm != 0.0 else np.nan
 
         rows.append(TableRow((
             name,
@@ -133,6 +208,16 @@ def compute_regions(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             _energy(calc, np.max(region_energy), f"{name} maximum selected-band energy"),
             _energy(calc, np.min(region_gap), f"{name} minimum local band gap"),
             _conductivity(calc, np.trace(region_sigma), f"{name} symbol trace"),
+        )))
+
+        comparison_rows.append(TableRow((
+            name,
+            _conductivity(calc, np.trace(symbol_region_tensor), f"{name} symbol selected-band trace"),
+            _conductivity(calc, np.trace(scalar_region_tensor), f"{name} scalar selected-band trace"),
+            _conductivity(calc, np.linalg.norm(tensor_delta), f"{name} scalar minus symbol tensor norm"),
+            _unitless(calc, relative_tensor_delta, f"{name} relative scalar-symbol tensor delta"),
+            _velocity(calc, max_velocity_delta, f"{name} max scalar-symbol velocity delta"),
+            _energy(calc, np.min(region_gap), f"{name} minimum local band gap"),
         )))
 
     return DiagnosticResult(
@@ -154,8 +239,8 @@ def compute_regions(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 id="ashcroft_vs_symbol_region_summary",
                 title="Regional summary",
                 description=(
-                    "First pass: locate a central patch and a minimum-gap patch. "
-                    "The scalar-band comparison will be added on top of these selected regions."
+                    "Locate a central patch and a minimum-gap patch before comparing "
+                    "scalar-band finite-difference velocities against symbol/HF velocities."
                 ),
                 tables=(
                     Table(
@@ -165,6 +250,35 @@ def compute_regions(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         headers=("region", "center index", "samples", "min E", "max E", "min local gap", "symbol trace"),
                         rows=tuple(rows),
                         numeric=frozenset((2, 3, 4, 5, 6)),
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="ashcroft_vs_symbol_scalar_band_comparison",
+                title="Scalar-band comparison",
+                description=(
+                    "Compares a scalar finite-difference derivative of the selected energy band "
+                    "with the symbol-method Hellmann-Feynman velocity on the same regional patch."
+                ),
+                tables=(
+                    Table(
+                        id="ashcroft_vs_symbol_scalar_band_comparison_table",
+                        title="Scalar-band finite-difference versus symbol velocity",
+                        description=(
+                            "Large discrepancies are expected near band crossings, where an "
+                            "energy-ordered scalar band is not a smooth local object."
+                        ),
+                        headers=(
+                            "region",
+                            "symbol trace",
+                            "scalar trace",
+                            "tensor delta norm",
+                            "relative tensor delta",
+                            "max velocity delta",
+                            "min local gap",
+                        ),
+                        rows=tuple(comparison_rows),
+                        numeric=frozenset((1, 2, 3, 4, 5, 6)),
                     ),
                 ),
             ),
