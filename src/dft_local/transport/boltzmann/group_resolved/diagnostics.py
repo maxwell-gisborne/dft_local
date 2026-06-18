@@ -312,6 +312,41 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         )),
     )
 
+    sigma_from_bands = np.sum(resolved.sigma_band, axis=0)
+    sigma_from_k = np.sum(calc.sigma_k, axis=0)
+    sigma_from_bands_delta = sigma_from_bands - calc.sigma
+    sigma_from_k_delta = sigma_from_k - calc.sigma
+    compact_real_norm = float(np.linalg.norm(calc.sigma.real))
+    compact_imag_norm = float(np.linalg.norm(calc.sigma.imag))
+    compact_imag_over_real = compact_imag_norm / compact_real_norm if compact_real_norm != 0.0 else np.nan
+
+    conductivity_assembly_rows = (
+        TableRow((
+            "band sum - compact",
+            conductivity_quantity(np.linalg.norm(sigma_from_bands_delta), "band sum minus compact norm"),
+            conductivity_quantity(np.trace(sigma_from_bands_delta), "band sum minus compact trace"),
+            "sum_n sigma_n - sigma_compact",
+        )),
+        TableRow((
+            "k sum - compact",
+            conductivity_quantity(np.linalg.norm(sigma_from_k_delta), "k sum minus compact norm"),
+            conductivity_quantity(np.trace(sigma_from_k_delta), "k sum minus compact trace"),
+            "sum_k sigma_k - sigma_compact",
+        )),
+        TableRow((
+            "compact tensor imaginary leakage",
+            conductivity_quantity(compact_imag_norm, "compact tensor imaginary norm"),
+            unitless_quantity(compact_imag_over_real, "compact tensor imaginary over real norm"),
+            "||Im sigma_compact|| and ||Im sigma_compact|| / ||Re sigma_compact||",
+        )),
+        TableRow((
+            "compact tensor magnitude",
+            conductivity_quantity(np.linalg.norm(calc.sigma), "compact tensor norm"),
+            conductivity_quantity(np.trace(calc.sigma), "compact tensor trace"),
+            "overall compact conductivity scale",
+        )),
+    )
+
     strong_reference_rows = []
     strong_reference_band_sigma = np.empty_like(resolved.sigma_band)
     strong_reference_band_raw_sigma = np.empty_like(resolved.sigma_band)
@@ -512,6 +547,24 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         headers=("band", "min E", "mean E", "max E"),
                         rows=eigensystem_energy_rows,
                         numeric=frozenset((0, 1, 2, 3)),
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="conductivity_assembly_checks",
+                title="Conductivity assembly checks",
+                description=(
+                    "Checks that the compact weak-chain conductivity is reproduced by "
+                    "the explicit band-resolved and k-resolved accumulated pieces."
+                ),
+                tables=(
+                    Table(
+                        id="conductivity_assembly_checks_table",
+                        title="Weak conductivity assembly checks",
+                        description="Residuals for assembling the compact weak conductivity tensor.",
+                        headers=("quantity", "norm", "trace / ratio", "meaning"),
+                        rows=conductivity_assembly_rows,
+                        numeric=frozenset((1, 2)),
                     ),
                 ),
             ),
