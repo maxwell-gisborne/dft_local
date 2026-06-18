@@ -37,6 +37,10 @@ def test_group_resolved_overview_renders() -> None:
     assert "H Hermiticity defect" in html
     assert "S minimum eigenvalue" in html
     assert "Generalized eigensystem checks" in html
+    assert "Density of states and neutral Fermi estimate" in html
+    assert "zero-temperature IDOS Fermi level" in html
+    assert "finite-temperature IDOS chemical potential" in html
+    assert "neutral target electrons" in html
     assert "generalized eigen residual" in html
     assert "S-normalisation defect" in html
     assert "Hellmann-Feynman velocity self-consistency" in html

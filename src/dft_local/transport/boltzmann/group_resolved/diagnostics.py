@@ -258,6 +258,114 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         for n in range(nbands)
     )
 
+    # Neutral-filling / DOS estimates from the generalized eigenvalues.
+    #
+    # The local symbol is spinless, so we assume spin degeneracy 2.  For neutral
+    # carbon valence filling in this local symbol model, the target occupation is
+    # half filling: nbands / 2 electrons per k-weight-normalised symbol.
+    spin_degeneracy = 2.0
+    energy_flat = np.asarray(calc.energies, dtype=float)
+    k_weights = np.asarray(calc.physical_k_weights, dtype=float)
+    k_weight_sum = float(np.sum(k_weights))
+    normalised_k_weights = k_weights / k_weight_sum if k_weight_sum != 0.0 else np.full_like(k_weights, 1.0 / len(k_weights))
+    neutral_target_electrons = float(nbands) / 2.0
+    occupied_bands = int(nbands // 2)
+    highest_occupied_band = max(0, occupied_bands - 1)
+    lowest_unoccupied_band = min(nbands - 1, occupied_bands)
+
+    neutral_direct_gaps = energy_flat[:, lowest_unoccupied_band] - energy_flat[:, highest_occupied_band]
+    neutral_gap_index = int(np.argmin(neutral_direct_gaps))
+    neutral_gap_min = float(neutral_direct_gaps[neutral_gap_index])
+    neutral_direct_midpoint = float(
+        0.5 * (
+            energy_flat[neutral_gap_index, highest_occupied_band]
+            + energy_flat[neutral_gap_index, lowest_unoccupied_band]
+        )
+    )
+
+    highest_occupied_sampled = float(np.max(energy_flat[:, highest_occupied_band]))
+    lowest_unoccupied_sampled = float(np.min(energy_flat[:, lowest_unoccupied_band]))
+    indirect_neutral_gap = lowest_unoccupied_sampled - highest_occupied_sampled
+    zero_temperature_mu = 0.5 * (highest_occupied_sampled + lowest_unoccupied_sampled)
+
+    k_b_working = calc.unit_context.k_b()
+    kBT = float(k_b_working * temperature)
+
+    def fermi_dirac_occupation(mu: float) -> np.ndarray:
+        if kBT <= 0.0:
+            return (energy_flat <= mu).astype(float)
+        x = np.clip((energy_flat - mu) / kBT, -700.0, 700.0)
+        return 1.0 / (np.exp(x) + 1.0)
+
+    def integrated_dos(mu: float) -> float:
+        occupations = fermi_dirac_occupation(mu)
+        return float(spin_degeneracy * np.sum(normalised_k_weights[:, None] * occupations))
+
+    lo = float(np.min(energy_flat) - max(100.0 * kBT, 1.0))
+    hi = float(np.max(energy_flat) + max(100.0 * kBT, 1.0))
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if integrated_dos(mid) < neutral_target_electrons:
+            lo = mid
+        else:
+            hi = mid
+    finite_temperature_mu = 0.5 * (lo + hi)
+    finite_temperature_count = integrated_dos(finite_temperature_mu)
+
+    dos_fermi_rows = (
+        TableRow((
+            "spin degeneracy",
+            unitless_quantity(spin_degeneracy, "spin degeneracy"),
+            "assumes spin is not explicit in H(k), S(k)",
+        )),
+        TableRow((
+            "k-weight sum",
+            unitless_quantity(k_weight_sum, "k-weight sum"),
+            "normalisation of calc.physical_k_weights before DOS normalisation",
+        )),
+        TableRow((
+            "neutral target electrons",
+            unitless_quantity(neutral_target_electrons, "neutral target electrons per normalised symbol"),
+            "half filling of the spin-degenerate local symbol spectrum",
+        )),
+        TableRow((
+            "neutral occupied bands",
+            unitless_quantity(occupied_bands, "neutral occupied bands"),
+            "highest occupied / lowest unoccupied split is "
+            f"{highest_occupied_band} / {lowest_unoccupied_band}",
+        )),
+        TableRow((
+            "zero-temperature IDOS Fermi level",
+            energy_quantity(zero_temperature_mu, "zero-temperature neutral Fermi level"),
+            "midpoint between max E_occupied and min E_unoccupied over sampled k",
+        )),
+        TableRow((
+            "finite-temperature IDOS chemical potential",
+            energy_quantity(finite_temperature_mu, "finite-temperature neutral chemical potential"),
+            "solves 2 sum_k,n w_k f(E_n(k) - mu) = neutral target",
+        )),
+        TableRow((
+            "finite-temperature IDOS count",
+            unitless_quantity(finite_temperature_count, "finite-temperature integrated DOS count"),
+            "integrated occupation at the solved chemical potential",
+        )),
+        TableRow((
+            "minimum direct neutral gap",
+            energy_quantity(neutral_gap_min, "minimum direct neutral gap"),
+            f"min_k E_{lowest_unoccupied_band}(k) - E_{highest_occupied_band}(k)",
+        )),
+        TableRow((
+            "direct-gap midpoint estimate",
+            energy_quantity(neutral_direct_midpoint, "direct-gap midpoint Fermi estimate"),
+            "midpoint of the neutral split at the minimum direct gap k-point",
+        )),
+        TableRow((
+            "indirect neutral gap",
+            energy_quantity(indirect_neutral_gap, "indirect neutral gap"),
+            "min_k E_unoccupied(k) - max_k E_occupied(k); negative indicates overlap",
+        )),
+    )
+
     recomputed_velocities = np.empty_like(calc.velocities)
     velocity_imag_leakage = []
 
@@ -460,6 +568,28 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         renderer="region_surface",
                         payload=surface_payload,
                         interaction_channel="group_resolved_band_surface",
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="dos_fermi_level_estimates",
+                title="Density of states and neutral Fermi estimate",
+                description=(
+                    "Uses the generalized eigenvalues of H(k) phi = E S(k) phi to form an "
+                    "integrated density of states.  The k weights are normalised for the IDOS "
+                    "estimate, spin degeneracy is assumed to be 2, and neutral carbon valence "
+                    "filling is represented as half filling of the local spin-degenerate symbol model."
+                ),
+                tables=(
+                    Table(
+                        id="dos_fermi_level_estimates_table",
+                        title="IDOS-based neutral filling estimates",
+                        description=(
+                            "Fermi-level estimates from integrating the weighted sampled symbol spectrum."
+                        ),
+                        headers=("quantity", "value", "meaning"),
+                        rows=dos_fermi_rows,
+                        numeric=frozenset((1,)),
                     ),
                 ),
             ),
