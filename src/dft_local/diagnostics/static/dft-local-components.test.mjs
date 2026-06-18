@@ -1479,3 +1479,10 @@ test("bandSurfaceSliceSegmentsForBands gathers slices for multiple bands", () =>
   assert.ok(bands.has(0));
   assert.ok(bands.has(1));
 });
+
+test("source registers DOS IDOS viewer component", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes('customElements.define("dft-dos-idos-viewer"'), true);
+  assert.equal(source.includes("class DftDosIdosViewer"), true);
+});

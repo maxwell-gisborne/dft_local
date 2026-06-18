@@ -313,6 +313,90 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     finite_temperature_mu = 0.5 * (lo + hi)
     finite_temperature_count = integrated_dos(finite_temperature_mu)
 
+    dos_bin_count = 96
+    energy_values = energy_flat.ravel()
+    state_weights = np.broadcast_to(
+        (spin_degeneracy * normalised_k_weights)[:, None],
+        energy_flat.shape,
+    ).ravel()
+
+    dos_counts, dos_edges = np.histogram(
+        energy_values,
+        bins=dos_bin_count,
+        weights=state_weights,
+    )
+    dos_widths = np.diff(dos_edges)
+    dos_density = np.divide(
+        dos_counts,
+        dos_widths,
+        out=np.zeros_like(dos_counts, dtype=float),
+        where=dos_widths != 0.0,
+    )
+    dos_centres = 0.5 * (dos_edges[:-1] + dos_edges[1:])
+    idos_counts = np.cumsum(dos_counts)
+
+    dos_payload = {
+        "kind": "dos-idos-preview",
+        "energy_unit": calc.unit_context.energy.symbol,
+        "count_unit": "states",
+        "energy": dos_centres.tolist(),
+        "dos": dos_density.tolist(),
+        "idos": idos_counts.tolist(),
+        "target_count": neutral_target_electrons,
+        "count_at_mu": finite_temperature_count,
+        "markers": [
+            {"id": "mu_t", "label": "mu(T)", "energy": finite_temperature_mu},
+            {"id": "mu_0", "label": "mu(0)", "energy": zero_temperature_mu},
+            {
+                "id": "direct_gap_midpoint",
+                "label": "direct-gap midpoint",
+                "energy": neutral_direct_midpoint,
+            },
+        ],
+    }
+
+    dos_bin_count = 96
+    energy_values = energy_flat.ravel()
+    state_weights = np.broadcast_to(
+        (spin_degeneracy * normalised_k_weights)[:, None],
+        energy_flat.shape,
+    ).ravel()
+
+    dos_counts, dos_edges = np.histogram(
+        energy_values,
+        bins=dos_bin_count,
+        weights=state_weights,
+    )
+    dos_widths = np.diff(dos_edges)
+    dos_density = np.divide(
+        dos_counts,
+        dos_widths,
+        out=np.zeros_like(dos_counts, dtype=float),
+        where=dos_widths != 0.0,
+    )
+    dos_centres = 0.5 * (dos_edges[:-1] + dos_edges[1:])
+    idos_counts = np.cumsum(dos_counts)
+
+    dos_payload = {
+        "kind": "dos-idos-preview",
+        "energy_unit": calc.unit_context.energy.symbol,
+        "count_unit": "states",
+        "energy": dos_centres.tolist(),
+        "dos": dos_density.tolist(),
+        "idos": idos_counts.tolist(),
+        "target_count": neutral_target_electrons,
+        "count_at_mu": finite_temperature_count,
+        "markers": [
+            {"id": "mu_t", "label": "mu(T)", "energy": finite_temperature_mu},
+            {"id": "mu_0", "label": "mu(0)", "energy": zero_temperature_mu},
+            {
+                "id": "direct_gap_midpoint",
+                "label": "direct-gap midpoint",
+                "energy": neutral_direct_midpoint,
+            },
+        ],
+    }
+
     bigdft_foe_rows = ()
     bigdft_foe_summary = find_bigdft_foe_summary(ctx.state.data.bigdft_log)
     if bigdft_foe_summary is not None:
@@ -610,7 +694,19 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                     "estimate, spin degeneracy is assumed to be 2, and neutral carbon valence "
                     "filling is represented by occupying half of the spinless local bands."
                 ),
-                tables=(
+                body=(
+                    WebGLView(
+                        id="group_resolved_dos_idos",
+                        title="DOS / IDOS plot",
+                        description=(
+                            "Weighted density of states and integrated density of states from "
+                            "the displayed generalized eigenvalue sample. This viewer is model-island "
+                            "backed, so Datastar reruns patch data without replacing the component."
+                        ),
+                        renderer="dos_idos",
+                        payload=dos_payload,
+                        interaction_channel="group_resolved_dos_idos",
+                    ),
                     Table(
                         id="dos_fermi_level_estimates_table",
                         title="IDOS-based neutral filling estimates",

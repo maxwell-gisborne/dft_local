@@ -598,6 +598,8 @@ def render_webgl_view(view) -> str:
         component = "dft-band-surface-viewer"
     elif view.renderer == "graphene_viewer":
         component = "dft-graphene-viewer"
+    elif view.renderer == "dos_idos":
+        component = "dft-dos-idos-viewer"
     else:
         raise ValueError(f"Unknown WebGL renderer: {view.renderer}")
 

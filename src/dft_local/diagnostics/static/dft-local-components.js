@@ -5222,7 +5222,158 @@ selectedBandIndex() {
     }
   }
 
-  if (!customElements.get("dft-band-controls")) {
+  
+class DftDosIdosViewer extends HTMLElement {
+  connectedCallback() {
+    this.renderFromModel();
+  }
+
+  refreshModel() {
+    this.renderFromModel();
+  }
+
+  modelPayload() {
+    const sourceId = this.getAttribute("data-dft-model") || this.getAttribute("data-source");
+    if (!sourceId) return null;
+
+    const source = document.getElementById(sourceId);
+    if (!source) return null;
+
+    try {
+      return JSON.parse(source.textContent || "{}");
+    } catch {
+      return null;
+    }
+  }
+
+  numberArray(value) {
+    if (!Array.isArray(value)) return [];
+    return value.map((x) => Number(x)).filter((x) => Number.isFinite(x));
+  }
+
+  nice(value) {
+    if (!Number.isFinite(value)) return "";
+    if (value === 0) return "0";
+    const a = Math.abs(value);
+    if (a < 1e-3 || a >= 1e4) return value.toExponential(2);
+    return value.toPrecision(4).replace(/\.?0+$/, "");
+  }
+
+  renderFromModel() {
+    const payload = this.modelPayload();
+
+    this.textContent = "";
+
+    if (!payload || payload.kind !== "dos-idos-preview") {
+      const empty = document.createElement("p");
+      empty.textContent = "No DOS data available.";
+      this.appendChild(empty);
+      return;
+    }
+
+    const energy = this.numberArray(payload.energy);
+    const dos = this.numberArray(payload.dos);
+    const idos = this.numberArray(payload.idos);
+    const n = Math.min(energy.length, dos.length, idos.length);
+
+    if (n < 2) {
+      const empty = document.createElement("p");
+      empty.textContent = "No DOS data available.";
+      this.appendChild(empty);
+      return;
+    }
+
+    const width = 860;
+    const height = 500;
+    const left = 62;
+    const right = 34;
+    const topDos = 34;
+    const heightDos = 190;
+    const topIdos = 285;
+    const heightIdos = 165;
+    const plotWidth = width - left - right;
+
+    const eMin = Math.min(...energy);
+    const eMax = Math.max(...energy);
+    const dosMax = Math.max(...dos, 0);
+    const idosMax = Math.max(...idos, Number(payload.target_count) || 0, 0);
+    const energyUnit = String(payload.energy_unit || "");
+
+    const x = (e) => left + plotWidth * ((e - eMin) / Math.max(eMax - eMin, Number.EPSILON));
+    const yDos = (v) => topDos + heightDos - heightDos * (v / Math.max(dosMax, Number.EPSILON));
+    const yIdos = (v) => topIdos + heightIdos - heightIdos * (v / Math.max(idosMax, Number.EPSILON));
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Density of states and integrated density of states");
+
+    const add = (tag, attrs = {}, text = null) => {
+      const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, String(value));
+      if (text !== null) el.textContent = String(text);
+      svg.appendChild(el);
+      return el;
+    };
+
+    const pathFrom = (xs, ys, yMap) => xs
+      .map((value, i) => `${i === 0 ? "M" : "L"} ${x(value).toFixed(2)} ${yMap(ys[i]).toFixed(2)}`)
+      .join(" ");
+
+    add("style", {}, `
+      .axis { stroke: currentColor; stroke-width: 1; opacity: 0.55; }
+      .grid { stroke: currentColor; stroke-width: 0.6; opacity: 0.14; }
+      .dos-line { fill: none; stroke: currentColor; stroke-width: 2.1; }
+      .idos-line { fill: none; stroke: currentColor; stroke-width: 2.1; stroke-dasharray: 5 4; }
+      .marker { stroke: currentColor; stroke-width: 1.2; opacity: 0.75; }
+      .marker-secondary { stroke: currentColor; stroke-width: 1; stroke-dasharray: 3 5; opacity: 0.55; }
+      .label { fill: currentColor; font-size: 12px; }
+      .small { fill: currentColor; font-size: 11px; opacity: 0.75; }
+    `);
+
+    add("text", { x: left, y: 18, class: "label" }, "Weighted DOS");
+    add("line", { x1: left, y1: topDos + heightDos, x2: width - right, y2: topDos + heightDos, class: "axis" });
+    add("line", { x1: left, y1: topDos, x2: left, y2: topDos + heightDos, class: "axis" });
+    add("line", { x1: left, y1: topDos + heightDos / 2, x2: width - right, y2: topDos + heightDos / 2, class: "grid" });
+    add("path", { d: pathFrom(energy.slice(0, n), dos.slice(0, n), yDos), class: "dos-line" });
+
+    add("text", { x: left, y: 268, class: "label" }, "Integrated DOS / occupation count");
+    add("line", { x1: left, y1: topIdos + heightIdos, x2: width - right, y2: topIdos + heightIdos, class: "axis" });
+    add("line", { x1: left, y1: topIdos, x2: left, y2: topIdos + heightIdos, class: "axis" });
+    add("line", { x1: left, y1: topIdos + heightIdos / 2, x2: width - right, y2: topIdos + heightIdos / 2, class: "grid" });
+    add("path", { d: pathFrom(energy.slice(0, n), idos.slice(0, n), yIdos), class: "idos-line" });
+
+    for (const marker of Array.isArray(payload.markers) ? payload.markers : []) {
+      const value = Number(marker.energy);
+      if (!Number.isFinite(value) || value < eMin || value > eMax) continue;
+
+      const markerX = x(value);
+      const primary = marker.id === "mu_t";
+
+      add("line", {
+        x1: markerX,
+        y1: 24,
+        x2: markerX,
+        y2: topIdos + heightIdos + 8,
+        class: primary ? "marker" : "marker-secondary",
+      });
+      add("text", {
+        x: markerX + 4,
+        y: primary ? 30 : 45,
+        class: "small",
+      }, `${marker.label || marker.id}: ${this.nice(value)} ${energyUnit}`);
+    }
+
+    add("text", { x: left, y: 486, class: "small" }, `${this.nice(eMin)} ${energyUnit}`);
+    add("text", { x: width - right - 120, y: 486, class: "small" }, `${this.nice(eMax)} ${energyUnit}`);
+    add("text", { x: width - right - 185, y: 18, class: "small" }, `target N = ${this.nice(Number(payload.target_count))}`);
+    add("text", { x: width - right - 185, y: 268, class: "small" }, `N(mu) = ${this.nice(Number(payload.count_at_mu))}`);
+
+    this.appendChild(svg);
+  }
+}
+
+if (!customElements.get("dft-band-controls")) {
     customElements.define("dft-band-controls", DftBandControls);
   }
 
@@ -5241,6 +5392,10 @@ selectedBandIndex() {
   if (!customElements.get("dft-line-graph")) {
     customElements.define("dft-line-graph", DftLineGraph);
   }
+if (!customElements.get("dft-dos-idos-viewer")) {
+    customElements.define("dft-dos-idos-viewer", DftDosIdosViewer);
+  }
+
 
   if (!customElements.get("dft-kspace-plot")) {
     customElements.define("dft-kspace-plot", DftKSpacePlot);

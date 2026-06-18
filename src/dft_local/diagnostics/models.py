@@ -268,7 +268,7 @@ class WebGLView:
     id: str
     title: UserString
     description: UserString
-    renderer: Literal["region_surface", "graphene_viewer"]
+    renderer: Literal["region_surface", "graphene_viewer", "dos_idos"]
     payload: dict[str, Any]
     interaction_channel: str | None = None
 
