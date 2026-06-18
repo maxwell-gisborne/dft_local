@@ -66,29 +66,39 @@ def require_dir(path: Path) -> Path:
     return path
 
 
+def find_bigdft_foe_summaries(log: object) -> list[dict[str, Any]]:
+    """Return converged BigDFT FOE Fermi-energy summaries from a parsed log.yaml.
+
+    BigDFT also records every intermediate trial eF inside ``determine Fermi energy``.
+    Those iteration rows have eF and Tr(K), but they are not converged Fermi-level
+    references.  This helper intentionally returns only dictionaries stored under a
+    ``summary`` key.
+    """
+
+    found: list[dict[str, Any]] = []
+
+    def walk(obj: object) -> None:
+        if isinstance(obj, dict):
+            summary = obj.get("summary")
+            if isinstance(summary, dict) and "eF" in summary and "Tr(K)" in summary:
+                found.append(summary)
+
+            for value in obj.values():
+                walk(value)
+
+        elif isinstance(obj, list):
+            for item in obj:
+                walk(item)
+
+    walk(log)
+    return found
+
+
 def find_bigdft_foe_summary(log: object) -> dict[str, Any] | None:
-    """Return the final BigDFT FOE Fermi-energy summary from a parsed log.yaml."""
+    """Return the final converged BigDFT FOE Fermi-energy summary."""
 
-    if isinstance(log, dict):
-        summary = log.get("summary")
-        if isinstance(summary, dict) and "eF" in summary and "Tr(K)" in summary:
-            return summary
-
-        if "eF" in log and "Tr(K)" in log:
-            return log
-
-        for value in log.values():
-            found = find_bigdft_foe_summary(value)
-            if found is not None:
-                return found
-
-    if isinstance(log, list):
-        for item in reversed(log):
-            found = find_bigdft_foe_summary(item)
-            if found is not None:
-                return found
-
-    return None
+    summaries = find_bigdft_foe_summaries(log)
+    return summaries[-1] if summaries else None
 
 
 @dataclass(frozen=True)

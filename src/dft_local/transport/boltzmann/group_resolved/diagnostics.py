@@ -323,22 +323,22 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             bigdft_foe_trace = float(trace_k)
             bigdft_foe_rows = (
                 TableRow((
-                    "BigDFT FOE Fermi level",
-                    energy_quantity(bigdft_foe_eF, "BigDFT FOE Fermi level"),
-                    "full-system Fermi energy from parsed log.yaml, converted to working energy units",
+                    "final BigDFT FOE Fermi level",
+                    energy_quantity(bigdft_foe_eF, "final BigDFT FOE Fermi level"),
+                    "last converged FOE summary in parsed log.yaml, converted to working energy units",
                 )),
                 TableRow((
-                    "BigDFT FOE Tr(K)",
+                    "final BigDFT FOE Tr(K)",
                     unitless_quantity(bigdft_foe_trace, "BigDFT FOE density-kernel trace"),
-                    "full-system density-kernel trace / electron count reached by FOE",
+                    "density-kernel trace / electron count in the final converged FOE summary",
                 )),
                 TableRow((
-                    "symbol mu - BigDFT FOE eF",
+                    "symbol mu - final BigDFT FOE eF",
                     energy_quantity(
                         finite_temperature_mu - bigdft_foe_eF,
                         "symbol chemical potential minus BigDFT FOE Fermi level",
                     ),
-                    "offset between local-symbol IDOS chemical potential and full-system FOE Fermi level",
+                    "offset between local-symbol IDOS chemical potential and the final converged FOE Fermi level",
                 )),
             )
 
