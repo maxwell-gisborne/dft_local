@@ -2080,7 +2080,7 @@ function graphProjector(view, margin, innerW, innerH) {
  * @param {{showAxes?: boolean, kspace?: boolean}} [options]
  * @returns {number[]}
  */
-export function projectedKspaceHexagonSideLengths(payload, options = { kspace: true }) {
+function projectedKspaceHexagonSideLengths(payload, options = { kspace: true }) {
   const displayPayload = kspacePayloadToCartesian(payload, 0);
   const { margin, innerW, innerH } = graphLayout(options);
   const bounds = graphBounds(displayPayload);
@@ -4925,7 +4925,10 @@ selectedBandIndex() {
      *
      * @param {GraphPayload} model
      */
-    updateModel(model) {
+    /**
+   * @param {GraphPayload | null} model
+   */
+  updateModel(model) {
       this.payload = model;
       this.render();
     }
@@ -5232,6 +5235,13 @@ class DftDosIdosViewer extends HTMLElement {
     this.renderFromModel();
   }
 
+  /**
+   * @param {Record<string, unknown> | null | undefined} model
+   */
+  updateModel(model) {
+    this.renderFromPayload(model);
+  }
+
   modelPayload() {
     const sourceId = this.getAttribute("data-dft-model") || this.getAttribute("data-source");
     if (!sourceId) return null;
@@ -5246,11 +5256,19 @@ class DftDosIdosViewer extends HTMLElement {
     }
   }
 
+  /**
+   * @param {unknown} value
+   * @returns {number[]}
+   */
   numberArray(value) {
     if (!Array.isArray(value)) return [];
     return value.map((x) => Number(x)).filter((x) => Number.isFinite(x));
   }
 
+  /**
+   * @param {number} value
+   * @returns {string}
+   */
   nice(value) {
     if (!Number.isFinite(value)) return "";
     if (value === 0) return "0";
@@ -5260,8 +5278,13 @@ class DftDosIdosViewer extends HTMLElement {
   }
 
   renderFromModel() {
-    const payload = this.modelPayload();
+    this.renderFromPayload(this.modelPayload());
+  }
 
+  /**
+   * @param {Record<string, unknown> | null | undefined} payload
+   */
+  renderFromPayload(payload) {
     this.textContent = "";
 
     if (!payload || payload.kind !== "dos-idos-preview") {
@@ -5299,8 +5322,11 @@ class DftDosIdosViewer extends HTMLElement {
     const idosMax = Math.max(...idos, Number(payload.target_count) || 0, 0);
     const energyUnit = String(payload.energy_unit || "");
 
+    /** @param {number} e */
     const x = (e) => left + plotWidth * ((e - eMin) / Math.max(eMax - eMin, Number.EPSILON));
+    /** @param {number} v */
     const yDos = (v) => topDos + heightDos - heightDos * (v / Math.max(dosMax, Number.EPSILON));
+    /** @param {number} v */
     const yIdos = (v) => topIdos + heightIdos - heightIdos * (v / Math.max(idosMax, Number.EPSILON));
 
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -5308,6 +5334,12 @@ class DftDosIdosViewer extends HTMLElement {
     svg.setAttribute("role", "img");
     svg.setAttribute("aria-label", "Density of states and integrated density of states");
 
+    /**
+     * @param {keyof SVGElementTagNameMap} tag
+     * @param {Record<string, string | number>} [attrs]
+     * @param {string | null} [text]
+     * @returns {SVGElement}
+     */
     const add = (tag, attrs = {}, text = null) => {
       const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
       for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, String(value));
@@ -5316,6 +5348,12 @@ class DftDosIdosViewer extends HTMLElement {
       return el;
     };
 
+    /**
+     * @param {number[]} xs
+     * @param {number[]} ys
+     * @param {(value: number) => number} yMap
+     * @returns {string}
+     */
     const pathFrom = (xs, ys, yMap) => xs
       .map((value, i) => `${i === 0 ? "M" : "L"} ${x(value).toFixed(2)} ${yMap(ys[i]).toFixed(2)}`)
       .join(" ");
@@ -5367,7 +5405,10 @@ class DftDosIdosViewer extends HTMLElement {
     add("text", { x: left, y: 486, class: "small" }, `${this.nice(eMin)} ${energyUnit}`);
     add("text", { x: width - right - 120, y: 486, class: "small" }, `${this.nice(eMax)} ${energyUnit}`);
     add("text", { x: width - right - 185, y: 18, class: "small" }, `target N = ${this.nice(Number(payload.target_count))}`);
+    add("text", { x: width - right - 185, y: 32, class: "small" }, `samples = ${this.nice(Number(payload.sample_count))}`);
     add("text", { x: width - right - 185, y: 268, class: "small" }, `N(mu) = ${this.nice(Number(payload.count_at_mu))}`);
+    add("text", { x: width - right - 185, y: 282, class: "small" }, `sigma = ${this.nice(Number(payload.dos_sigma))} ${energyUnit}`);
+    add("text", { x: width - right - 185, y: 296, class: "small" }, `curve samples = ${this.nice(Number(payload.dos_plot_sample_count))}`);
 
     this.appendChild(svg);
   }
@@ -5402,4 +5443,52 @@ if (!customElements.get("dft-dos-idos-viewer")) {
   }
 }
 
-export {nice, readJsonPayload, readJsonModelById, refreshDftModels, captureDftTableState, restoreDftTableState, preserveDftTableState, setDftDiagnosticRunState, dftDiagnosticRunStarted, dftDiagnosticRunComplete, observeDftModelPatches, readGraphPayload, makeGraphSvg, graphBounds, zoomView, panView, equalAspectView, kBasisToCartesian, rotatePoint, kspacePayloadToCartesian, bandSurfaceVertices, bandSurfaceTriangles, bandSurfaceSliceSegments, bandSurfaceSliceSegmentsForBands, bandSurfaceMeshData, bandSurfaceMeshDataWithDomain, bandSurfaceMeshDataWithMask, bandSurfaceColor, allBandIndices, visibleBandIndices, bandSurfaceSummary, projectBandSurfacePoint, nearestBandSurfaceVertex, bandBasisToCartesian, vertexInsideVisibleHexagon, vertexInsidePrimitiveCell, vertexInsideReciprocalLatticeHexagon, pointInDisplayPolygon, threeUvGridReferenceData, threePrimitiveCellReferenceData, threeHexagonReferenceData, threeReciprocalLatticeHexagonReferenceData, threeSymmetryPointReferenceData, threeBandSurfaceGeometryData, bandSurfaceEnergyDomain, drawBandSurfacePreview, drawBandSurfaceReferenceFrame, drawBandSurfaceSliceGuide, drawBandSurfaceSelectionMarker, plotFractionsFromPointer, createDftSignalBus, emitDftSignal, onDftSignal, isSelectionFrozen, emitSelectionFreeze, selectedSteps, emitSelectedSteps, nearestPathPoint, selectedPathHits, nearestPointByX };
+// Test-facing helper exports.
+export {
+  nice,
+  readJsonPayload,
+  refreshDftModels,
+  readJsonModelById,
+  graphBounds,
+  zoomView,
+  panView,
+  equalAspectView,
+  kBasisToCartesian,
+  rotatePoint,
+  kspacePayloadToCartesian,
+  bandSurfaceVertices,
+  bandSurfaceTriangles,
+  bandSurfaceSliceSegments,
+  bandSurfaceSliceSegmentsForBands,
+  bandSurfaceMeshData,
+  bandSurfaceMeshDataWithDomain,
+  bandSurfaceMeshDataWithMask,
+  visibleBandIndices,
+  bandSurfaceColor,
+  allBandIndices,
+  bandSurfaceSummary,
+  projectBandSurfacePoint,
+  nearestBandSurfaceVertex,
+  pointInDisplayPolygon,
+  vertexInsideVisibleHexagon,
+  vertexInsidePrimitiveCell,
+  vertexInsideReciprocalLatticeHexagon,
+  bandBasisToCartesian,
+  threeUvGridReferenceData,
+  threePrimitiveCellReferenceData,
+  threeReciprocalLatticeHexagonReferenceData,
+  threeSymmetryPointReferenceData,
+  threeHexagonReferenceData,
+  threeBandSurfaceGeometryData,
+  bandSurfaceEnergyDomain,
+  nearestPathPoint,
+  selectedPathHits,
+  nearestPointByX,
+  makeGraphSvg,
+  createDftSignalBus,
+  isSelectionFrozen,
+  emitSelectionFreeze,
+  selectedSteps,
+  emitSelectedSteps,
+  projectedKspaceHexagonSideLengths,
+};

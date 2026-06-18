@@ -313,32 +313,53 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     finite_temperature_mu = 0.5 * (lo + hi)
     finite_temperature_count = integrated_dos(finite_temperature_mu)
 
-    dos_bin_count = 96
+    # Gaussian-broadened DOS.  The old histogram bin count becomes the
+    # smoothing-resolution count: sigma follows the same energy-width logic,
+    # while the displayed curve is evaluated on a much denser grid so the
+    # Gaussian sum is visibly curved rather than angular.
+    dos_resolution_count = 96
+    dos_plot_sample_count = 8 * dos_resolution_count
+
     energy_values = energy_flat.ravel()
     state_weights = np.broadcast_to(
         (spin_degeneracy * normalised_k_weights)[:, None],
         energy_flat.shape,
     ).ravel()
 
-    dos_counts, dos_edges = np.histogram(
-        energy_values,
-        bins=dos_bin_count,
-        weights=state_weights,
+    energy_min = float(np.min(energy_values))
+    energy_max = float(np.max(energy_values))
+    energy_range = max(energy_max - energy_min, np.finfo(float).eps)
+
+    dos_sigma = energy_range / float(dos_resolution_count)
+    dos_grid = np.linspace(
+        energy_min - 3.0 * dos_sigma,
+        energy_max + 3.0 * dos_sigma,
+        dos_plot_sample_count,
     )
-    dos_widths = np.diff(dos_edges)
-    dos_density = np.divide(
-        dos_counts,
-        dos_widths,
-        out=np.zeros_like(dos_counts, dtype=float),
-        where=dos_widths != 0.0,
+
+    gaussian_arg = (dos_grid[:, None] - energy_values[None, :]) / dos_sigma
+    gaussian_kernel = np.exp(-0.5 * gaussian_arg * gaussian_arg) / (
+        np.sqrt(2.0 * np.pi) * dos_sigma
     )
-    dos_centres = 0.5 * (dos_edges[:-1] + dos_edges[1:])
-    idos_counts = np.cumsum(dos_counts)
+    dos_density = gaussian_kernel @ state_weights
+
+    if dos_grid.size > 1:
+        dE = float(dos_grid[1] - dos_grid[0])
+    else:
+        dE = energy_range
+    idos_counts = np.cumsum(dos_density) * dE
+    dos_centres = dos_grid
 
     dos_payload = {
         "kind": "dos-idos-preview",
         "energy_unit": calc.unit_context.energy.symbol,
         "count_unit": "states",
+        "sample_count": int(energy_flat.size),
+        "kpoint_count": int(energy_flat.shape[0]),
+        "band_count": int(energy_flat.shape[1]),
+        "dos_resolution_count": int(dos_resolution_count),
+        "dos_plot_sample_count": int(dos_plot_sample_count),
+        "dos_sigma": float(dos_sigma),
         "energy": dos_centres.tolist(),
         "dos": dos_density.tolist(),
         "idos": idos_counts.tolist(),
@@ -362,40 +383,6 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         energy_flat.shape,
     ).ravel()
 
-    dos_counts, dos_edges = np.histogram(
-        energy_values,
-        bins=dos_bin_count,
-        weights=state_weights,
-    )
-    dos_widths = np.diff(dos_edges)
-    dos_density = np.divide(
-        dos_counts,
-        dos_widths,
-        out=np.zeros_like(dos_counts, dtype=float),
-        where=dos_widths != 0.0,
-    )
-    dos_centres = 0.5 * (dos_edges[:-1] + dos_edges[1:])
-    idos_counts = np.cumsum(dos_counts)
-
-    dos_payload = {
-        "kind": "dos-idos-preview",
-        "energy_unit": calc.unit_context.energy.symbol,
-        "count_unit": "states",
-        "energy": dos_centres.tolist(),
-        "dos": dos_density.tolist(),
-        "idos": idos_counts.tolist(),
-        "target_count": neutral_target_electrons,
-        "count_at_mu": finite_temperature_count,
-        "markers": [
-            {"id": "mu_t", "label": "mu(T)", "energy": finite_temperature_mu},
-            {"id": "mu_0", "label": "mu(0)", "energy": zero_temperature_mu},
-            {
-                "id": "direct_gap_midpoint",
-                "label": "direct-gap midpoint",
-                "energy": neutral_direct_midpoint,
-            },
-        ],
-    }
 
     bigdft_foe_rows = ()
     bigdft_foe_summary = find_bigdft_foe_summary(ctx.state.data.bigdft_log)

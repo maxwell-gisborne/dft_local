@@ -1486,3 +1486,11 @@ test("source registers DOS IDOS viewer component", () => {
   assert.equal(source.includes('customElements.define("dft-dos-idos-viewer"'), true);
   assert.equal(source.includes("class DftDosIdosViewer"), true);
 });
+
+test("source shows DOS IDOS viewer follows model update protocol", () => {
+  const source = readFileSync("src/dft_local/diagnostics/static/dft-local-components.js", "utf8");
+
+  assert.equal(source.includes("class DftDosIdosViewer"), true);
+  assert.equal(source.includes("updateModel(model)"), true);
+  assert.equal(source.includes("renderFromPayload(model)"), true);
+});
