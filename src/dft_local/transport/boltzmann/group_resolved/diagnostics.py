@@ -192,7 +192,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         s_condition_estimates.append(s_max / s_min if s_min != 0.0 else np.inf)
 
     def card_quantity(quantity: DisplayQuantity) -> str:
-        return f"{quantity.value:.6g} {quantity.unit}"
+        return f"{quantity.value:.6g} {quantity.unit.symbol}"
 
 
     symbol_sanity_rows = (
