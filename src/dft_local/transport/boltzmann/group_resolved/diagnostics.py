@@ -268,8 +268,8 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     k_weights = np.asarray(calc.physical_k_weights, dtype=float)
     k_weight_sum = float(np.sum(k_weights))
     normalised_k_weights = k_weights / k_weight_sum if k_weight_sum != 0.0 else np.full_like(k_weights, 1.0 / len(k_weights))
-    neutral_target_electrons = float(nbands) / 2.0
     occupied_bands = int(nbands // 2)
+    neutral_target_electrons = spin_degeneracy * float(occupied_bands)
     highest_occupied_band = max(0, occupied_bands - 1)
     lowest_unoccupied_band = min(nbands - 1, occupied_bands)
 
@@ -326,7 +326,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         TableRow((
             "neutral target electrons",
             unitless_quantity(neutral_target_electrons, "neutral target electrons per normalised symbol"),
-            "half filling of the spin-degenerate local symbol spectrum",
+            "spin_degeneracy times the number of occupied spinless bands at half filling",
         )),
         TableRow((
             "neutral occupied bands",
@@ -578,7 +578,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                     "Uses the generalized eigenvalues of H(k) phi = E S(k) phi to form an "
                     "integrated density of states.  The k weights are normalised for the IDOS "
                     "estimate, spin degeneracy is assumed to be 2, and neutral carbon valence "
-                    "filling is represented as half filling of the local spin-degenerate symbol model."
+                    "filling is represented by occupying half of the spinless local bands."
                 ),
                 tables=(
                     Table(
