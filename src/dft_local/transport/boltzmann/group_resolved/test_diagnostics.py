@@ -112,3 +112,18 @@ def test_group_resolved_datastar_stream_patches_surface_model() -> None:
     assert '"nu": 3' in stream
     assert '"nv": 3' in stream
     assert "dft-block-group_resolved_band_surface" not in stream
+
+
+def test_group_resolved_overview_contains_strong_spectral_reference() -> None:
+    from dft_local.diagnostics.server import load_default_context
+    from dft_local.diagnostics.render import render_result
+
+    ctx = load_default_context("test_run/run_dir/data")
+    spec = {spec.id: spec for spec in diagnostics()}["transport.boltzmann.group_resolved.overview"]
+    html = render_result(spec.compute(ctx, {}))
+
+    assert "strong_spectral_dc_reference" in html
+    assert "Strong spectral DC reference" in html
+    assert "strong_spectral_dc_reference_table" in html
+    assert "strong trace / weak trace" in html
+    assert "relative tensor discrepancy" in html

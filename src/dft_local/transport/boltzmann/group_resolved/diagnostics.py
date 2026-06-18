@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from dft_local.core.units import CONDUCTIVITY, DisplayQuantity, VELOCITY
+from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, DisplayQuantity, VELOCITY
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -21,6 +21,9 @@ from dft_local.transport.boltzmann.calculation.core import BoltzmannConductivity
 from dft_local.transport.boltzmann.ashcroft_comparison.core import (
     conductivity_from_velocity_grid,
     velocity_from_epsilon_grid,
+)
+from dft_local.transport.boltzmann.strong_dc.core import (
+    band_indexed_strong_dc_from_velocity_grid,
 )
 from dft_local.transport.boltzmann.group_resolved.core import (
     band_resolved_compact_conductivity,
@@ -208,6 +211,14 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             name=name,
         )
 
+    def unitless_quantity(value: complex | float, name: str) -> DisplayQuantity:
+        return DisplayQuantity(
+            value=float(np.real(value)),
+            dimension=DIMENSIONLESS,
+            unit=calc.unit_context.unit_for_dimension(DIMENSIONLESS),
+            name=name,
+        )
+
     # Ashcroft validation convention:
     #   * epsilon grid is in Hartree
     #   * velocity helper differentiates a fractional reciprocal grid
@@ -223,6 +234,11 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     ashcroft_validation_rows = []
     ashcroft_fd_vx = np.empty((nu, nv, nbands), dtype=float)
     ashcroft_fd_vy = np.empty((nu, nv, nbands), dtype=float)
+
+    strong_reference_rows = []
+    strong_reference_band_sigma = np.empty_like(resolved.sigma_band)
+    strong_reference_band_raw_sigma = np.empty_like(resolved.sigma_band)
+    strong_reference_imaginary_leakage = np.empty((nbands,), dtype=float)
 
     for n in range(nbands):
         epsilon_Ha = energy_grid_Ha[:, :, n]
@@ -250,6 +266,48 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         trace_ratio = ashcroft_trace / fh_trace if fh_trace != 0.0 else np.nan
         speed_m_s = np.sqrt(vx_m_s * vx_m_s + vy_m_s * vy_m_s)
 
+        strong_reference = band_indexed_strong_dc_from_velocity_grid(
+            epsilon_Ha,
+            velocity_grid[:, :, n, :],
+            ashcroft_phase_ai_bohr,
+            chemical_potential_J=chemical_potential_J,
+            temperature_K=temperature,
+            relaxation_time_s=tau,
+            electric_field_V_per_m=np.zeros(2, dtype=float),
+        )
+        strong_raw_sigma = strong_reference.conductivity_tensor_S
+        strong_sigma = strong_raw_sigma.real / ((2.0 * np.pi) ** 2)
+        strong_reference_band_raw_sigma[n] = strong_raw_sigma
+        strong_reference_band_sigma[n] = strong_sigma
+        strong_reference_imaginary_leakage[n] = strong_reference.imaginary_leakage_S
+
+        strong_trace = float(np.trace(strong_sigma).real)
+        weak_trace = fh_trace
+        strong_minus_weak = strong_trace - weak_trace
+        strong_over_weak = strong_trace / weak_trace if weak_trace != 0.0 else np.nan
+        tensor_delta = strong_sigma - fh_sigma.real
+        tensor_relative_error = (
+            float(np.linalg.norm(tensor_delta) / np.linalg.norm(fh_sigma.real))
+            if np.linalg.norm(fh_sigma.real) != 0.0
+            else np.nan
+        )
+
+        strong_reference_rows.append(
+            TableRow((
+                n,
+                conductivity_quantity(strong_sigma[0, 0], "strong spectral sigma_xx"),
+                conductivity_quantity(strong_sigma[0, 1], "strong spectral sigma_xy"),
+                conductivity_quantity(strong_sigma[1, 0], "strong spectral sigma_yx"),
+                conductivity_quantity(strong_sigma[1, 1], "strong spectral sigma_yy"),
+                conductivity_quantity(strong_trace, "strong spectral trace"),
+                conductivity_quantity(weak_trace, "weak compact trace"),
+                conductivity_quantity(strong_minus_weak, "strong minus weak trace"),
+                unitless_quantity(strong_over_weak, "strong / weak trace"),
+                unitless_quantity(tensor_relative_error, "relative tensor discrepancy"),
+                conductivity_quantity(strong_reference.imaginary_leakage_S / ((2.0 * np.pi) ** 2), "strong spectral imaginary leakage"),
+            ))
+        )
+
         ashcroft_validation_rows.append(
             TableRow((
                 n,
@@ -273,7 +331,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 conductivity_quantity(fh_sigma[1, 1].real, "FH sigma_yy"),
                 conductivity_quantity(fh_trace, "FH trace"),
                 conductivity_quantity(trace_delta, "Ashcroft minus FH trace"),
-                f"{trace_ratio:.8e}",
+                unitless_quantity(trace_ratio, "A trace / FH trace"),
             ))
         )
 
@@ -287,7 +345,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             Card("domain", "transport.boltzmann.group_resolved", "ok"),
             Card("kernel", kernel_choice, "ok"),
             Card("bands", resolved.sigma_band.shape[0], "ok"),
-            Card("||sum bands - compact||", f"{np.linalg.norm(residual):.3e}", "ok"),
+            Card("||sum bands - compact||", conductivity_quantity(np.linalg.norm(residual), "sum bands minus compact norm"), "ok"),
         ),
         sections=(
             DiagnosticSection(
@@ -407,6 +465,40 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 ),
             ),
             DiagnosticSection(
+                id="strong_spectral_dc_reference",
+                title="Strong spectral DC reference",
+                description=(
+                    "Per-band zero-field strong spectral conductivity using the Ashcroft-validated modal formula. "
+                    "The raw modal tensor is divided by (2π)^2 to put it in the same continuum conductivity convention "
+                    "as the compact weak-chain tensor.  This is the reference tensor that future band-free formulas "
+                    "should reproduce."
+                ),
+                tables=(
+                    Table(
+                        id="strong_spectral_dc_reference_table",
+                        title="Strong spectral zero-field reference by band",
+                        description=(
+                            "Strong/modal spectral tensor compared against the current compact Hellmann-Feynman weak-chain tensor."
+                        ),
+                        headers=(
+                            "band",
+                            "strong sigma xx",
+                            "strong sigma xy",
+                            "strong sigma yx",
+                            "strong sigma yy",
+                            "strong trace",
+                            "weak trace",
+                            "strong trace - weak trace",
+                            "strong trace / weak trace",
+                            "relative tensor discrepancy",
+                            "imaginary leakage",
+                        ),
+                        rows=tuple(strong_reference_rows),
+                        numeric=frozenset(range(11)),
+                    ),
+                ),
+            ),
+            DiagnosticSection(
                 id="ashcroft_finite_difference_band_validation",
                 title="Ashcroft finite-difference band validation",
                 description=(
@@ -465,9 +557,9 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         rows=tuple(
                             TableRow((
                                 f"sigma_{a}{b}",
-                                f"{resolved.sigma_band[band, a, b].real:.8e}",
-                                f"{resolved.sigma_band[band, a, b].imag:.8e}",
-                                f"{abs(resolved.sigma_band[band, a, b]):.8e}",
+                                conductivity_quantity(resolved.sigma_band[band, a, b].real, f"sigma_{a}{b} real"),
+                                conductivity_quantity(resolved.sigma_band[band, a, b].imag, f"sigma_{a}{b} imag"),
+                                conductivity_quantity(abs(resolved.sigma_band[band, a, b]), f"sigma_{a}{b} abs"),
                             ))
                             for a in range(resolved.sigma_band.shape[1])
                             for b in range(resolved.sigma_band.shape[2])
@@ -488,9 +580,9 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         rows=tuple(
                             TableRow((
                                 n,
-                                f"{np.trace(resolved.sigma_band[n]).real:.8e}",
-                                f"{np.trace(resolved.sigma_band[n]).imag:.8e}",
-                                f"{abs(np.trace(resolved.sigma_band[n])):.8e}",
+                                conductivity_quantity(np.trace(resolved.sigma_band[n]).real, f"band {n} trace real"),
+                                conductivity_quantity(np.trace(resolved.sigma_band[n]).imag, f"band {n} trace imag"),
+                                conductivity_quantity(abs(np.trace(resolved.sigma_band[n])), f"band {n} trace abs"),
                             ))
                             for n in range(resolved.sigma_band.shape[0])
                         ),

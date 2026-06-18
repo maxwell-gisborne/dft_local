@@ -1410,9 +1410,9 @@ This resolves the velocity mismatch as a simplex-choice issue at grid vertices, 
                             "This is not explained by the Delaunay simplex ambiguity. The modal components "
                             "exactly reconstruct the strong spectral tensor, so this residual is a real "
                             "difference between spectrally differentiating the sampled periodic occupation ",
-                            TypstMath("$ f_0(k) $", name="ashcroft_f0_k_inline"),
+                            TypstMath("$ f_0 (k) $", name="ashcroft_f0_k_inline"),
                             " and using the weak chain-rule derivative ",
-                            TypstMath("$ f_0'(E) dif E / dif k $", name="ashcroft_weak_chain_derivative_inline"),
+                            TypstMath("$ f_0' (E) (dif E)/(dif k) $", name="ashcroft_weak_chain_derivative_inline"),
                             ".\n\n"
                             "The component checks support this interpretation: ",
                             TypstMath("$ Gamma $", name="ashcroft_gamma_component_inline"),
