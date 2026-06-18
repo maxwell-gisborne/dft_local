@@ -108,3 +108,11 @@ def test_display_quantity_requires_annotated_field_and_unit_context() -> None:
 
     with pytest.raises(KeyError):
         display_quantity(obj, "sigma", obj.sigma[0, 0])
+
+
+def test_diagnostic_context_quantity_hides_unitless_symbol() -> None:
+    from dft_local.core.units import DIMENSIONLESS, EV_ANGSTROM_FS, diagnostic_card_value, diagnostic_context_quantity
+
+    quantity = diagnostic_context_quantity(EV_ANGSTROM_FS, 2.0, DIMENSIONLESS, "dimensionless test")
+
+    assert diagnostic_card_value(quantity) == "2"

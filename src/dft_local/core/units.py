@@ -278,6 +278,59 @@ class DisplayQuantity:
     name: str = ""
 
 
+def display_unit_symbol(unit: Unit | str) -> str:
+    """Return the user-facing unit symbol for diagnostic rendering.
+
+    Dimensionless units are displayed without a visible unit rather than as
+    ``1``.
+    """
+
+    symbol = unit.symbol if isinstance(unit, Unit) else str(unit)
+    return "" if symbol == "1" else symbol
+
+
+def diagnostic_quantity(
+    value: complex | float,
+    dimension: Dimension,
+    unit: Unit | str,
+    name: str,
+) -> DisplayQuantity:
+    """Build a scalar quantity for diagnostic tables and cards."""
+
+    return DisplayQuantity(
+        value=float(np.real(value)),
+        dimension=dimension,
+        unit=unit,
+        name=name,
+    )
+
+
+def diagnostic_context_quantity(
+    unit_context: UnitContext,
+    value: complex | float,
+    dimension: Dimension,
+    name: str,
+) -> DisplayQuantity:
+    """Build a diagnostic quantity using a UnitContext.
+
+    Dimensionless quantities use the canonical UNITLESS unit so renderers do
+    not show a literal ``1`` unit.
+    """
+
+    unit = Unit("", DIMENSIONLESS, 1.0) if dimension == DIMENSIONLESS else unit_context.unit_for_dimension(dimension)
+    return diagnostic_quantity(value, dimension, unit, name)
+
+
+def diagnostic_card_value(quantity: DisplayQuantity) -> str:
+    """Compact string for summary cards."""
+
+    unit = display_unit_symbol(quantity.unit)
+    value = f"{quantity.value:.6g}"
+    return value if unit == "" else f"{value} {unit}"
+
+
+
+
 def display_quantity(obj: object, field_name: str, value: Any) -> DisplayQuantity:
     """Reify one SOA field value into a standalone display quantity."""
 

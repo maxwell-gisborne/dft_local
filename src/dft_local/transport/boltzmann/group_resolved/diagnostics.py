@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, ENERGY, DisplayQuantity, VELOCITY
+from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, ENERGY, VELOCITY, diagnostic_card_value, diagnostic_context_quantity
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -123,37 +123,17 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         "selected_field": "speed",
     }
 
-    def conductivity_quantity(value: complex | float, name: str) -> DisplayQuantity:
-        return DisplayQuantity(
-            value=float(np.real(value)),
-            dimension=CONDUCTIVITY,
-            unit=calc.unit_context.unit_for_dimension(CONDUCTIVITY),
-            name=name,
-        )
+    def conductivity_quantity(value: complex | float, name: str):
+        return diagnostic_context_quantity(calc.unit_context, value, CONDUCTIVITY, name)
 
-    def velocity_quantity(value: complex | float, name: str) -> DisplayQuantity:
-        return DisplayQuantity(
-            value=float(np.real(value)),
-            dimension=VELOCITY,
-            unit=calc.unit_context.unit_for_dimension(VELOCITY),
-            name=name,
-        )
+    def velocity_quantity(value: complex | float, name: str):
+        return diagnostic_context_quantity(calc.unit_context, value, VELOCITY, name)
 
-    def energy_quantity(value: complex | float, name: str) -> DisplayQuantity:
-        return DisplayQuantity(
-            value=float(np.real(value)),
-            dimension=ENERGY,
-            unit=calc.unit_context.unit_for_dimension(ENERGY),
-            name=name,
-        )
+    def energy_quantity(value: complex | float, name: str):
+        return diagnostic_context_quantity(calc.unit_context, value, ENERGY, name)
 
-    def unitless_quantity(value: complex | float, name: str) -> DisplayQuantity:
-        return DisplayQuantity(
-            value=float(np.real(value)),
-            dimension=DIMENSIONLESS,
-            unit=calc.unit_context.unit_for_dimension(DIMENSIONLESS),
-            name=name,
-        )
+    def unitless_quantity(value: complex | float, name: str):
+        return diagnostic_context_quantity(calc.unit_context, value, DIMENSIONLESS, name)
 
     velocity_rows = tuple(
         TableRow((
@@ -191,8 +171,8 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         s_max_eigs.append(s_max)
         s_condition_estimates.append(s_max / s_min if s_min != 0.0 else np.inf)
 
-    def card_quantity(quantity: DisplayQuantity) -> str:
-        return f"{quantity.value:.6g} {quantity.unit.symbol}"
+    def card_quantity(quantity):
+        return diagnostic_card_value(quantity)
 
 
     symbol_sanity_rows = (
