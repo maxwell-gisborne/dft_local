@@ -61,6 +61,7 @@ def test_group_resolved_result_contains_compact_invariant() -> None:
     html = render_result(result)
 
     assert "||sum bands - compact||" in html
+    assert "DisplayQuantity(" not in html
     assert "sigma_00" in html
 
 

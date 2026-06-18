@@ -191,6 +191,10 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         s_max_eigs.append(s_max)
         s_condition_estimates.append(s_max / s_min if s_min != 0.0 else np.inf)
 
+    def card_quantity(quantity: DisplayQuantity) -> str:
+        return f"{quantity.value:.6g} {quantity.unit}"
+
+
     symbol_sanity_rows = (
         TableRow((
             "H Hermiticity defect",
@@ -415,7 +419,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             Card("scope", "internal symbol method", "ok"),
             Card("kernel", kernel_choice, "ok"),
             Card("bands", resolved.sigma_band.shape[0], "ok"),
-            Card("||sum bands - compact||", conductivity_quantity(np.linalg.norm(residual), "sum bands minus compact norm"), "ok"),
+            Card("||sum bands - compact||", card_quantity(conductivity_quantity(np.linalg.norm(residual), "sum bands minus compact norm")), "ok"),
         ),
         sections=(
             DiagnosticSection(
