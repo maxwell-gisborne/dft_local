@@ -16,6 +16,7 @@ DEFAULT_DIAGNOSTIC_MODULES = (
     "dft_local.testsuite.diagnostics",
     "dft_local.transport.boltzmann.calculation.diagnostics",
     "dft_local.transport.boltzmann.ashcroft_comparison.diagnostics",
+    "dft_local.transport.boltzmann.ashcroft_comparison.regions",
     "dft_local.transport.boltzmann.validation.diagnostics",
     "dft_local.transport.boltzmann.group_resolved.diagnostics",
     "dft_local.transport.symmetry_audit.diagnostics",
