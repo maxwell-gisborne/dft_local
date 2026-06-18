@@ -260,7 +260,9 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
 
     recomputed_velocities = np.empty_like(calc.velocities)
     velocity_imag_leakage = []
+    numerator_relative_imag_leakage = []
 
+    eps = np.finfo(float).eps
     for ik, problem in enumerate(calc.problems):
         dH, dS = calc.physical_derivative_symbols(problem)
         energies_k = np.asarray(calc.energies[ik])
@@ -272,26 +274,43 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                 numerator = np.vdot(phi, (dH[i] - energies_k[n] * dS[i]) @ phi)
                 recomputed_velocities[ik, i, n] = float(np.real(numerator)) / float(calc.hbar_working)
                 velocity_imag_leakage.append(float(abs(np.imag(numerator)) / float(calc.hbar_working)))
+                numerator_relative_imag_leakage.append(
+                    float(abs(np.imag(numerator)) / max(abs(np.real(numerator)), eps))
+                )
 
     velocity_recompute_delta = recomputed_velocities - np.asarray(calc.velocities)
+    stored_velocity_magnitude = np.abs(calc.velocities)
+    velocity_recompute_relative_delta = np.abs(velocity_recompute_delta) / np.maximum(stored_velocity_magnitude, eps)
 
     velocity_recompute_rows = (
         TableRow((
-            "HF velocity recomputation delta",
-            velocity_quantity(np.max(np.abs(velocity_recompute_delta)), "max HF velocity recomputation delta"),
-            velocity_quantity(np.mean(np.abs(velocity_recompute_delta)), "mean HF velocity recomputation delta"),
-            "recomputed diagonal HF velocity minus stored velocity",
+            "HF velocity recomputation relative delta",
+            unitless_quantity(np.max(velocity_recompute_relative_delta), "max relative HF velocity recomputation delta"),
+            unitless_quantity(np.mean(velocity_recompute_relative_delta), "mean relative HF velocity recomputation delta"),
+            "|v_HF - v_stored| / max(|v_stored|, eps)",
         )),
         TableRow((
-            "HF numerator imaginary leakage",
-            velocity_quantity(np.max(velocity_imag_leakage), "max HF numerator imaginary leakage"),
-            velocity_quantity(np.mean(velocity_imag_leakage), "mean HF numerator imaginary leakage"),
-            "imaginary part discarded before taking the real velocity",
+            "HF velocity recomputation absolute delta",
+            velocity_quantity(np.max(np.abs(velocity_recompute_delta)), "max absolute HF velocity recomputation delta"),
+            velocity_quantity(np.mean(np.abs(velocity_recompute_delta)), "mean absolute HF velocity recomputation delta"),
+            "|v_HF - v_stored| in velocity units",
+        )),
+        TableRow((
+            "HF numerator relative imaginary leakage",
+            unitless_quantity(np.max(numerator_relative_imag_leakage), "max relative HF numerator imaginary leakage"),
+            unitless_quantity(np.mean(numerator_relative_imag_leakage), "mean relative HF numerator imaginary leakage"),
+            "|Im numerator| / max(|Re numerator|, eps)",
+        )),
+        TableRow((
+            "HF numerator imaginary velocity leakage",
+            velocity_quantity(np.max(velocity_imag_leakage), "max HF numerator imaginary velocity leakage"),
+            velocity_quantity(np.mean(velocity_imag_leakage), "mean HF numerator imaginary velocity leakage"),
+            "|Im numerator| / hbar_working",
         )),
         TableRow((
             "stored velocity magnitude",
-            velocity_quantity(np.max(np.abs(calc.velocities)), "max stored velocity magnitude"),
-            velocity_quantity(np.mean(np.abs(calc.velocities)), "mean stored velocity magnitude"),
+            velocity_quantity(np.max(stored_velocity_magnitude), "max stored velocity magnitude"),
+            velocity_quantity(np.mean(stored_velocity_magnitude), "mean stored velocity magnitude"),
             "absolute value of stored band velocities",
         )),
     )

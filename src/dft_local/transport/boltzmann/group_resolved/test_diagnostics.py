@@ -40,7 +40,8 @@ def test_group_resolved_overview_renders() -> None:
     assert "generalized eigen residual" in html
     assert "S-normalisation defect" in html
     assert "Hellmann-Feynman velocity checks" in html
-    assert "HF velocity recomputation delta" in html
+    assert "HF velocity recomputation relative delta" in html
+    assert "HF velocity recomputation absolute delta" in html
     assert "Conductivity assembly checks" in html
     assert "band sum - compact" in html
     assert "k sum - compact" in html
