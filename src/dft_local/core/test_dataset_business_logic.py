@@ -324,3 +324,10 @@ def test_symmetrised_H_block_hermitian(data, sample_atoms):
         atol=1e-12,
         rtol=1e-10,
     )
+
+
+def test_sparse_dataset_loads_bigdft_log_yaml() -> None:
+    dataset = SparseDataset.load("test_run/run_dir/data")
+
+    assert isinstance(dataset.bigdft_log, dict)
+    assert "Last Iteration" in dataset.bigdft_log or "Ground State Optimization" in dataset.bigdft_log

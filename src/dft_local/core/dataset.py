@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Literal, Self
+from typing import Annotated, Any, Literal, Self
 
 import numpy as np
+import yaml
 from numpy.typing import NDArray
 from scipy.io import mmread
 from scipy.sparse import bsr_matrix
@@ -63,6 +64,32 @@ def require_dir(path: Path) -> Path:
     if not path.is_dir():
         raise ValueError(f"Expected directory, got: {path}")
     return path
+
+
+def find_bigdft_foe_summary(log: object) -> dict[str, Any] | None:
+    """Return the final BigDFT FOE Fermi-energy summary from a parsed log.yaml."""
+
+    if isinstance(log, dict):
+        summary = log.get("summary")
+        if isinstance(summary, dict) and "eF" in summary and "Tr(K)" in summary:
+            return summary
+
+        if "eF" in log and "Tr(K)" in log:
+            return log
+
+        for value in log.values():
+            found = find_bigdft_foe_summary(value)
+            if found is not None:
+                return found
+
+    if isinstance(log, list):
+        for item in reversed(log):
+            found = find_bigdft_foe_summary(item)
+            if found is not None:
+                return found
+
+    return None
+
 
 @dataclass(frozen=True)
 class SparseMetadata:
@@ -232,6 +259,7 @@ class SparseDataset:
     basis: BasisMap
     H: EnergySparseMatrix
     S: DimensionlessSparseMatrix
+    bigdft_log: dict[str, Any] | None = None
 
     @property
     def energy_conversion_disk_to_working(self) -> float:
@@ -253,6 +281,16 @@ class SparseDataset:
     ) -> Self:
         root = Path(root)
         root = require_dir(root)
+
+        log_path = root.parent / "log.yaml"
+        bigdft_log: dict[str, Any] | None = None
+        if log_path.exists():
+            with log_path.open("r", encoding="utf-8") as f:
+                loaded_log = yaml.safe_load(f)
+            if isinstance(loaded_log, dict):
+                bigdft_log = loaded_log
+            elif loaded_log is not None:
+                bigdft_log = {"raw": loaded_log}
 
         metadata = SparseMetadata.load(
             root / "sparsematrix_metadata.dat",
@@ -285,6 +323,7 @@ class SparseDataset:
             basis=basis,
             H=H,
             S=S,
+            bigdft_log=bigdft_log,
         ).validate()
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 
 from dft_local.core.units import CONDUCTIVITY, DIMENSIONLESS, ENERGY, VELOCITY, diagnostic_card_value, diagnostic_context_quantity
+from dft_local.core.dataset import find_bigdft_foe_summary
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -312,6 +313,35 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
     finite_temperature_mu = 0.5 * (lo + hi)
     finite_temperature_count = integrated_dos(finite_temperature_mu)
 
+    bigdft_foe_rows = ()
+    bigdft_foe_summary = find_bigdft_foe_summary(ctx.state.data.bigdft_log)
+    if bigdft_foe_summary is not None:
+        eF_disk = bigdft_foe_summary.get("eF")
+        trace_k = bigdft_foe_summary.get("Tr(K)")
+        if eF_disk is not None and trace_k is not None:
+            bigdft_foe_eF = float(eF_disk) * ctx.state.data.energy_conversion_disk_to_working
+            bigdft_foe_trace = float(trace_k)
+            bigdft_foe_rows = (
+                TableRow((
+                    "BigDFT FOE Fermi level",
+                    energy_quantity(bigdft_foe_eF, "BigDFT FOE Fermi level"),
+                    "full-system Fermi energy from parsed log.yaml, converted to working energy units",
+                )),
+                TableRow((
+                    "BigDFT FOE Tr(K)",
+                    unitless_quantity(bigdft_foe_trace, "BigDFT FOE density-kernel trace"),
+                    "full-system density-kernel trace / electron count reached by FOE",
+                )),
+                TableRow((
+                    "symbol mu - BigDFT FOE eF",
+                    energy_quantity(
+                        finite_temperature_mu - bigdft_foe_eF,
+                        "symbol chemical potential minus BigDFT FOE Fermi level",
+                    ),
+                    "offset between local-symbol IDOS chemical potential and full-system FOE Fermi level",
+                )),
+            )
+
     dos_fermi_rows = (
         TableRow((
             "spin degeneracy",
@@ -364,7 +394,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             energy_quantity(indirect_neutral_gap, "indirect neutral gap"),
             "min_k E_unoccupied(k) - max_k E_occupied(k); negative indicates overlap",
         )),
-    )
+    ) + bigdft_foe_rows
 
     recomputed_velocities = np.empty_like(calc.velocities)
     velocity_imag_leakage = []
