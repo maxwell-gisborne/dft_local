@@ -283,28 +283,28 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
 
     velocity_recompute_rows = (
         TableRow((
-            "HF velocity recomputation relative delta",
+            "stored-vs-recomputed relative error",
             unitless_quantity(np.max(velocity_recompute_relative_delta), "max relative HF velocity recomputation delta"),
             unitless_quantity(np.mean(velocity_recompute_relative_delta), "mean relative HF velocity recomputation delta"),
-            "|v_HF - v_stored| / max(|v_stored|, eps)",
+            "|recomputed HF velocity - stored velocity| / max(|stored velocity|, eps)",
         )),
         TableRow((
-            "HF velocity recomputation absolute delta",
+            "stored-vs-recomputed absolute error",
             velocity_quantity(np.max(np.abs(velocity_recompute_delta)), "max absolute HF velocity recomputation delta"),
             velocity_quantity(np.mean(np.abs(velocity_recompute_delta)), "mean absolute HF velocity recomputation delta"),
-            "|v_HF - v_stored| in velocity units",
+            "|recomputed HF velocity - stored velocity| in velocity units",
         )),
         TableRow((
-            "HF imaginary velocity relative leakage",
+            "imaginary part relative to velocity scale",
             unitless_quantity(np.max(velocity_imag_relative_leakage), "max relative HF imaginary velocity leakage"),
             unitless_quantity(np.mean(velocity_imag_relative_leakage), "mean relative HF imaginary velocity leakage"),
-            "|Im numerator / hbar_working| / max_k,n,i |v_stored|",
+            "discarded imaginary velocity component divided by the global stored-velocity scale",
         )),
         TableRow((
-            "HF imaginary velocity absolute leakage",
+            "imaginary part absolute velocity scale",
             velocity_quantity(np.max(velocity_imag_leakage), "max absolute HF imaginary velocity leakage"),
             velocity_quantity(np.mean(velocity_imag_leakage), "mean absolute HF imaginary velocity leakage"),
-            "|Im numerator| / hbar_working",
+            "discarded imaginary component converted to velocity units",
         )),
         TableRow((
             "stored velocity magnitude",
@@ -465,11 +465,13 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
             ),
             DiagnosticSection(
                 id="hellmann_feynman_velocity_checks",
-                title="Hellmann-Feynman velocity checks",
+                title="Hellmann-Feynman velocity self-consistency",
                 description=(
-                    "Recomputes diagonal generalized Hellmann-Feynman velocities from "
-                    "symbol derivatives, energies, and eigenvectors, then compares them "
-                    "with the stored velocity array."
+                    "Checks that the stored velocity array used by the conductivity calculation "
+                    "matches an independent diagonal generalized Hellmann-Feynman recomputation. "
+                    "For each sampled k, direction i, and band n, the diagnostic recomputes "
+                    "Re[phi_n^† (partial_i H - E_n partial_i S) phi_n] / hbar and compares it "
+                    "with the stored velocity array calc.velocities[k, i, n]."
                 ),
                 tables=(
                     Table(
