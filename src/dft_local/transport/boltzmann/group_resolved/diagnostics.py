@@ -321,6 +321,44 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
         for n in range(nbands)
     )
 
+    recomputed_velocities = np.empty_like(calc.velocities)
+    velocity_imag_leakage = []
+
+    for ik, problem in enumerate(calc.problems):
+        dH, dS = calc.physical_derivative_symbols(problem)
+        energies_k = np.asarray(calc.energies[ik])
+        vectors_k = np.asarray(calc.vectors[ik])
+
+        for i in range(calc.dimension):
+            for n in range(nbands):
+                phi = vectors_k[:, n]
+                numerator = np.vdot(phi, (dH[i] - energies_k[n] * dS[i]) @ phi)
+                recomputed_velocities[ik, i, n] = float(np.real(numerator)) / float(calc.hbar_working)
+                velocity_imag_leakage.append(float(abs(np.imag(numerator)) / float(calc.hbar_working)))
+
+    velocity_recompute_delta = recomputed_velocities - np.asarray(calc.velocities)
+
+    velocity_recompute_rows = (
+        TableRow((
+            "HF velocity recomputation delta",
+            velocity_quantity(np.max(np.abs(velocity_recompute_delta)), "max HF velocity recomputation delta"),
+            velocity_quantity(np.mean(np.abs(velocity_recompute_delta)), "mean HF velocity recomputation delta"),
+            "recomputed diagonal HF velocity minus stored velocity",
+        )),
+        TableRow((
+            "HF numerator imaginary leakage",
+            velocity_quantity(np.max(velocity_imag_leakage), "max HF numerator imaginary leakage"),
+            velocity_quantity(np.mean(velocity_imag_leakage), "mean HF numerator imaginary leakage"),
+            "imaginary part discarded before taking the real velocity",
+        )),
+        TableRow((
+            "stored velocity magnitude",
+            velocity_quantity(np.max(np.abs(calc.velocities)), "max stored velocity magnitude"),
+            velocity_quantity(np.mean(np.abs(calc.velocities)), "mean stored velocity magnitude"),
+            "absolute value of stored band velocities",
+        )),
+    )
+
     strong_reference_rows = []
     strong_reference_band_sigma = np.empty_like(resolved.sigma_band)
     strong_reference_band_raw_sigma = np.empty_like(resolved.sigma_band)
@@ -432,6 +470,25 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         renderer="region_surface",
                         payload=surface_payload,
                         interaction_channel="group_resolved_band_surface",
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="hellmann_feynman_velocity_checks",
+                title="Hellmann-Feynman velocity checks",
+                description=(
+                    "Recomputes diagonal generalized Hellmann-Feynman velocities from "
+                    "symbol derivatives, energies, and eigenvectors, then compares them "
+                    "with the stored velocity array."
+                ),
+                tables=(
+                    Table(
+                        id="hellmann_feynman_velocity_checks_table",
+                        title="Velocity recomputation checks",
+                        description="Checks over every sampled irrep, direction, and band.",
+                        headers=("quantity", "worst", "mean", "meaning"),
+                        rows=velocity_recompute_rows,
+                        numeric=frozenset((1, 2)),
                     ),
                 ),
             ),

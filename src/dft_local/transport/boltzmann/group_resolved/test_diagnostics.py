@@ -39,6 +39,8 @@ def test_group_resolved_overview_renders() -> None:
     assert "Generalized eigensystem checks" in html
     assert "generalized eigen residual" in html
     assert "S-normalisation defect" in html
+    assert "Hellmann-Feynman velocity checks" in html
+    assert "HF velocity recomputation delta" in html
     assert "Selected energy-ordered band" in html
     assert "Band trace contributions" in html
     assert "sum bands - compact" in html
