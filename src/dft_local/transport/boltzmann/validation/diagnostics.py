@@ -29,6 +29,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_vincent_reconstruction_probe,
     finite_field_strong_dc_validation_probe,
     finite_field_weak_dc_limit_probe,
+    finite_field_mode_decomposition_probe,
     operator_symbol_validation_probe,
 )
 
@@ -421,6 +422,30 @@ def _finite_field_weak_dc_rows(probe: dict[str, object]) -> tuple[TableRow, ...]
     )
 
 
+def _finite_field_mode_decomposition_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "strong DC mode result")),
+        TableRow(("mode count", _fmt_probe_value(probe["mode_count"]), "FFT modes")),
+        TableRow(("Gamma reconstruction abs error", _fmt_probe_value(probe["gamma_reconstruction_abs_error"]), "near 0")),
+        TableRow(("rho reconstruction abs error", _fmt_probe_value(probe["rho_reconstruction_abs_error"]), "near 0")),
+        TableRow(("mode tensor reconstruction abs error", _fmt_probe_value(probe["mode_tensor_reconstruction_abs_error"]), "near 0")),
+        TableRow(("conductivity trace", _fmt_probe_value(probe["conductivity_trace_S_per_m"]), "S/m")),
+        TableRow(("mode norm sum", _fmt_probe_value(probe["conductivity_mode_norm_sum"]), "finite")),
+        TableRow(("top 1 mode fraction", _fmt_probe_value(probe["top_1_mode_fraction"]), "concentration")),
+        TableRow(("top 10 mode fraction", _fmt_probe_value(probe["top_10_mode_fraction"]), "concentration")),
+        TableRow(("top 100 mode fraction", _fmt_probe_value(probe["top_100_mode_fraction"]), "concentration")),
+        TableRow(("Gamma abs max", _fmt_probe_value(probe["gamma_abs_max"]), "finite")),
+        TableRow(("rho abs max", _fmt_probe_value(probe["rho_abs_max"]), "finite")),
+        TableRow(("response abs max", _fmt_probe_value(probe["response_abs_max"]), "finite")),
+        TableRow(("Gamma finite", _fmt_probe_value(probe["gamma_finite"]), "True")),
+        TableRow(("rho finite", _fmt_probe_value(probe["rho_finite"]), "True")),
+        TableRow(("response finite", _fmt_probe_value(probe["response_finite"]), "True")),
+        TableRow(("mode tensor finite", _fmt_probe_value(probe["mode_tensor_finite"]), "True")),
+        TableRow(("mode closure pass", _fmt_probe_value(probe["mode_closure_pass"]), "True")),
+        TableRow(("residual status", _fmt_probe_value(probe["residual_status"]), "audit note")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -605,6 +630,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     vincent_probe = finite_field_vincent_reconstruction_probe()
     strong_dc_probe = finite_field_strong_dc_validation_probe()
     weak_dc_probe = finite_field_weak_dc_limit_probe()
+    mode_decomposition_probe = finite_field_mode_decomposition_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -865,18 +891,40 @@ This first implementation reuses the analytic sinusoidal Ashcroft probe. It sepa
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_mode_decomposition",
+            DiagnosticSection(
+                id="finite_field_dc_validation_mode_decomposition",
                 title="Mode decomposition",
                 description="Closure checks for Gamma, F, and tilde(rho).",
-                claim="The lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the total finite-field band-labelled DC conductivity tensor.",
-                evidence=(
-                    ("Gamma closure", "dummy", "velocity/current mode ingredient reconstructs direct value"),
-                    ("F and tilde(rho) sanity", "dummy", "response and density factors have expected finite values"),
-                    ("conductivity recomposition", "dummy", "mode sum reconstructs total tensor"),
-                    ("cumulative mode contribution", "dummy", "show how many modes carry the tensor"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_mode_decomposition_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** The lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the total finite-field band-labelled DC conductivity tensor.
+
+This first implementation checks the actual `BandIndexedStrongDcResult` mode objects: Gamma reconstructs the sampled velocity field, tilde(rho) reconstructs the sampled occupation, and summing the conductivity mode tensor reconstructs the total strong DC tensor.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_mode_decomposition_table",
+                        title="Mode decomposition metrics",
+                        description="Gamma/F/rho closure checks for the strong spectral DC tensor.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_mode_decomposition_rows(mode_decomposition_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_mode_decomposition_placeholders",
+                        title="Remaining placeholders",
+                        description="Mode visualisation and dataset-backed closure checks still required.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("component-level mode contribution table", "pending")),
+                            TableRow(("cumulative mode contribution curve", "pending")),
+                            TableRow(("spatial mode maps", "pending")),
+                            TableRow(("dataset-backed Gamma/F/rho closure", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("Gamma/F/tilde(rho) tables", "mode recomposition tensor", "difference tensor", "spatial mode maps"),
             ),
             DiagnosticSection(
                 id="finite_field_dc_validation_analytic_toys",

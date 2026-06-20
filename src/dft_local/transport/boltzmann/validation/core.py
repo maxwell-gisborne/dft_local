@@ -1232,6 +1232,95 @@ def finite_field_weak_dc_limit_probe() -> dict[str, float | int | bool | str]:
         "roundoff_floor_status": "zero-field agreement checked; finite eta sweep exposes nonlinear departure",
     }
 
+
+def finite_field_mode_decomposition_probe() -> dict[str, float | int | bool | str]:
+    """Check Gamma/F/rho lattice-mode closure for the strong DC tensor."""
+
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        band_indexed_strong_dc_from_velocity_grid,
+        conductivity_from_epsilon_grid,
+        load_vincent_input_data,
+        vincent_reference,
+    )
+
+    reference = vincent_reference()
+    inputs = load_vincent_input_data()
+    ai = inputs.primitive_lattice_vectors_bohr
+    epsilon = inputs.epsilon_of_k
+
+    local = conductivity_from_epsilon_grid(
+        epsilon,
+        ai,
+        chemical_potential_J=float(np.mean(epsilon) * ATOMIC_UNITS.energy.scale_to_si),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+
+    strong = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        local.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+
+    gamma_reconstructed = np.empty_like(strong.velocity_m_per_s)
+    for alpha in range(2):
+        gamma_reconstructed[..., alpha] = np.fft.fft2(
+            strong.velocity_coefficients_m_per_s_per_m2[..., alpha]
+        ).real
+
+    rho_reconstructed = np.fft.ifft2(
+        strong.occupation_coefficients * strong.occupation_coefficients.size
+    ).real
+
+    gamma_abs_error = float(np.max(np.abs(gamma_reconstructed - strong.velocity_m_per_s)))
+    rho_abs_error = float(np.max(np.abs(rho_reconstructed - strong.occupation)))
+
+    mode_tensor_sum = np.sum(strong.conductivity_mode_tensor_S, axis=(0, 1))
+    mode_tensor_abs_error = float(np.max(np.abs(mode_tensor_sum - strong.conductivity_tensor_S)))
+
+    mode_norms = np.linalg.norm(strong.conductivity_mode_tensor_S.reshape((-1, 2, 2)), axis=(1, 2))
+    total_mode_norm = float(np.sum(mode_norms))
+    sorted_mode_norms = np.sort(mode_norms)[::-1]
+
+    top_1_fraction = float(sorted_mode_norms[:1].sum() / total_mode_norm) if total_mode_norm > 0.0 else np.nan
+    top_10_fraction = float(sorted_mode_norms[:10].sum() / total_mode_norm) if total_mode_norm > 0.0 else np.nan
+    top_100_fraction = float(sorted_mode_norms[:100].sum() / total_mode_norm) if total_mode_norm > 0.0 else np.nan
+
+    response_abs = np.abs(strong.response_factor)
+    gamma_abs = np.abs(strong.velocity_coefficients_m_per_s_per_m2)
+    rho_abs = np.abs(strong.occupation_coefficients)
+
+    return {
+        "source": "BandIndexedStrongDcResult Gamma/F/rho closure",
+        "mode_count": int(mode_norms.size),
+        "gamma_reconstruction_abs_error": float(gamma_abs_error),
+        "rho_reconstruction_abs_error": float(rho_abs_error),
+        "mode_tensor_reconstruction_abs_error": float(mode_tensor_abs_error),
+        "conductivity_trace_S_per_m": float(np.trace(strong.conductivity_tensor_S.real)),
+        "conductivity_mode_norm_sum": float(total_mode_norm),
+        "top_1_mode_fraction": float(top_1_fraction),
+        "top_10_mode_fraction": float(top_10_fraction),
+        "top_100_mode_fraction": float(top_100_fraction),
+        "gamma_abs_max": float(np.max(gamma_abs)),
+        "rho_abs_max": float(np.max(rho_abs)),
+        "response_abs_max": float(np.max(response_abs)),
+        "gamma_finite": bool(np.isfinite(strong.velocity_coefficients_m_per_s_per_m2).all()),
+        "rho_finite": bool(np.isfinite(strong.occupation_coefficients).all()),
+        "response_finite": bool(np.isfinite(strong.response_factor).all()),
+        "mode_tensor_finite": bool(np.isfinite(strong.conductivity_mode_tensor_S).all()),
+        "mode_closure_pass": bool(
+            gamma_abs_error < 1.0e-8
+            and rho_abs_error < 1.0e-12
+            and mode_tensor_abs_error < 1.0e-18
+            and np.isfinite(total_mode_norm)
+        ),
+        "residual_status": "Gamma and rho reconstruct sampled grids; mode tensor re-sums to total strong DC tensor",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

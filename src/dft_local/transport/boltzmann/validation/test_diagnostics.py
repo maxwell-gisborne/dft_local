@@ -368,7 +368,7 @@ def test_finite_field_dc_validation_scaffold_sections_are_visible() -> None:
     assert "finite_field_dc_validation_dashboard" in table_ids
     assert "finite_field_dc_validation_inputs_table" in table_ids
     assert "finite_field_dc_validation_vincent_reconstruction_table" in table_ids
-    assert "finite_field_dc_validation_mode_decomposition_evidence_plan" in table_ids
+    assert "finite_field_dc_validation_mode_decomposition_table" in table_ids
 
 def test_finite_field_dc_validation_has_form_inputs() -> None:
     specs = {spec.id: spec for spec in diagnostics()}
@@ -946,4 +946,59 @@ def test_finite_field_dc_weak_dc_limit_section_contains_real_metrics() -> None:
     }
 
     assert rows["weak-limit pass"] == "True"
+    assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_mode_decomposition_probe_checks_closure() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_mode_decomposition_probe,
+    )
+
+    probe = finite_field_mode_decomposition_probe()
+
+    assert probe["mode_count"] > 0
+    assert probe["gamma_reconstruction_abs_error"] < 1.0e-8
+    assert probe["rho_reconstruction_abs_error"] < 1.0e-12
+    assert probe["mode_tensor_reconstruction_abs_error"] < 1.0e-18
+    assert probe["conductivity_trace_S_per_m"] > 0.0
+    assert 0.0 < probe["top_1_mode_fraction"] <= 1.0
+    assert probe["top_1_mode_fraction"] <= probe["top_10_mode_fraction"] <= probe["top_100_mode_fraction"] <= 1.0
+    assert probe["gamma_finite"] is True
+    assert probe["rho_finite"] is True
+    assert probe["response_finite"] is True
+    assert probe["mode_tensor_finite"] is True
+    assert probe["mode_closure_pass"] is True
+
+
+def test_finite_field_dc_mode_decomposition_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_mode_decomposition"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_mode_decomposition_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_mode_decomposition_table"].rows
+    }
+
+    assert rows["mode closure pass"] == "True"
     assert "dummy" not in set(rows.values())
