@@ -687,3 +687,54 @@ def test_finite_field_dc_analytic_toys_section_contains_real_metrics() -> None:
     assert rows["toy count"] == "4"
     assert rows["all current toys pass"] == "True"
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_k_convergence_probe_checks_periodic_measure() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_k_convergence_probe,
+    )
+
+    probe = finite_field_k_convergence_probe()
+
+    assert probe["grid_count"] == 5
+    assert probe["coarsest_n"] == 5
+    assert probe["finest_n"] == 23
+    assert abs(probe["reference_average_grad_e_sq"] - 0.29) < 1.0e-15
+    assert probe["finest_abs_error"] < 1.0e-12
+    assert probe["max_abs_error"] < 1.0e-12
+    assert probe["all_grid_errors_small"] is True
+
+
+def test_finite_field_dc_k_convergence_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_k_convergence"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_k_convergence_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_k_convergence_table"].rows
+    }
+
+    assert rows["grid count"] == "5"
+    assert rows["all grid errors small"] == "True"
+    assert "dummy" not in set(rows.values())

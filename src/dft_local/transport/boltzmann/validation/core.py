@@ -874,6 +874,72 @@ def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool |
         "missing_toy": "finite-field lattice-mode Gamma/F/rho closure toy",
     }
 
+
+def finite_field_k_convergence_probe(
+    grid_sizes: tuple[int, ...] = (5, 7, 11, 17, 23),
+) -> dict[str, float | int | bool | str]:
+    """Check k-grid convergence/measure on a periodic analytic velocity toy.
+
+    For E(k) = c0 + c1 cos(k1) + c2 cos(k2), derivatives are
+    dE/dk1 = -c1 sin(k1), dE/dk2 = -c2 sin(k2).
+
+    The full-period average of sin(k)^2 is 1/2, so the exact reference for
+    <|grad E|^2> is (c1^2 + c2^2) / 2.
+    """
+
+    if not grid_sizes:
+        raise ValueError("grid_sizes must be non-empty")
+    if any(n < 2 for n in grid_sizes):
+        raise ValueError(f"all grid sizes must be >= 2, got {grid_sizes!r}")
+
+    c1 = 0.70
+    c2 = -0.30
+    reference = 0.5 * (c1 * c1 + c2 * c2)
+
+    previous_error: float | None = None
+    finest_value = 0.0
+    finest_error = 0.0
+    max_error = 0.0
+    rows_checked = 0
+    improved_or_equal_steps = 0
+
+    for n in grid_sizes:
+        axis = np.linspace(-np.pi, np.pi, int(n), endpoint=False)
+        total = 0.0
+
+        for k1 in axis:
+            for k2 in axis:
+                dk1 = expected_separable_cosine_derivative(float(k1), float(k2), axis=0, c1=c1, c2=c2)
+                dk2 = expected_separable_cosine_derivative(float(k1), float(k2), axis=1, c1=c1, c2=c2)
+                total += dk1 * dk1 + dk2 * dk2
+
+        value = total / float(n * n)
+        error = abs(value - reference)
+
+        if previous_error is not None and error <= previous_error + 1.0e-14:
+            improved_or_equal_steps += 1
+
+        previous_error = error
+        finest_value = float(value)
+        finest_error = float(error)
+        max_error = max(max_error, float(error))
+        rows_checked += 1
+
+    return {
+        "source": "periodic separable-cosine velocity-square average",
+        "grid_count": int(rows_checked),
+        "coarsest_n": int(grid_sizes[0]),
+        "finest_n": int(grid_sizes[-1]),
+        "reference_average_grad_e_sq": float(reference),
+        "finest_average_grad_e_sq": float(finest_value),
+        "finest_abs_error": float(finest_error),
+        "max_abs_error": float(max_error),
+        "improved_or_equal_steps": int(improved_or_equal_steps),
+        "all_grid_errors_small": bool(max_error < 1.0e-12),
+        "measure_status": "uniform full-period average matches analytic reference",
+        "conductivity_convergence_status": "pending dataset-backed conductivity refinement",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

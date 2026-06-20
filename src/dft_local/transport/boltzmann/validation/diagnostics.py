@@ -24,6 +24,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_velocity_validation_probe,
     finite_field_unit_scaling_probe,
     finite_field_analytic_toy_coverage_probe,
+    finite_field_k_convergence_probe,
     operator_symbol_validation_probe,
 )
 
@@ -319,6 +320,23 @@ def _finite_field_analytic_toy_rows(probe: dict[str, object]) -> tuple[TableRow,
     )
 
 
+def _finite_field_k_convergence_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
+        TableRow(("grid count", _fmt_probe_value(probe["grid_count"]), "number of refinements")),
+        TableRow(("coarsest N", _fmt_probe_value(probe["coarsest_n"]), "first grid")),
+        TableRow(("finest N", _fmt_probe_value(probe["finest_n"]), "last grid")),
+        TableRow(("reference <|grad E|^2>", _fmt_probe_value(probe["reference_average_grad_e_sq"]), "analytic")),
+        TableRow(("finest <|grad E|^2>", _fmt_probe_value(probe["finest_average_grad_e_sq"]), "numeric")),
+        TableRow(("finest abs error", _fmt_probe_value(probe["finest_abs_error"]), "near 0")),
+        TableRow(("max abs error", _fmt_probe_value(probe["max_abs_error"]), "near 0")),
+        TableRow(("improved/equal steps", _fmt_probe_value(probe["improved_or_equal_steps"]), "non-regression count")),
+        TableRow(("all grid errors small", _fmt_probe_value(probe["all_grid_errors_small"]), "True")),
+        TableRow(("measure status", _fmt_probe_value(probe["measure_status"]), "normalisation check")),
+        TableRow(("conductivity convergence status", _fmt_probe_value(probe["conductivity_convergence_status"]), "pending")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -498,6 +516,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     velocity_probe = finite_field_velocity_validation_probe()
     unit_scaling_probe = finite_field_unit_scaling_probe()
     analytic_toy_probe = finite_field_analytic_toy_coverage_probe()
+    k_convergence_probe = finite_field_k_convergence_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -774,18 +793,40 @@ This first implementation checks the core unit factors that all later finite-fie
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_k_convergence",
+            DiagnosticSection(
+                id="finite_field_dc_validation_k_convergence",
                 title="k-point convergence",
                 description="Refinement in N_u and N_v only.",
-                claim="The reported conductivity is stable under refinement of N_u and N_v.",
-                evidence=(
-                    ("sigma component convergence", "dummy", "tensor components stabilize"),
-                    ("trace / norm convergence", "dummy", "robust scalar convergence metric"),
-                    ("weak-limit error convergence", "dummy", "small-field comparison is not grid artefact"),
-                    ("Vincent residual convergence", "dummy", "separate 3–4% residual from k-grid error"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_k_convergence_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** The reported conductivity is stable under refinement of N_u and N_v.
+
+This first implementation checks the grid-measure part of that claim on a periodic analytic velocity-square average. It is not yet a dataset-backed conductivity convergence table, but it does exercise the normalisation convention before the stronger conductivity comparison is wired in.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_k_convergence_table",
+                        title="k-point convergence metrics",
+                        description="First real k-grid convergence table for the finite-field validation diagnostic.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_k_convergence_rows(k_convergence_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_k_convergence_placeholders",
+                        title="Remaining placeholders",
+                        description="Dataset-backed convergence still required for the full finite-field validation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("sigma component convergence", "pending")),
+                            TableRow(("trace / norm convergence", "pending")),
+                            TableRow(("weak-limit error convergence", "pending")),
+                            TableRow(("Vincent residual convergence", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("N_u,N_v convergence plot", "relative-to-finest table", "component convergence table"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_symmetry",
