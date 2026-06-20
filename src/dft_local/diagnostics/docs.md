@@ -139,7 +139,18 @@ The default export route is:
 
     /d-export/<diagnostic_id>
 
-The route writes to:
+The same export can be run from the command line:
+
+    dft-local export-typst <diagnostic_id>
+
+Useful options:
+
+    dft-local export-typst <diagnostic_id> --input name=value
+    dft-local export-typst <diagnostic_id> --root test_run/run_dir/data
+    dft-local export-typst <diagnostic_id> --out /tmp/my_bundle
+    dft-local export-typst <diagnostic_id> --no-context
+
+The default route and default CLI output write to:
 
     diagnostic_bundles/<diagnostic_id_with_underscores>/
 
