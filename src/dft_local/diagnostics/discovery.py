@@ -13,6 +13,7 @@ from dft_local.core.discovery import collect_from_modules, require_unique
 
 
 DEFAULT_DIAGNOSTIC_MODULES = (
+    "dft_local.dataset.diagnostics",
     "dft_local.testsuite.diagnostics",
     "dft_local.transport.boltzmann.calculation.diagnostics",
     "dft_local.transport.boltzmann.ashcroft_comparison.diagnostics",
