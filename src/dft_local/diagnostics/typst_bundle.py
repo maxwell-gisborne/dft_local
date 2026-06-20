@@ -534,13 +534,30 @@ class _BundleWriter:
             "// Editable Typst diagnostic report entrypoint.\n"
             "// Regenerate with `dft-local bundle . --refresh-root` if the section shell should be reset.\n"
             '#import "generated/components.typ": *\n\n'
-            f"= {_typst_content(self.result.title)}\n\n"
-            f"{_typst_content(self.result.summary)}\n\n"
+            '''
+                #set page(
+                    paper:"a4",
+                    margin:(top: 1cm, bottom: 1cm, x:1cm),
+                    numbering: "1 of 1"
+                 )
+                 #set heading(numbering:"1.1 § ")
+                 #show title: set text(size: 17pt)
+                #show title: set align(center)
+            '''
+            f"#title[{_typst_content(self.result.title)}]\n\n"
+            f'''
+            #align(center)[
+            #set par(justify: false)
+                *Summary* \\
+                {_typst_content(self.result.summary)}
+            ]
+            '''
             "#block[\n"
             "  *Provenance*\\\n"
             "  Created: #str(manifest.provenance.created_at)\\\n"
             "  Commit: #str(manifest.provenance.code_commit)\n"
             "]\n\n"
+            "#outline()\n"
             f"{calls}\n"
         )
         target.write_text(text)
