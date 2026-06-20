@@ -463,19 +463,15 @@ def table_json_header_value(header: object) -> str:
 
 
 def table_json_cell_value(value: object) -> object:
-    """Return a JSON-safe table cell while preserving semantic display values."""
+    """Value stored in the HTML copy-as-JSON table payload.
+
+    This is intentionally simpler than the Typst bundle JSON format.  The copy
+    button should return readable table records, not renderer-internal quantity
+    metadata.
+    """
 
     if isinstance(value, DisplayQuantity):
-        unit = getattr(value, "unit", None)
-        return {
-            "kind": "quantity",
-            "value": float(value.value),
-            "name": getattr(value, "name", ""),
-            "dimension": str(getattr(value, "dimension", "")),
-            "unit": str(unit) if unit is not None else "",
-            "unit_symbol": display_unit_symbol(unit) if unit is not None else "",
-            "raw_unit_symbol": getattr(unit, "symbol", str(unit) if unit is not None else ""),
-        }
+        return float(value.value)
 
     if isinstance(value, RichText):
         return "".join(str(table_json_cell_value(part)) for part in value.parts)
@@ -483,10 +479,13 @@ def table_json_cell_value(value: object) -> object:
     if isinstance(value, TypstMath):
         return value.source
 
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, bool) or value is None:
         return value
 
-    return fmt(value)
+    if isinstance(value, (int, float)):
+        return fmt(value)
+
+    return str(value)
 
 
 def table_records_json(table: Table) -> str:
