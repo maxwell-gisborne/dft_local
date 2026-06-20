@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dft_local.dataset.diagnostics import compute_geometry_overview, compute_matrix_overview, compute_overview, diagnostics
+from dft_local.dataset.diagnostics import compute_geometry_overview, compute_kernel_overview, compute_matrix_overview, compute_overview, diagnostics
 from dft_local.diagnostics.models import DiagnosticSpec
 
 
@@ -79,3 +79,32 @@ def test_dataset_diagnostics_exports_matrix_spec() -> None:
     specs = {spec.id: spec for spec in diagnostics()}
 
     assert isinstance(specs["matrix.overview"], DiagnosticSpec)
+
+
+
+def test_kernel_overview_handles_missing_context() -> None:
+    result = compute_kernel_overview(None, {"kernel_choice": "average_star"})
+
+    assert result.title == "Kernel overview"
+    assert "No diagnostic context" in result.summary
+    assert result.cards[0].status == "warn"
+
+
+def test_kernel_overview_renders_loaded_context() -> None:
+    from dft_local.diagnostics.server import load_default_context
+
+    result = compute_kernel_overview(
+        load_default_context("test_run/run_dir/data"),
+        {"kernel_choice": "average_star"},
+    )
+
+    assert "Kernel choice" in result.summary or "kernel choice" in result.summary
+    assert result.cards[0].label == "kernel choice"
+    assert result.cards[1].label == "H support"
+    assert any(section.id == "kernel_support_balance" for section in result.sections)
+
+
+def test_dataset_diagnostics_exports_kernel_spec() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+
+    assert isinstance(specs["kernel.overview"], DiagnosticSpec)

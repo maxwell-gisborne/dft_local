@@ -11,6 +11,7 @@ from dft_local.diagnostics.models import (
     DiagnosticResult,
     DiagnosticSection,
     DiagnosticSpec,
+    InputSpec,
     Table,
     TableRow,
 )
@@ -452,6 +453,169 @@ def compute_matrix_overview(ctx: Any, inputs: dict[str, object]) -> DiagnosticRe
     )
 
 
+
+def _kernel_label_range(K: Any) -> tuple[int | None, int | None, int | None, int | None]:
+    if K.support_size == 0:
+        return None, None, None, None
+    return int(np.min(K.h_m)), int(np.max(K.h_m)), int(np.min(K.h_n)), int(np.max(K.h_n))
+
+
+def _kernel_summary_row(label: str, K: Any) -> tuple[object, ...]:
+    diag = K.diagnostics()
+    star = K.star_defect()
+    m_min, m_max, n_min, n_max = _kernel_label_range(K)
+
+    return (
+        label,
+        diag["matrix_name"],
+        diag["support_size"],
+        diag["blocksize"],
+        diag["num_even"],
+        diag["num_odd"],
+        m_min,
+        m_max,
+        n_min,
+        n_max,
+        diag["norm_min"],
+        diag["norm_median"],
+        diag["norm_max"],
+        star["num_missing_inverse"],
+        star["star_defect_max"],
+        star["star_defect_mean"],
+        star["star_defect_median"],
+    )
+
+
+def _kernel_choice(inputs: dict[str, object]) -> str:
+    choice = str(inputs.get("kernel_choice", "average_star"))
+    allowed = {"anchored", "anchored_star", "average", "average_star"}
+    if choice not in allowed:
+        raise ValueError(f"kernel_choice must be one of {sorted(allowed)}, got {choice!r}")
+    return choice
+
+
+def compute_kernel_overview(ctx: Any, inputs: dict[str, object]) -> DiagnosticResult:
+    """Summarise selected H/S local G_d kernels."""
+
+    choice = _kernel_choice(inputs)
+
+    if ctx is None:
+        return DiagnosticResult(
+            title="Kernel overview",
+            summary="No diagnostic context was provided.",
+            cards=(
+                Card("context", "missing", "warn", "Run with a loaded data root to inspect kernels."),
+                Card("kernel choice", choice, "ok", "Requested kernel variant."),
+            ),
+            sections=(
+                DiagnosticSection(
+                    id="kernel_missing_context",
+                    title="Missing context",
+                    tables=(
+                        _table(
+                            id="kernel_missing_context_table",
+                            title="Context status",
+                            description="Kernel overview needs a loaded DiagnosticContext.",
+                            rows=[
+                                ("context", "missing"),
+                                ("expected", "DiagnosticContext from load_default_context(root)"),
+                                ("kernel choice", choice),
+                            ],
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    KH, KS = ctx.kernels(choice)
+    h_star = KH.star_defect()
+    s_star = KS.star_defect()
+
+    h_status = "ok" if (h_star["num_missing_inverse"] == 0 and (h_star["star_defect_max"] or 0.0) < 1e-8) else "warn"
+    s_status = "ok" if (s_star["num_missing_inverse"] == 0 and (s_star["star_defect_max"] or 0.0) < 1e-8) else "warn"
+
+    return DiagnosticResult(
+        title="Kernel overview",
+        summary=(
+            f"Kernel choice {choice!r}: H support {KH.support_size}, "
+            f"S support {KS.support_size}, blocksize {KH.blocksize}."
+        ),
+        cards=(
+            Card("kernel choice", choice, "ok", "Selected kernel variant."),
+            Card("H support", KH.support_size, "ok", "Number of H kernel support labels."),
+            Card("S support", KS.support_size, "ok", "Number of S kernel support labels."),
+            Card("H star defect max", h_star["star_defect_max"], h_status, "Maximum relative K(h) - K(h^-1)† defect."),
+            Card("S star defect max", s_star["star_defect_max"], s_status, "Maximum relative K(h) - K(h^-1)† defect."),
+        ),
+        sections=(
+            DiagnosticSection(
+                id="kernel_summary",
+                title="Kernel summary",
+                tables=(
+                    _table(
+                        id="kernel_summary_table",
+                        title="Selected H/S kernels",
+                        description="Support, label ranges, block norms, and star-defect diagnostics for the selected kernel variant.",
+                        headers=(
+                            "kernel",
+                            "matrix name",
+                            "support",
+                            "blocksize",
+                            "even",
+                            "odd",
+                            "m min",
+                            "m max",
+                            "n min",
+                            "n max",
+                            "norm min",
+                            "norm median",
+                            "norm max",
+                            "missing inverse",
+                            "star defect max",
+                            "star defect mean",
+                            "star defect median",
+                        ),
+                        rows=[
+                            _kernel_summary_row("H", KH),
+                            _kernel_summary_row("S", KS),
+                        ],
+                        numeric={2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16},
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="kernel_support_balance",
+                title="Support balance",
+                tables=(
+                    _table(
+                        id="kernel_support_balance_table",
+                        title="Even/odd support split",
+                        description="Support count split by the G_d eps label.",
+                        headers=("kernel", "even", "odd", "total", "odd fraction"),
+                        rows=[
+                            (
+                                "H",
+                                int(np.sum(KH.h_eps == 0)),
+                                int(np.sum(KH.h_eps == 1)),
+                                KH.support_size,
+                                float(np.sum(KH.h_eps == 1) / KH.support_size) if KH.support_size else 0.0,
+                            ),
+                            (
+                                "S",
+                                int(np.sum(KS.h_eps == 0)),
+                                int(np.sum(KS.h_eps == 1)),
+                                KS.support_size,
+                                float(np.sum(KS.h_eps == 1) / KS.support_size) if KS.support_size else 0.0,
+                            ),
+                        ],
+                        numeric={1, 2, 3, 4},
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 def diagnostics() -> tuple[DiagnosticSpec, ...]:
     return (
         DiagnosticSpec(
@@ -477,5 +641,26 @@ def diagnostics() -> tuple[DiagnosticSpec, ...]:
             description="Sparse H/S BSR structure, support overlap, and global Hermiticity summary.",
             inputs=(),
             compute=compute_matrix_overview,
+        ),
+        DiagnosticSpec(
+            id="kernel.overview",
+            group="kernel",
+            title="Kernel overview",
+            description="Local G_d H/S kernel support, block norms, label ranges, and star-defect summary.",
+            inputs=(
+                InputSpec(
+                    "kernel_choice",
+                    "Kernel choice",
+                    "select",
+                    "average_star",
+                    options=(
+                        ("anchored", "anchored"),
+                        ("anchored_star", "anchored star"),
+                        ("average", "average"),
+                        ("average_star", "average star"),
+                    ),
+                ),
+            ),
+            compute=compute_kernel_overview,
         ),
     )
