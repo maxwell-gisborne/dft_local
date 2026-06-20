@@ -22,7 +22,7 @@ import shutil
 import subprocess
 from typing import Any, Literal
 
-from dft_local.core.units import DisplayQuantity
+from dft_local.core.units import DisplayQuantity, display_unit_symbol
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -513,6 +513,7 @@ def _write_fallback_typst_lib(target: Path) -> None:
         '#let diagnostic-note(body) = block[#body]\n'
     )
     (target / "tables.typ").write_text(
+        '#import "@preview/zero:0.6.1": num, zi\n\n'
         '#let diagnostic-table(data) = {\n'
         '  let columns = data.headers\n'
         '  table(\n'
@@ -907,7 +908,16 @@ def _escape_typst_text(value: str) -> str:
 
 def _json_value(value: Any) -> Any:
     if isinstance(value, DisplayQuantity):
-        return float(value.value)
+        unit = getattr(value, "unit", None)
+        return {
+            "kind": "quantity",
+            "value": float(value.value),
+            "name": getattr(value, "name", ""),
+            "dimension": str(getattr(value, "dimension", "")),
+            "unit": str(unit) if unit is not None else "",
+            "unit_symbol": display_unit_symbol(unit) if unit is not None else "",
+            "raw_unit_symbol": getattr(unit, "symbol", str(unit) if unit is not None else ""),
+        }
     if isinstance(value, (RichText, TypstMath)):
         return _plain_text(value)
     if is_dataclass(value):
