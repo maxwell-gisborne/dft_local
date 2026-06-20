@@ -13,13 +13,14 @@ import subprocess
 import tempfile
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, quote
+from urllib.parse import parse_qs, quote, urlencode
 from wsgiref.simple_server import make_server
 import os
 
 from dft_local.diagnostics.discovery import load_diagnostics
-from dft_local.diagnostics.models import InputParseError, parse_inputs
+from dft_local.diagnostics.models import InputParseError, parse_inputs, serialize_inputs
 from dft_local.diagnostics.render import render_page, render_result
+from dft_local.diagnostics.typst_bundle import export_typst_bundle
 
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 DOCS_ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +83,10 @@ class DiagnosticApp:
                 body = self.diagnostic_run_stream(diagnostic_id, raw_inputs)
                 status = "200 OK"
                 content_type = "text/event-stream; charset=utf-8"
+            elif path.startswith("/d-export/"):
+                diagnostic_id = path.removeprefix("/d-export/")
+                body = self.diagnostic_typst_export_page(diagnostic_id, raw_inputs)
+                status = "200 OK"
             elif path.startswith("/d/"):
                 diagnostic_id = path.removeprefix("/d/")
                 body = self.diagnostic_page(diagnostic_id, raw_inputs)
@@ -335,13 +340,45 @@ class DiagnosticApp:
         if doc_id in self.discover_docs():
             doc_link = f" · <a href='/docs/{escape(doc_id)}'>docs</a>"
 
+        export_query = urlencode(serialize_inputs(spec, inputs))
+        export_href = f"/d-export/{quote(spec.id)}"
+        if export_query:
+            export_href += f"?{export_query}"
+
         form = self.form(spec, inputs)
         body = (
-            f"<nav><a href='/'>index</a>{doc_link}</nav>"
+            f"<nav><a href='/'>index</a>{doc_link} · <a href='{escape(export_href)}'>export Typst bundle</a></nav>"
             f"{form}"
             f"{self.result_outlet(render_result(result))}"
         )
         return render_page(spec.title, body)
+
+    def diagnostic_typst_export_page(self, diagnostic_id: str, raw_inputs: dict[str, str]) -> str:
+        spec = self.specs[diagnostic_id]
+        inputs = parse_inputs(spec, raw_inputs)
+        result = spec.compute(self.ctx, inputs)
+        out_dir = Path("diagnostic_bundles") / diagnostic_id.replace(".", "_")
+        export_typst_bundle(
+            result,
+            out_dir,
+            report_id=diagnostic_id.replace(".", "_"),
+            title=spec.title,
+        )
+        rel = escape(str(out_dir))
+        body = (
+            "<nav><a href='/'>index</a> · "
+            f"<a href='/d/{escape(diagnostic_id)}'>diagnostic</a></nav>"
+            "<h1>Typst diagnostic bundle exported</h1>"
+            f"<p>Wrote <code>{rel}</code>.</p>"
+            "<ul>"
+            f"<li><code>{rel}/diagnostics.typ</code></li>"
+            f"<li><code>{rel}/components.typ</code></li>"
+            f"<li><code>{rel}/manifest.json</code></li>"
+            f"<li><code>{rel}/diagnostics.json</code></li>"
+            f"<li><code>{rel}/data/</code></li>"
+            "</ul>"
+        )
+        return render_page(f"export · {spec.title}", body)
 
     def diagnostic_run_stream(self, diagnostic_id: str, raw_inputs: dict[str, str]) -> str:
         spec = self.specs[diagnostic_id]

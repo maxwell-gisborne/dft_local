@@ -459,7 +459,7 @@ _PLAIN_NUMBER_RE = re.compile(
 def table_json_header_value(header: object) -> str:
     # Headers are display labels. For JSON copy, drop bracketed display units
     # such as "T [K]" or "E [V/m]" so copied keys name the quantity only.
-    return re.sub(r"\\s*\\[[^\\]]+\\]\\s*$", "", str(header))
+    return re.sub(r"\s*\[[^\]]+\]\s*$", "", str(header))
 
 
 def table_json_cell_value(value: object) -> object:
