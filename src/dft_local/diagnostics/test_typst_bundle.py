@@ -12,7 +12,7 @@ from dft_local.diagnostics.models import (
     TableRow,
     WebGLView,
 )
-from dft_local.diagnostics.typst_bundle import export_typst_bundle
+from dft_local.diagnostics.typst_bundle import default_typst_lib_source, export_typst_bundle
 
 
 def test_typst_bundle_exports_manifest_components_and_data(tmp_path: Path) -> None:
@@ -66,7 +66,10 @@ def test_typst_bundle_exports_manifest_components_and_data(tmp_path: Path) -> No
     assert (out / "manifest.json").exists()
     assert (out / "diagnostics.typ").exists()
     assert (out / "components.typ").exists()
+    assert not (out / "lib").is_symlink()
     assert (out / "lib" / "mod.typ").exists()
+    assert default_typst_lib_source().is_absolute()
+    assert default_typst_lib_source().exists()
     assert (out / "data" / "field_strength.json").exists()
     assert (out / "data" / "params.json").exists()
 
@@ -136,6 +139,7 @@ def test_diagnostic_app_exports_typst_bundle_route(tmp_path: Path, monkeypatch) 
     assert "Typst diagnostic bundle exported" in html
     assert (out / "diagnostics.typ").exists()
     assert (out / "components.typ").exists()
+    assert (out / "lib").is_symlink()
     assert (out / "manifest.json").exists()
     assert (out / "diagnostics.json").exists()
 

@@ -73,7 +73,7 @@ def default_provenance() -> dict[str, Any]:
 
 
 def default_typst_lib_source() -> Path:
-    return Path("typst-diagnostics-lib")
+    return Path(__file__).resolve().parents[3] / "typst-diagnostics-lib"
 
 
 def _git_head() -> str | None:
@@ -156,58 +156,17 @@ class _BundleWriter:
         self._ensure_default_lib(target)
 
     def _ensure_default_lib(self, target: Path) -> None:
-        (target / "mod.typ").write_text(
-            '#import "plots.typ": *\n'
-            '#import "tables.typ": *\n'
-            '#import "diagnostic.typ": *\n'
-        )
-        (target / "diagnostic.typ").write_text(
-            '#let diagnostic-figure(title: none, body, caption: none, caveats: ()) = {\n'
-            '  if title != none [*#title*]\n'
-            '  figure(body, caption: caption)\n'
-            '  if caveats.len() > 0 {\n'
-            '    block[\n'
-            '      *Caveats*\n'
-            '      #for caveat in caveats [- #caveat]\n'
-            '    ]\n'
-            '  }\n'
-            '}\n\n'
-            '#let diagnostic-note(body) = block[#body]\n'
-        )
-        (target / "tables.typ").write_text(
-            '#let diagnostic-table(data) = {\n'
-            '  let columns = data.headers\n'
-            '  table(\n'
-            '    columns: columns.len(),\n'
-            '    inset: 5pt,\n'
-            '    stroke: 0.5pt,\n'
-            '    ..columns.map(h => [*#h*]),\n'
-            '    ..data.rows.flatten().map(cell => [#str(cell)]),\n'
-            '  )\n'
-            '}\n'
-        )
-        (target / "plots.typ").write_text(
-            '#import "@preview/cetz:0.3.4"\n'
-            '#import "@preview/lilaq:0.4.0" as lq\n\n'
-            '#let line-graph(data) = {\n'
-            '  let series = data.series.map(s => (\n'
-            '    label: s.name,\n'
-            '    x: s.points.map(p => p.x),\n'
-            '    y: s.points.map(p => p.y),\n'
-            '  ))\n'
-            '  lq.diagram(\n'
-            '    width: 11cm,\n'
-            '    height: 6cm,\n'
-            '    xaxis: (label: data.x_label),\n'
-            '    yaxis: (label: data.y_label),\n'
-            '    ..series.map(s => lq.plot(s.x, s.y, label: s.label)),\n'
-            '  )\n'
-            '}\n\n'
-            '#let unsupported-view(data) = block[\n'
-            '  *Unsupported static view:* #data.title \\\n'
-            '  #data.description\n'
-            ']\n'
-        )
+        bundled_source = default_typst_lib_source()
+        if bundled_source.exists():
+            for child in bundled_source.iterdir():
+                dest = target / child.name
+                if child.is_dir():
+                    shutil.copytree(child, dest, dirs_exist_ok=True)
+                else:
+                    shutil.copy2(child, dest)
+            return
+
+        _write_fallback_typst_lib(target)
 
     def _write_diagnostics_json(self) -> None:
         _write_json(self.out_dir / "diagnostics.json", result_to_json_data(self.result))
@@ -473,6 +432,63 @@ class _BundleWriter:
         )
         (self.out_dir / "diagnostics.typ").write_text(text)
 
+
+
+def _write_fallback_typst_lib(target: Path) -> None:
+    """Write a minimal built-in Typst library when the project lib is absent."""
+
+    (target / "mod.typ").write_text(
+        '#import "plots.typ": *\n'
+        '#import "tables.typ": *\n'
+        '#import "diagnostic.typ": *\n'
+    )
+    (target / "diagnostic.typ").write_text(
+        '#let diagnostic-figure(title: none, body, caption: none, caveats: ()) = {\n'
+        '  if title != none [*#title*]\n'
+        '  figure(body, caption: caption)\n'
+        '  if caveats.len() > 0 {\n'
+        '    block[\n'
+        '      *Caveats*\n'
+        '      #for caveat in caveats [- #caveat]\n'
+        '    ]\n'
+        '  }\n'
+        '}\n\n'
+        '#let diagnostic-note(body) = block[#body]\n'
+    )
+    (target / "tables.typ").write_text(
+        '#let diagnostic-table(data) = {\n'
+        '  let columns = data.headers\n'
+        '  table(\n'
+        '    columns: columns.len(),\n'
+        '    inset: 5pt,\n'
+        '    stroke: 0.5pt,\n'
+        '    ..columns.map(h => [*#h*]),\n'
+        '    ..data.rows.flatten().map(cell => [#str(cell)]),\n'
+        '  )\n'
+        '}\n'
+    )
+    (target / "plots.typ").write_text(
+        '#import "@preview/cetz:0.3.4"\n'
+        '#import "@preview/lilaq:0.4.0" as lq\n\n'
+        '#let line-graph(data) = {\n'
+        '  let series = data.series.map(s => (\n'
+        '    label: s.name,\n'
+        '    x: s.points.map(p => p.x),\n'
+        '    y: s.points.map(p => p.y),\n'
+        '  ))\n'
+        '  lq.diagram(\n'
+        '    width: 11cm,\n'
+        '    height: 6cm,\n'
+        '    xaxis: (label: data.x_label),\n'
+        '    yaxis: (label: data.y_label),\n'
+        '    ..series.map(s => lq.plot(s.x, s.y, label: s.label)),\n'
+        '  )\n'
+        '}\n\n'
+        '#let unsupported-view(data) = block[\n'
+        '  *Unsupported static view:* #data.title \\\n'
+        '  #data.description\n'
+        ']\n'
+    )
 
 def result_to_json_data(result: DiagnosticResult) -> dict[str, Any]:
     return {
