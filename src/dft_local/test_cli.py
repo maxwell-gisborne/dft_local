@@ -17,3 +17,63 @@ def test_cli_parser_help_is_available(capsys) -> None:
 
     assert "serve" in out
     assert "test" in out
+
+
+
+def test_cli_help_lists_export_typst(capsys) -> None:
+    try:
+        cli.main(["--help"])
+    except SystemExit as exc:
+        assert exc.code == 0
+
+    out = capsys.readouterr().out
+
+    assert "export-typst" in out
+
+
+def test_cli_export_typst_command_writes_bundle(tmp_path, capsys, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    code = cli.main([
+        "export-typst",
+        "transport.boltzmann.calculation.overview",
+        "--no-context",
+    ])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "diagnostic_bundles/transport_boltzmann_calculation_overview" in out
+    assert (tmp_path / "diagnostic_bundles" / "transport_boltzmann_calculation_overview" / "diagnostics.typ").exists()
+
+
+def test_cli_export_typst_rejects_malformed_input(capsys) -> None:
+    code = cli.main([
+        "export-typst",
+        "transport.boltzmann.calculation.overview",
+        "--input",
+        "not-an-assignment",
+        "--no-context",
+    ])
+
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "expected name=value" in err
+
+
+
+def test_cli_export_typst_command_writes_custom_bundle(tmp_path, capsys) -> None:
+    out_dir = tmp_path / "custom_bundle"
+
+    code = cli.main([
+        "export-typst",
+        "transport.boltzmann.calculation.overview",
+        "--no-context",
+        "--out",
+        str(out_dir),
+    ])
+
+    assert code == 0
+    out = capsys.readouterr().out
+    assert str(out_dir) in out
+    assert (out_dir / "diagnostics.typ").exists()
+    assert (out_dir / "manifest.json").exists()
