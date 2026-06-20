@@ -1,29 +1,31 @@
 #import "@preview/zero:0.6.1": num, zi
 
-#let compact-number(x) = {
-  let ax = calc.abs(x)
-  if ax != 0 and (ax < 1e-4 or ax >= 1e5) {
-    str(x, base: 10)
-  } else {
-    str(calc.round(x * 1000000) / 1000000)
-  }
+#let diagnostic-num(x) = {
+  num(
+    x,
+    exponent: (sci: 3),
+    round: (mode: "figures", precision: 6, pad: false),
+  )
 }
 
 #let render-quantity(q) = {
-  let unit = if "unit_symbol" in q and q.unit_symbol != "" {
+  // Only use the clean display symbol. Do not fall back to q.unit,
+  // because q.unit is the Python repr Unit(...), not a Typst unit.
+  let unit = if "unit_symbol" in q {
     q.unit_symbol
-  } else if "unit" in q and q.unit != "" {
-    q.unit
   } else {
     ""
   }
 
-  let value = compact-number(q.value)
-  if unit == "" or unit == "None" {
-    num(value)
+  if unit == "" or unit == none or unit == "None" {
+    diagnostic-num(q.value)
   } else {
     let declared-unit = zi.declare(unit)
-    declared-unit[value]
+    declared-unit(
+      q.value,
+      exponent: (sci: 3),
+      round: (mode: "figures", precision: 6, pad: false),
+    )
   }
 }
 
@@ -35,7 +37,7 @@
   } else if x == none {
     "none"
   } else if type(x) == int or type(x) == float {
-    compact-number(x)
+    diagnostic-num(x)
   } else if type(x) == dictionary and "kind" in x {
     str(x.kind)
   } else {
