@@ -1013,6 +1013,84 @@ def finite_field_symmetry_sanity_probe(
         "dataset_automorphism_status": "pending H/S/H_star/S_star automorphism checks",
     }
 
+
+def finite_field_vincent_reconstruction_probe() -> dict[str, float | bool | str]:
+    """Summarise existing Vincent/Ashcroft reconstruction checks."""
+
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        band_indexed_strong_dc_from_velocity_grid,
+        conductivity_830_shifted_chain_rule_from_velocity_grid,
+        conductivity_from_epsilon_grid,
+        load_vincent_input_data,
+        vincent_delaunay_adjacent_simplex_velocity_probe,
+        vincent_reference,
+    )
+
+    reference = vincent_reference()
+    inputs = load_vincent_input_data()
+    ai = inputs.primitive_lattice_vectors_bohr
+    epsilon = inputs.epsilon_of_k
+    sigma_target = reference.expected_conductivity_S_per_m
+
+    local = conductivity_from_epsilon_grid(
+        epsilon,
+        ai,
+        chemical_potential_J=float(np.mean(epsilon) * ATOMIC_UNITS.energy.scale_to_si),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+    weak_sigma = local.conductivity_tensor_S * ((2.0 * np.pi) ** 2)
+    weak_trace = float(np.trace(weak_sigma))
+    target_trace = float(np.trace(sigma_target))
+    weak_trace_percent_error = 100.0 * (weak_trace - target_trace) / target_trace
+
+    strong = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        local.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+    strong_grid_sigma = strong.conductivity_tensor_S.real
+    strong_grid_trace = float(np.trace(strong_grid_sigma))
+    strong_grid_trace_percent_error = 100.0 * (strong_grid_trace - target_trace) / target_trace
+
+    shifted = conductivity_830_shifted_chain_rule_from_velocity_grid(
+        epsilon,
+        local.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=reference.electric_field_V_per_m,
+    )
+    shifted_sigma = shifted.conductivity_tensor_S * ((2.0 * np.pi) ** 2)
+    shifted_trace = float(np.trace(shifted_sigma))
+    shifted_trace_percent_error = 100.0 * (shifted_trace - target_trace) / target_trace
+
+    adjacent = vincent_delaunay_adjacent_simplex_velocity_probe(epsilon, ai)
+    find_simplex_max_error = max(float(row["find_simplex_error"]) for row in adjacent)
+    best_adjacent_max_error = max(float(row["best_adjacent_error"]) for row in adjacent)
+    velocity_error_reduction = find_simplex_max_error / best_adjacent_max_error
+
+    return {
+        "source": "existing Ashcroft/Vincent comparison domain",
+        "target_trace_S_per_m": float(target_trace),
+        "weak_chain_trace_S_per_m": float(weak_trace),
+        "weak_chain_trace_percent_error": float(weak_trace_percent_error),
+        "strong_grid_trace_S_per_m": float(strong_grid_trace),
+        "strong_grid_trace_percent_error": float(strong_grid_trace_percent_error),
+        "shifted_830_trace_S_per_m": float(shifted_trace),
+        "shifted_830_trace_percent_error": float(shifted_trace_percent_error),
+        "find_simplex_max_velocity_error_m_per_s": float(find_simplex_max_error),
+        "best_adjacent_max_velocity_error_m_per_s": float(best_adjacent_max_error),
+        "velocity_error_reduction": float(velocity_error_reduction),
+        "best_adjacent_matches_vincent": bool(best_adjacent_max_error < 1.0e-3),
+        "residual_status": "velocity samples resolved; conductivity residual remains formula/convention audit",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

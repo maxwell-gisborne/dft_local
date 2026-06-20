@@ -26,6 +26,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_analytic_toy_coverage_probe,
     finite_field_k_convergence_probe,
     finite_field_symmetry_sanity_probe,
+    finite_field_vincent_reconstruction_probe,
     operator_symbol_validation_probe,
 )
 
@@ -355,6 +356,24 @@ def _finite_field_symmetry_rows(probe: dict[str, object]) -> tuple[TableRow, ...
     )
 
 
+def _finite_field_vincent_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "reused comparison domain")),
+        TableRow(("Vincent target trace", _fmt_probe_value(probe["target_trace_S_per_m"]), "S/m")),
+        TableRow(("weak-chain trace", _fmt_probe_value(probe["weak_chain_trace_S_per_m"]), "S/m")),
+        TableRow(("weak-chain trace error %", _fmt_probe_value(probe["weak_chain_trace_percent_error"]), "residual")),
+        TableRow(("strong-grid trace", _fmt_probe_value(probe["strong_grid_trace_S_per_m"]), "S/m")),
+        TableRow(("strong-grid trace error %", _fmt_probe_value(probe["strong_grid_trace_percent_error"]), "separate spectral derivative residual")),
+        TableRow(("shifted Eq. 8.30 trace", _fmt_probe_value(probe["shifted_830_trace_S_per_m"]), "S/m")),
+        TableRow(("shifted Eq. 8.30 trace error %", _fmt_probe_value(probe["shifted_830_trace_percent_error"]), "hypothesis check")),
+        TableRow(("find-simplex max velocity error", _fmt_probe_value(probe["find_simplex_max_velocity_error_m_per_s"]), "m/s")),
+        TableRow(("best-adjacent max velocity error", _fmt_probe_value(probe["best_adjacent_max_velocity_error_m_per_s"]), "m/s")),
+        TableRow(("velocity error reduction", _fmt_probe_value(probe["velocity_error_reduction"]), "large")),
+        TableRow(("best adjacent matches Vincent", _fmt_probe_value(probe["best_adjacent_matches_vincent"]), "True")),
+        TableRow(("residual status", _fmt_probe_value(probe["residual_status"]), "audit note")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -536,6 +555,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     analytic_toy_probe = finite_field_analytic_toy_coverage_probe()
     k_convergence_probe = finite_field_k_convergence_probe()
     symmetry_probe = finite_field_symmetry_sanity_probe()
+    vincent_probe = finite_field_vincent_reconstruction_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -693,18 +713,40 @@ This first implementation uses the separable cosine production-symbol toy. It va
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_vincent_reconstruction",
+            DiagnosticSection(
+                id="finite_field_dc_validation_vincent_reconstruction",
                 title="Vincent reconstruction",
-                description="External reconstruction and residual audit.",
-                claim="With Vincent's inputs, the implementation reconstructs his DC calculation once reciprocal-space normalization is audited; the remaining few-percent discrepancy is separated into derivative, interpolation, and k-sampling hypotheses.",
-                evidence=(
-                    ("2π normalization audit", "dummy", "show right and wrong placements against analytic inputs"),
-                    ("Vincent tensor reconstruction", "dummy", "compare target and reproduced tensor"),
-                    ("residual 3–4% hypothesis scan", "dummy", "separate remaining numerical/model choices"),
-                    ("Fermi window / mu check", "dummy", "rule out simple input mismatch"),
+                description="Reconstructs Vincent's reference calculation and isolates convention differences.",
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_vincent_reconstruction_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** The implementation reconstructs Vincent's reference calculation when the same dispersion, units, interpolation convention, k-grid measure, temperature, chemical potential, and relaxation time are used.
+
+This first finite-field validation section reuses the existing Ashcroft/Vincent comparison domain. It exposes the current reconstruction status directly inside the finite-field ladder: velocity samples are resolved by adjacent-simplex Delaunay ambiguity, while the conductivity residual remains a formula/convention audit item.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_vincent_reconstruction_table",
+                        title="Vincent reconstruction metrics",
+                        description="Summary of existing Ashcroft/Vincent reconstruction checks.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_vincent_rows(vincent_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_vincent_reconstruction_placeholders",
+                        title="Remaining placeholders",
+                        description="Reconstruction checks still to wire directly into this finite-field validation domain.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("component-level Vincent tensor table", "pending")),
+                            TableRow(("2π/grid-measure audit rows", "pending")),
+                            TableRow(("chemical-potential convention sweep", "pending")),
+                            TableRow(("direct finite-field reproduction against Vincent inputs", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("2π audit table", "Vincent tensor comparison", "residual hypothesis table", "mu scan"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_strong_dc_validation",
