@@ -73,18 +73,27 @@ Follow-up:
 
 ### Kernel overview
 
-Status: missing
+Status: implemented
+
+Diagnostic id: `kernel.overview`
 
 Inputs:
 
-- kernel choice
+- kernel choice: `anchored`, `anchored_star`, `average`, `average_star`
 
-Show:
+Shows:
 
 - support size
 - matrix block shape
+- even/odd support split
+- label ranges
+- block norm summary
 - star-defect diagnostics
-- Hermiticity diagnostics
+
+Follow-up:
+
+- add sampled symbol Hermiticity diagnostics at selected k-points
+- add worst star-defect rows from `star_defect_table_filtered`
 
 ### Symbol point
 
