@@ -21,6 +21,7 @@ from dft_local.transport.boltzmann.validation.core import (
     gd_symbol_production_validation_probe,
     finite_field_input_health_probe,
     finite_field_band_crossing_hazard_probe,
+    finite_field_velocity_validation_probe,
     operator_symbol_validation_probe,
 )
 
@@ -263,6 +264,27 @@ def _finite_field_band_hazard_rows(probe: dict[str, object]) -> tuple[TableRow, 
     )
 
 
+def _finite_field_velocity_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
+        TableRow(("k1", _fmt_probe_value(probe["k1"]), "sample point")),
+        TableRow(("k2", _fmt_probe_value(probe["k2"]), "sample point")),
+        TableRow(("analytic dE/dk1", _fmt_probe_value(probe["analytic_dk1"]), "reference")),
+        TableRow(("analytic dE/dk2", _fmt_probe_value(probe["analytic_dk2"]), "reference")),
+        TableRow(("production derivative dk1 error", _fmt_probe_value(probe["production_dk1_abs_error"]), "near 0")),
+        TableRow(("production derivative dk2 error", _fmt_probe_value(probe["production_dk2_abs_error"]), "near 0")),
+        TableRow(("finite-difference dk1 error", _fmt_probe_value(probe["finite_difference_dk1_abs_error"]), "near finite-difference precision")),
+        TableRow(("finite-difference dk2 error", _fmt_probe_value(probe["finite_difference_dk2_abs_error"]), "near finite-difference precision")),
+        TableRow(("Hellmann-Feynman dk1 error", _fmt_probe_value(probe["hellmann_feynman_dk1_abs_error"]), "near 0")),
+        TableRow(("Hellmann-Feynman dk2 error", _fmt_probe_value(probe["hellmann_feynman_dk2_abs_error"]), "near 0")),
+        TableRow(("generic/fixed symbol error", _fmt_probe_value(probe["generic_fixed_symbol_abs_error"]), "near 0")),
+        TableRow(("generic/fixed dk1 error", _fmt_probe_value(probe["generic_fixed_dk1_abs_error"]), "near 0")),
+        TableRow(("generic/fixed dk2 error", _fmt_probe_value(probe["generic_fixed_dk2_abs_error"]), "near 0")),
+        TableRow(("unit scaling status", _fmt_probe_value(probe["unit_scaling_status"]), "pending")),
+        TableRow(("Vincent velocity status", _fmt_probe_value(probe["vincent_velocity_status"]), "pending")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -439,6 +461,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
         n_u=int(inputs.get("n_u", 11)),
         n_v=int(inputs.get("n_v", 11)),
     )
+    velocity_probe = finite_field_velocity_validation_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -561,19 +584,40 @@ This first implementation uses a periodic two-level Dirac-like toy model. It is 
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_velocity_validation",
+            DiagnosticSection(
+                id="finite_field_dc_validation_velocity_validation",
                 title="Velocity validation",
-                description="Checks velocity before it is used inside conductivity.",
-                claim="The velocity implementation agrees with periodic analytic inputs, finite-difference checks, unit scaling, Gamma reconstruction, and Vincent's velocity field under matched inputs.",
-                evidence=(
-                    ("constant and cosine analytic bands", "dummy", "known periodic velocity outputs"),
-                    ("finite-difference velocity comparison", "dummy", "local numerical derivative check"),
-                    ("velocity unit scaling", "dummy", "energy-length-over-hbar scaling"),
-                    ("Gamma modal reconstruction", "dummy", "local mode sum reconstructs velocity/current ingredient"),
-                    ("Vincent velocity field comparison", "dummy", "external velocity contact point"),
+                description="Checks the band velocity used by conductivity before conductivity is tested.",
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_velocity_validation_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** Band velocities agree across analytic derivatives, finite differences, generalized Hellmann-Feynman derivatives, and fixed/generic symbol conventions.
+
+This first implementation uses the separable cosine production-symbol toy. It validates the derivative machinery that finite-field conductivity will reuse. Modal Gamma reconstruction, Vincent velocity comparison, and physical unit scaling remain explicit pending rows rather than hidden assumptions.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_velocity_validation_table",
+                        title="Velocity validation metrics",
+                        description="First real velocity table for the finite-field validation diagnostic.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_velocity_rows(velocity_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_velocity_validation_placeholders",
+                        title="Remaining placeholders",
+                        description="Dataset-backed and Vincent-backed checks still to replace the toy-backed first implementation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("Gamma modal reconstruction", "pending")),
+                            TableRow(("Vincent velocity comparison table", "pending")),
+                            TableRow(("physical hbar/unit-context scaling", "pending")),
+                            TableRow(("velocity k-map", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("analytic velocity table", "finite-difference scatter", "Gamma closure table", "Vincent velocity comparison"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_vincent_reconstruction",

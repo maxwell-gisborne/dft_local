@@ -700,6 +700,85 @@ def finite_field_band_crossing_hazard_probe(
         "max_gap_neighbour_jump": float(max_gap_jump),
     }
 
+
+def finite_difference_fixed_symbol_derivative(
+    kernel: GdKernelArrays,
+    k1: float,
+    k2: float,
+    *,
+    sigma: int,
+    axis: int,
+    eps: float = 1.0e-6,
+) -> np.ndarray:
+    """Central finite-difference derivative of the fixed representation symbol."""
+
+    if axis == 0:
+        plus = kernel.symbol_fixed(k1 + eps, k2, sigma=sigma)
+        minus = kernel.symbol_fixed(k1 - eps, k2, sigma=sigma)
+    elif axis == 1:
+        plus = kernel.symbol_fixed(k1, k2 + eps, sigma=sigma)
+        minus = kernel.symbol_fixed(k1, k2 - eps, sigma=sigma)
+    else:
+        raise ValueError(f"axis must be 0 or 1, got {axis}")
+
+    return (plus - minus) / (2.0 * eps)
+
+
+def finite_field_velocity_validation_probe() -> dict[str, float | str]:
+    """Validate velocity ingredients on a controlled analytic production toy."""
+
+    c0 = 1.25
+    c1 = 0.70
+    c2 = -0.30
+    k1 = 0.37
+    k2 = -0.44
+    eps = 1.0e-6
+
+    KH = gd_separable_cosine_kernel(c0=c0, c1=c1, c2=c2)
+    KS = gd_identity_overlap_kernel()
+
+    expected_dk1 = expected_separable_cosine_derivative(k1, k2, axis=0, c1=c1, c2=c2)
+    expected_dk2 = expected_separable_cosine_derivative(k1, k2, axis=1, c1=c1, c2=c2)
+
+    fixed_dk1 = gd_symbol_derivative_fixed(KH, k1, k2, sigma=1, axis=0)
+    fixed_dk2 = gd_symbol_derivative_fixed(KH, k1, k2, sigma=1, axis=1)
+
+    fd_dk1 = finite_difference_fixed_symbol_derivative(KH, k1, k2, sigma=1, axis=0, eps=eps)
+    fd_dk2 = finite_difference_fixed_symbol_derivative(KH, k1, k2, sigma=1, axis=1, eps=eps)
+
+    pair = SymbolPair(KH=KH, KS=KS, k1=k1, k2=k2, degree=1, sigma=1)
+    problem = pair.form()
+    energies, vectors = problem.eigensystem()
+    dH = gd_symbol_derivatives(pair, KH)
+    dS = gd_symbol_derivatives(pair, KS)
+
+    u = vectors[:, 0]
+    E = float(energies[0])
+    hf_dk1 = float(np.real(np.vdot(u, (dH[0] - E * dS[0]) @ u)))
+    hf_dk2 = float(np.real(np.vdot(u, (dH[1] - E * dS[1]) @ u)))
+
+    generic_symbol_probe = gd_symbol_production_validation_probe()
+
+    return {
+        "source": "separable cosine production symbol toy",
+        "k1": float(k1),
+        "k2": float(k2),
+        "finite_difference_eps": float(eps),
+        "analytic_dk1": float(expected_dk1),
+        "analytic_dk2": float(expected_dk2),
+        "production_dk1_abs_error": float(abs(fixed_dk1[0, 0].real - expected_dk1)),
+        "production_dk2_abs_error": float(abs(fixed_dk2[0, 0].real - expected_dk2)),
+        "finite_difference_dk1_abs_error": float(abs(fd_dk1[0, 0].real - expected_dk1)),
+        "finite_difference_dk2_abs_error": float(abs(fd_dk2[0, 0].real - expected_dk2)),
+        "hellmann_feynman_dk1_abs_error": float(abs(hf_dk1 - expected_dk1)),
+        "hellmann_feynman_dk2_abs_error": float(abs(hf_dk2 - expected_dk2)),
+        "generic_fixed_symbol_abs_error": float(generic_symbol_probe["generic_symbol_channel_abs_error"]),
+        "generic_fixed_dk1_abs_error": float(generic_symbol_probe["generic_dk1_channel_abs_error"]),
+        "generic_fixed_dk2_abs_error": float(generic_symbol_probe["generic_dk2_channel_abs_error"]),
+        "unit_scaling_status": "pending physical hbar/unit-context check",
+        "vincent_velocity_status": "pending Vincent field comparison",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

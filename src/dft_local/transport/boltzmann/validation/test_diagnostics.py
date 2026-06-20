@@ -532,3 +532,56 @@ def test_finite_field_dc_band_crossing_section_contains_real_metrics() -> None:
     assert rows["sample count"] == "100"
     assert rows["has hazard"] == "True"
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_velocity_validation_probe_checks_derivatives() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_velocity_validation_probe,
+    )
+
+    probe = finite_field_velocity_validation_probe()
+
+    assert probe["production_dk1_abs_error"] < 1.0e-12
+    assert probe["production_dk2_abs_error"] < 1.0e-12
+    assert probe["finite_difference_dk1_abs_error"] < 1.0e-9
+    assert probe["finite_difference_dk2_abs_error"] < 1.0e-9
+    assert probe["hellmann_feynman_dk1_abs_error"] < 1.0e-12
+    assert probe["hellmann_feynman_dk2_abs_error"] < 1.0e-12
+    assert probe["generic_fixed_symbol_abs_error"] < 1.0e-12
+    assert probe["generic_fixed_dk1_abs_error"] < 1.0e-12
+    assert probe["generic_fixed_dk2_abs_error"] < 1.0e-12
+
+
+def test_finite_field_dc_velocity_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_velocity_validation"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_velocity_validation_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_velocity_validation_table"].rows
+    }
+
+    assert rows["production derivative dk1 error"] == "0.00000000e+00"
+    assert rows["Hellmann-Feynman dk1 error"] == "0.00000000e+00"
+    assert "dummy" not in set(rows.values())
