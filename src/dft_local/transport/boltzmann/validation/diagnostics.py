@@ -19,6 +19,7 @@ from dft_local.transport.boltzmann.validation.core import (
     validation_summary,
     weighted_outer_product_tensor,
     gd_symbol_production_validation_probe,
+    finite_field_input_health_probe,
     operator_symbol_validation_probe,
 )
 
@@ -215,6 +216,34 @@ A tensor of the form `sum_k w_k v(k) v(k)^T` with non-negative weights must be s
     )
 
 
+def _fmt_probe_value(value) -> str:
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return f"{value:.8e}"
+    if value is None:
+        return "None"
+    return str(value)
+
+
+def _finite_field_input_health_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
+        TableRow(("sample count", _fmt_probe_value(probe["sample_count"]), "N_u × N_v")),
+        TableRow(("symmetrization", _fmt_probe_value(probe["symmetrization"]), "selected input")),
+        TableRow(("H kernel star defect max", _fmt_probe_value(probe["h_star_defect_max"]), "near 0")),
+        TableRow(("S kernel star defect max", _fmt_probe_value(probe["s_star_defect_max"]), "near 0")),
+        TableRow(("H(k) Hermiticity defect rel max", _fmt_probe_value(probe["h_hermitian_defect_rel_max"]), "near 0")),
+        TableRow(("S(k) Hermiticity defect rel max", _fmt_probe_value(probe["s_hermitian_defect_rel_max"]), "near 0")),
+        TableRow(("min eig S(k)", _fmt_probe_value(probe["s_eig_min"]), "> 1e-10")),
+        TableRow(("max cond S(k)", _fmt_probe_value(probe["s_condition_number_abs_max"]), "finite")),
+        TableRow(("S positive", _fmt_probe_value(probe["s_positive"]), "True")),
+        TableRow(("max neighbour energy jump", _fmt_probe_value(probe["energy_neighbour_jump_max"]), "smoothness proxy")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -382,6 +411,11 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     )
 
     input_rows = _finite_field_dc_input_rows(inputs)
+    input_health_probe = finite_field_input_health_probe(
+        n_u=int(inputs.get("n_u", 11)),
+        n_v=int(inputs.get("n_v", 11)),
+        symmetrization=str(inputs.get("symmetrization", "star")),
+    )
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -435,19 +469,39 @@ The `2π` normalization is listed explicitly because it changes the physical con
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_input_health",
+            DiagnosticSection(
+                id="finite_field_dc_validation_input_health",
                 title="Input health",
                 description="Algebraic and sampling checks for starred H and S symbols.",
-                claim="The starred Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.",
-                evidence=(
-                    ("H_star(k) Hermiticity defect", "dummy", "reject damaged Hamiltonian symbols"),
-                    ("S_star(k) Hermiticity defect", "dummy", "overlap should be Hermitian positive, not unitary"),
-                    ("min eig S_star(k)", "dummy", "ensure generalized problem is positive definite"),
-                    ("cond S_star(k)", "dummy", "flag unstable overlap inversions"),
-                    ("symbol smoothness / neighbour jumps", "dummy", "detect rough symbols before velocity is trusted"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_input_health_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** The starred Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.
+
+This first implementation uses controlled production `GdKernelArrays` toy kernels. It validates the same symbol path as the real calculation without loading the full dataset. The raw overlap symbol is checked as Hermitian positive definite, not unitary.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_input_health_table",
+                        title="Input-health metrics",
+                        description="First real health table for the finite-field validation diagnostic.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_input_health_rows(input_health_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_input_health_placeholders",
+                        title="Remaining placeholders",
+                        description="Dataset-backed diagnostics still to replace the toy-backed first implementation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("dataset-backed H/S health table", "pending")),
+                            TableRow(("symbol smoothness plot", "pending")),
+                            TableRow(("condition-number k-map", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("H/S health table", "symbol smoothness plot", "condition-number map"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_band_crossing_hazards",

@@ -419,3 +419,57 @@ def test_finite_field_dc_validation_has_form_inputs() -> None:
     assert rows["dataset"] == "default"
     assert rows["N_u, N_v"] == "11, 11"
     assert rows["symmetrization scheme"] == "star"
+
+def test_finite_field_input_health_probe_checks_symbol_health() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_input_health_probe,
+    )
+
+    probe = finite_field_input_health_probe(n_u=5, n_v=7, symmetrization="star")
+
+    assert probe["sample_count"] == 35
+    assert probe["h_star_defect_max"] < 1.0e-12
+    assert probe["s_star_defect_max"] < 1.0e-12
+    assert probe["h_hermitian_defect_rel_max"] < 1.0e-12
+    assert probe["s_hermitian_defect_rel_max"] < 1.0e-12
+    assert probe["s_eig_min"] > 1.0e-10
+    assert probe["s_condition_number_abs_max"] >= 1.0
+    assert probe["s_positive"] is True
+
+
+def test_finite_field_dc_input_health_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    parsed["n_u"] = 5
+    parsed["n_v"] = 7
+
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    input_health = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_input_health"
+    )
+
+    tables = {
+        block.id: block
+        for block in input_health.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_input_health_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_input_health_table"].rows
+    }
+
+    assert rows["sample count"] == "35"
+    assert rows["S positive"] == "True"
+    assert "dummy" not in set(rows.values())

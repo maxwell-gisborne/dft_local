@@ -384,7 +384,7 @@ from scipy.linalg import eigh
 
 from dft_local.core.kernels import GdKernelArrays
 from dft_local.core.local_problem import SymbolPair
-from dft_local.core.numerics import hermitian_part
+from dft_local.core.numerics import DenseMatrixDiagnostics, hermitian_part
 from dft_local.transport.boltzmann.calculation.core import (
     gd_symbol_derivative_fixed,
     gd_symbol_derivative_generic,
@@ -509,6 +509,91 @@ def generic_symbol_scalar_channels(symbol: np.ndarray) -> np.ndarray:
 
     return np.linalg.eigvalsh(hermitian_part(symbol))
 
+
+
+def finite_field_input_health_probe(
+    *,
+    n_u: int = 11,
+    n_v: int = 11,
+    symmetrization: str = "star",
+) -> dict[str, float | int | bool | str | None]:
+    """Probe H/S symbol health for the finite-field DC validation scaffold.
+
+    This first version uses controlled production kernels rather than the full
+    dataset. It validates the same `GdKernelArrays -> SymbolPair -> LocalProblem`
+    path used by the real calculation while keeping the diagnostic lightweight.
+    """
+
+    if n_u < 1:
+        raise ValueError(f"n_u must be positive, got {n_u}")
+    if n_v < 1:
+        raise ValueError(f"n_v must be positive, got {n_v}")
+    if symmetrization not in {"star", "direct", "raw"}:
+        raise ValueError(f"unknown symmetrization scheme: {symmetrization!r}")
+
+    KH = gd_separable_cosine_kernel(c0=1.25, c1=0.70, c2=-0.30)
+    KS = gd_identity_overlap_kernel()
+
+    if symmetrization == "star":
+        KH = KH.star_symmetrised(matrix_name="finite-field validation H star")
+        KS = KS.star_symmetrised(matrix_name="finite-field validation S star")
+
+    k1_grid = np.linspace(-np.pi, np.pi, int(n_u), endpoint=False)
+    k2_grid = np.linspace(-np.pi, np.pi, int(n_v), endpoint=False)
+
+    max_h_hermitian_defect = 0.0
+    max_s_hermitian_defect = 0.0
+    min_s_eig = np.inf
+    max_s_cond = 0.0
+    max_energy_jump = 0.0
+    previous_energy: float | None = None
+
+    for k1 in k1_grid:
+        for k2 in k2_grid:
+            pair = SymbolPair(KH=KH, KS=KS, k1=float(k1), k2=float(k2), degree=1, sigma=1)
+            problem = pair.form()
+
+            if symmetrization == "direct":
+                problem = problem.symmetrised()
+
+            h_diag = DenseMatrixDiagnostics.from_dense_matrix(problem.Hk, name="H(k)")
+            s_diag = DenseMatrixDiagnostics.from_dense_matrix(
+                problem.Sk,
+                name="S(k)",
+                check_eigenvalues=True,
+            )
+
+            max_h_hermitian_defect = max(max_h_hermitian_defect, h_diag.hermitian_defect_rel)
+            max_s_hermitian_defect = max(max_s_hermitian_defect, s_diag.hermitian_defect_rel)
+
+            if s_diag.eig_min is not None:
+                min_s_eig = min(min_s_eig, s_diag.eig_min)
+            if s_diag.condition_number_abs is not None:
+                max_s_cond = max(max_s_cond, s_diag.condition_number_abs)
+
+            energy = float(problem.energies(symmetrise=(symmetrization != "raw"))[0])
+            if previous_energy is not None:
+                max_energy_jump = max(max_energy_jump, abs(energy - previous_energy))
+            previous_energy = energy
+
+    kh_star = KH.star_defect()
+    ks_star = KS.star_defect()
+
+    return {
+        "n_u": int(n_u),
+        "n_v": int(n_v),
+        "sample_count": int(n_u) * int(n_v),
+        "symmetrization": symmetrization,
+        "h_star_defect_max": kh_star["star_defect_max"],
+        "s_star_defect_max": ks_star["star_defect_max"],
+        "h_hermitian_defect_rel_max": float(max_h_hermitian_defect),
+        "s_hermitian_defect_rel_max": float(max_s_hermitian_defect),
+        "s_eig_min": float(min_s_eig),
+        "s_condition_number_abs_max": float(max_s_cond),
+        "energy_neighbour_jump_max": float(max_energy_jump),
+        "s_positive": bool(min_s_eig > 1.0e-10),
+        "source": "controlled production GdKernelArrays toy",
+    }
 
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
