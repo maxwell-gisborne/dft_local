@@ -595,6 +595,111 @@ def finite_field_input_health_probe(
         "source": "controlled production GdKernelArrays toy",
     }
 
+
+def periodic_two_level_dirac_hamiltonian(
+    k1: float,
+    k2: float,
+    *,
+    mass: float = 0.20,
+) -> np.ndarray:
+    """Periodic two-level Dirac-like toy Hamiltonian.
+
+    H(k) = sin(k1) sigma_x + sin(k2) sigma_y
+         + (mass + 2 - cos(k1) - cos(k2)) sigma_z
+
+    This is periodic over the sampled k-domain and can be made close to a band
+    crossing by taking a small positive mass.
+    """
+
+    dx = np.sin(k1)
+    dy = np.sin(k2)
+    dz = mass + 2.0 - np.cos(k1) - np.cos(k2)
+
+    return np.asarray(
+        [
+            [dz, dx - 1j * dy],
+            [dx + 1j * dy, -dz],
+        ],
+        dtype=np.complex128,
+    )
+
+
+def finite_field_band_crossing_hazard_probe(
+    *,
+    n_u: int = 11,
+    n_v: int = 11,
+    gap_threshold: float = 0.50,
+    mass: float = 0.20,
+) -> dict[str, float | int | bool | str]:
+    """Map band-label hazards for a periodic two-level Dirac-like toy model."""
+
+    if n_u < 1:
+        raise ValueError(f"n_u must be positive, got {n_u}")
+    if n_v < 1:
+        raise ValueError(f"n_v must be positive, got {n_v}")
+    if gap_threshold < 0.0:
+        raise ValueError(f"gap_threshold must be non-negative, got {gap_threshold}")
+
+    k1_grid = np.linspace(-np.pi, np.pi, int(n_u), endpoint=False)
+    k2_grid = np.linspace(-np.pi, np.pi, int(n_v), endpoint=False)
+
+    energies = np.empty((int(n_u), int(n_v), 2), dtype=np.float64)
+    min_gap = np.inf
+    min_gap_k1 = 0.0
+    min_gap_k2 = 0.0
+    hazard_count = 0
+
+    for i, k1 in enumerate(k1_grid):
+        for j, k2 in enumerate(k2_grid):
+            vals = np.linalg.eigvalsh(periodic_two_level_dirac_hamiltonian(float(k1), float(k2), mass=mass))
+            energies[i, j, :] = vals
+
+            gap = float(vals[1] - vals[0])
+            if gap < min_gap:
+                min_gap = gap
+                min_gap_k1 = float(k1)
+                min_gap_k2 = float(k2)
+            if gap < gap_threshold:
+                hazard_count += 1
+
+    max_band0_jump = 0.0
+    max_band1_jump = 0.0
+    max_gap_jump = 0.0
+
+    for i in range(int(n_u)):
+        for j in range(int(n_v)):
+            neighbours = (
+                ((i + 1) % int(n_u), j),
+                (i, (j + 1) % int(n_v)),
+            )
+            for a, b in neighbours:
+                max_band0_jump = max(max_band0_jump, abs(float(energies[a, b, 0] - energies[i, j, 0])))
+                max_band1_jump = max(max_band1_jump, abs(float(energies[a, b, 1] - energies[i, j, 1])))
+
+                gap_here = float(energies[i, j, 1] - energies[i, j, 0])
+                gap_there = float(energies[a, b, 1] - energies[a, b, 0])
+                max_gap_jump = max(max_gap_jump, abs(gap_there - gap_here))
+
+    sample_count = int(n_u) * int(n_v)
+
+    return {
+        "source": "periodic two-level Dirac-like toy",
+        "n_u": int(n_u),
+        "n_v": int(n_v),
+        "sample_count": sample_count,
+        "mass": float(mass),
+        "gap_threshold": float(gap_threshold),
+        "min_gap": float(min_gap),
+        "min_gap_k1": float(min_gap_k1),
+        "min_gap_k2": float(min_gap_k2),
+        "hazard_count": int(hazard_count),
+        "hazard_fraction": float(hazard_count / sample_count),
+        "has_hazard": bool(hazard_count > 0),
+        "max_band0_neighbour_jump": float(max_band0_jump),
+        "max_band1_neighbour_jump": float(max_band1_jump),
+        "max_gap_neighbour_jump": float(max_gap_jump),
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

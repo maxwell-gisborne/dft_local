@@ -20,6 +20,7 @@ from dft_local.transport.boltzmann.validation.core import (
     weighted_outer_product_tensor,
     gd_symbol_production_validation_probe,
     finite_field_input_health_probe,
+    finite_field_band_crossing_hazard_probe,
     operator_symbol_validation_probe,
 )
 
@@ -244,6 +245,24 @@ def _finite_field_input_health_rows(probe: dict[str, object]) -> tuple[TableRow,
     )
 
 
+def _finite_field_band_hazard_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
+        TableRow(("sample count", _fmt_probe_value(probe["sample_count"]), "N_u × N_v")),
+        TableRow(("toy mass", _fmt_probe_value(probe["mass"]), "small mass gives near-crossing stress test")),
+        TableRow(("gap threshold", _fmt_probe_value(probe["gap_threshold"]), "hazard if gap below this")),
+        TableRow(("minimum gap", _fmt_probe_value(probe["min_gap"]), "larger is safer for energy-ordered labels")),
+        TableRow(("minimum-gap k1", _fmt_probe_value(probe["min_gap_k1"]), "location")),
+        TableRow(("minimum-gap k2", _fmt_probe_value(probe["min_gap_k2"]), "location")),
+        TableRow(("hazard count", _fmt_probe_value(probe["hazard_count"]), "number of sampled k-points below threshold")),
+        TableRow(("hazard fraction", _fmt_probe_value(probe["hazard_fraction"]), "hazard count / sample count")),
+        TableRow(("has hazard", _fmt_probe_value(probe["has_hazard"]), "diagnostic flag")),
+        TableRow(("max band-0 neighbour jump", _fmt_probe_value(probe["max_band0_neighbour_jump"]), "energy-label smoothness proxy")),
+        TableRow(("max band-1 neighbour jump", _fmt_probe_value(probe["max_band1_neighbour_jump"]), "energy-label smoothness proxy")),
+        TableRow(("max gap neighbour jump", _fmt_probe_value(probe["max_gap_neighbour_jump"]), "gap-map smoothness proxy")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -416,6 +435,10 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
         n_v=int(inputs.get("n_v", 11)),
         symmetrization=str(inputs.get("symmetrization", "star")),
     )
+    band_hazard_probe = finite_field_band_crossing_hazard_probe(
+        n_u=int(inputs.get("n_u", 11)),
+        n_v=int(inputs.get("n_v", 11)),
+    )
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -503,18 +526,40 @@ This first implementation uses controlled production `GdKernelArrays` toy kernel
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_band_crossing_hazards",
+            DiagnosticSection(
+                id="finite_field_dc_validation_band_crossing_hazards",
                 title="Band-crossing hazards",
                 description="Maps k-space regions where energy-ordered band labels become fragile.",
-                claim="For the selected energy-ordered band, the diagnostic identifies k-space regions where near crossings or eigenvector jumps can contaminate velocity and conductivity.",
-                evidence=(
-                    ("minimum gap to adjacent bands", "dummy", "locate physical crossing hazards"),
-                    ("same-label neighbour overlap", "dummy", "detect eigenvector or label jumps"),
-                    ("velocity anomaly overlay", "dummy", "explain spikes using crossing maps"),
-                    ("active subspace comparison", "dummy", "check whether summed near-degenerate bands are stable"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_band_crossing_hazards_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** For the selected energy-ordered band, the diagnostic identifies k-space regions where near crossings or eigenvector jumps can contaminate velocity and conductivity.
+
+This first implementation uses a periodic two-level Dirac-like toy model. It is not a real graphene band map yet. It exists to make the hazard logic concrete: compute adjacent-band gaps, locate the minimum gap, count points below a threshold, and report neighbour-jump smoothness proxies.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_band_crossing_hazards_table",
+                        title="Band-crossing hazard metrics",
+                        description="First real hazard table for energy-ordered band labels.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_band_hazard_rows(band_hazard_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_band_crossing_hazards_placeholders",
+                        title="Remaining placeholders",
+                        description="Dataset-backed diagnostics still to replace the toy-backed first implementation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("real band minimum-gap k-map", "pending")),
+                            TableRow(("same-label S-overlap continuation map", "pending")),
+                            TableRow(("velocity anomaly overlay", "pending")),
+                            TableRow(("active near-degenerate subspace comparison", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("band energy surface", "minimum-gap k-map", "label-overlap k-map", "velocity anomaly overlay"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_velocity_validation",
