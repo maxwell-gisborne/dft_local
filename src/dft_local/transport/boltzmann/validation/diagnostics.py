@@ -22,6 +22,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_input_health_probe,
     finite_field_band_crossing_hazard_probe,
     finite_field_velocity_validation_probe,
+    finite_field_unit_scaling_probe,
     operator_symbol_validation_probe,
 )
 
@@ -285,6 +286,21 @@ def _finite_field_velocity_rows(probe: dict[str, object]) -> tuple[TableRow, ...
     )
 
 
+def _finite_field_unit_scaling_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
+        TableRow(("atomic energy to eV", _fmt_probe_value(probe["atomic_energy_to_ev"]), "27.21138386")),
+        TableRow(("atomic length to Å", _fmt_probe_value(probe["atomic_length_to_angstrom"]), "0.52917721092")),
+        TableRow(("hbar atomic", _fmt_probe_value(probe["hbar_atomic"]), "1 in atomic-unit context")),
+        TableRow(("hbar eV Å context", _fmt_probe_value(probe["hbar_ev_angstrom"]), "seconds in eV working energy")),
+        TableRow(("velocity AU to eVÅ factor", _fmt_probe_value(probe["velocity_au_to_evag_factor"]), "same physical velocity conversion")),
+        TableRow(("velocity factor abs error", _fmt_probe_value(probe["velocity_factor_abs_error"]), "near 0")),
+        TableRow(("Fermi window eV from AU factor", _fmt_probe_value(probe["fermi_window_ev_from_au_factor"]), "inverse-energy conversion")),
+        TableRow(("mu conversion required", _fmt_probe_value(probe["mu_conversion_required"]), "True")),
+        TableRow(("conductivity SI status", _fmt_probe_value(probe["conductivity_si_status"]), "pending")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -462,6 +478,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
         n_v=int(inputs.get("n_v", 11)),
     )
     velocity_probe = finite_field_velocity_validation_probe()
+    unit_scaling_probe = finite_field_unit_scaling_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -682,18 +699,40 @@ This first implementation uses the separable cosine production-symbol toy. It va
                 ),
                 placeholders=("analytic toy summary table", "cosine derivative plot", "two-level band hazard map"),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_unit_scaling",
+            DiagnosticSection(
+                id="finite_field_dc_validation_unit_scaling",
                 title="Unit consistency",
                 description="Physical scaling and SI conversion checks.",
-                claim="The same physical calculation gives the same SI result after conversion from different internal unit systems.",
-                evidence=(
-                    ("velocity unit conversion", "dummy", "m/s agreement from different internal units"),
-                    ("conductivity unit conversion", "dummy", "S/m agreement from different internal units"),
-                    ("tau linearity", "dummy", "DC conductivity scales linearly with tau where expected"),
-                    ("energy/length scale audit", "dummy", "catch missing hbar or length factors"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_unit_scaling_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** The same physical calculation gives the same SI result after conversion from different internal unit systems.
+
+This first implementation checks the core unit factors that all later finite-field comparisons depend on: Hartree to eV, Bohr to Å, hbar in each working context, velocity scaling, inverse-energy Fermi-window scaling, and the requirement that mu be converted with the Hamiltonian.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_unit_scaling_table",
+                        title="Unit consistency metrics",
+                        description="First real unit table for the finite-field validation diagnostic.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_unit_scaling_rows(unit_scaling_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_unit_scaling_placeholders",
+                        title="Remaining placeholders",
+                        description="Full calculation-level unit checks still to replace this lightweight first implementation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("same physical velocity AU/eVÅ calculation", "covered in Boltzmann tests; pending local summary")),
+                            TableRow(("same physical conductivity AU/eVÅ/SI calculation", "pending")),
+                            TableRow(("tau scaling plot", "pending")),
+                            TableRow(("finite-field E scaling law table", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("unit conversion table", "tau scaling plot", "scale-law table"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_k_convergence",

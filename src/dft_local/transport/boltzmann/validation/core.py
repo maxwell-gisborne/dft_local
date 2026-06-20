@@ -382,9 +382,11 @@ def operator_symbol_validation_probe() -> dict[str, float]:
 
 from scipy.linalg import eigh
 
+from dft_local.core.dataset import LEGACY_EV_ANGSTROM_CONTEXT
 from dft_local.core.kernels import GdKernelArrays
 from dft_local.core.local_problem import SymbolPair
 from dft_local.core.numerics import DenseMatrixDiagnostics, hermitian_part
+from dft_local.core.units import ATOMIC_UNITS
 from dft_local.transport.boltzmann.calculation.core import (
     gd_symbol_derivative_fixed,
     gd_symbol_derivative_generic,
@@ -777,6 +779,44 @@ def finite_field_velocity_validation_probe() -> dict[str, float | str]:
         "generic_fixed_dk2_abs_error": float(generic_symbol_probe["generic_dk2_channel_abs_error"]),
         "unit_scaling_status": "pending physical hbar/unit-context check",
         "vincent_velocity_status": "pending Vincent field comparison",
+    }
+
+
+def finite_field_unit_scaling_probe() -> dict[str, float | bool | str]:
+    """Check core unit conversions used by finite-field validation.
+
+    This is deliberately calculation-light. It validates the conversion factors
+    that later velocity/conductivity comparisons depend on.
+    """
+
+    evag = LEGACY_EV_ANGSTROM_CONTEXT
+
+    energy_disk_to_ev = ATOMIC_UNITS.energy.scale_to_si / evag.energy.scale_to_si
+    length_disk_to_angstrom = ATOMIC_UNITS.length.scale_to_si / evag.length.scale_to_si
+
+    hbar_au = ATOMIC_UNITS.hbar()
+    hbar_evag = evag.hbar()
+
+    # Existing Boltzmann tests scale the Hamiltonian energy and k-map together.
+    # With that convention, the same physical velocity converts from AU-like
+    # output to legacy eV/angstrom output by the length factor alone.
+    velocity_au_to_evag = length_disk_to_angstrom
+    expected_velocity_factor = 0.52917721092
+
+    fermi_window_ev_from_au_factor = 1.0 / energy_disk_to_ev
+
+    return {
+        "source": "core UnitContext conversion factors",
+        "atomic_energy_to_ev": float(energy_disk_to_ev),
+        "atomic_length_to_angstrom": float(length_disk_to_angstrom),
+        "hbar_atomic": float(hbar_au),
+        "hbar_ev_angstrom": float(hbar_evag),
+        "velocity_au_to_evag_factor": float(velocity_au_to_evag),
+        "expected_velocity_au_to_evag_factor": float(expected_velocity_factor),
+        "velocity_factor_abs_error": float(abs(velocity_au_to_evag - expected_velocity_factor)),
+        "fermi_window_ev_from_au_factor": float(fermi_window_ev_from_au_factor),
+        "mu_conversion_required": True,
+        "conductivity_si_status": "pending full conductivity unit-conversion run",
     }
 
 def gd_symbol_production_validation_probe() -> dict[str, float]:

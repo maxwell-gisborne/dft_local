@@ -585,3 +585,53 @@ def test_finite_field_dc_velocity_section_contains_real_metrics() -> None:
     assert rows["production derivative dk1 error"] == "0.00000000e+00"
     assert rows["Hellmann-Feynman dk1 error"] == "0.00000000e+00"
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_unit_scaling_probe_checks_core_factors() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_unit_scaling_probe,
+    )
+
+    probe = finite_field_unit_scaling_probe()
+
+    assert probe["atomic_energy_to_ev"] == 27.21138386
+    assert probe["atomic_length_to_angstrom"] == 0.52917721092
+    assert probe["velocity_factor_abs_error"] < 1.0e-12
+    assert probe["fermi_window_ev_from_au_factor"] == 1.0 / 27.21138386
+    assert probe["mu_conversion_required"] is True
+
+
+def test_finite_field_dc_unit_scaling_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_unit_scaling"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_unit_scaling_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_unit_scaling_table"].rows
+    }
+
+    assert rows["atomic energy to eV"] == "2.72113839e+01"
+    assert rows["atomic length to Å"] == "5.29177211e-01"
+    assert rows["mu conversion required"] == "True"
+    assert "dummy" not in set(rows.values())
