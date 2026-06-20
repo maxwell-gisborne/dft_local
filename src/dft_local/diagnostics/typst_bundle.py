@@ -389,7 +389,7 @@ class _BundleWriter:
         )
         self.component_defs.append(
             f"#let {cid}-data = json(\"{data_path}\")\n"
-            f"#let {cid}() = block[*{_typst_content(card.label)}:* #str({cid}-data.value)]\n"
+            f"#let {cid}() = block[*{_typst_content(card.label)}:* {_typst_data_value(f'{cid}-data.value')}]\n"
         )
         self._add_data_item(cid, "card", cid, parent, data_path, card.label)
         return cid
@@ -864,6 +864,20 @@ def _plain_text(value: Any) -> str:
     if isinstance(value, TypstMath):
         return value.source
     return str(value)
+
+
+def _typst_data_value(expr: str) -> str:
+    """Return Typst code that renders a JSON scalar as text."""
+
+    return (
+        f"if type({expr}) == bool {{ "
+        f"if {expr} {{ \"true\" }} else {{ \"false\" }} "
+        f"}} else if {expr} == none {{ "
+        f"\"none\" "
+        f"}} else {{ "
+        f"str({expr}) "
+        f"}}"
+    )
 
 
 def _typst_content(value: Any) -> str:
