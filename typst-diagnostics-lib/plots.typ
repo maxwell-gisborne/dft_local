@@ -20,3 +20,10 @@
   *Unsupported static view:* #data.title \
   #data.description
 ]
+
+
+#let dos-idos-view(data) = [
+  #line-graph(data.dos_graph)
+
+  #line-graph(data.idos_graph)
+]

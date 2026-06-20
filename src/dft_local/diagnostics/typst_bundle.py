@@ -295,6 +295,30 @@ class _BundleWriter:
     def _collect_webgl(self, view: WebGLView, *, parent: str) -> str:
         cid = _safe_component_name(view.id, "view")
         data_path = f"data/{_slug(view.id)}.json"
+
+        if _is_dos_idos_view(view):
+            _write_json(self.out_dir / data_path, dos_idos_to_json_data(view))
+            self.component_defs.append(
+                f"#let {cid}-data = json(\"{data_path}\")\n"
+                f"#let {cid}-plot() = dos-idos-view({cid}-data)\n"
+                f"#let {cid}() = diagnostic-figure(\n"
+                f"  {cid}-plot(),\n"
+                f"  title: [{_typst_content(view.title)}],\n"
+                f"  caption: [{_typst_content(view.description)}],\n"
+                f")\n"
+            )
+            self._add_data_item(
+                view.id,
+                "dos-idos-static",
+                cid,
+                parent,
+                data_path,
+                view.title,
+                static_support="graph2d",
+                plot_component=f"{cid}-plot",
+            )
+            return cid
+
         _write_json(self.out_dir / data_path, webgl_to_json_data(view))
         self.component_defs.append(
             f"#let {cid}-data = json(\"{data_path}\")\n"
@@ -487,6 +511,10 @@ def _write_fallback_typst_lib(target: Path) -> None:
         '#let unsupported-view(data) = block[\n'
         '  *Unsupported static view:* #data.title \\\n'
         '  #data.description\n'
+        ']\n\n'
+        '#let dos-idos-view(data) = [\n'
+        '  #line-graph(data.dos_graph)\n\n'
+        '  #line-graph(data.idos_graph)\n'
         ']\n'
     )
 
@@ -555,12 +583,86 @@ def matrix_to_json_data(matrix: Matrix) -> dict[str, Any]:
     }
 
 
+
+def _is_dos_idos_view(view: WebGLView) -> bool:
+    payload = view.payload
+    return (
+        view.renderer == "dos_idos"
+        and isinstance(payload, dict)
+        and payload.get("kind") == "dos-idos-preview"
+        and isinstance(payload.get("energy"), list)
+        and isinstance(payload.get("dos"), list)
+        and isinstance(payload.get("idos"), list)
+    )
+
+
+def dos_idos_to_json_data(view: WebGLView) -> dict[str, Any]:
+    payload = dict(view.payload)
+    energy = [float(v) for v in payload.get("energy", ())]
+    dos = [float(v) for v in payload.get("dos", ())]
+    idos = [float(v) for v in payload.get("idos", ())]
+    n = min(len(energy), len(dos), len(idos))
+    energy_unit = _plain_text(payload.get("energy_unit", ""))
+    count_unit = _plain_text(payload.get("count_unit", "states"))
+
+    dos_points = [
+        {"x": energy[i], "y": dos[i], "entity_id": None, "label": "", "meta": {}}
+        for i in range(n)
+    ]
+    idos_points = [
+        {"x": energy[i], "y": idos[i], "entity_id": None, "label": "", "meta": {}}
+        for i in range(n)
+    ]
+
+    return {
+        "kind": "dos_idos",
+        "id": view.id,
+        "renderer": view.renderer,
+        "title": _plain_text(view.title),
+        "description": _plain_text(view.description),
+        "energy_unit": energy_unit,
+        "count_unit": count_unit,
+        "static_support": "graph2d",
+        "metadata": {
+            "sample_count": _json_value(payload.get("sample_count")),
+            "kpoint_count": _json_value(payload.get("kpoint_count")),
+            "band_count": _json_value(payload.get("band_count")),
+            "dos_sigma": _json_value(payload.get("dos_sigma")),
+            "target_count": _json_value(payload.get("target_count")),
+            "count_at_mu": _json_value(payload.get("count_at_mu")),
+            "markers": _json_value(payload.get("markers", ())),
+        },
+        "dos_graph": {
+            "kind": "graph2d",
+            "id": f"{view.id}_dos",
+            "title": "Weighted DOS",
+            "description": "",
+            "x_label": f"Energy [{energy_unit}]" if energy_unit else "Energy",
+            "y_label": "DOS",
+            "interaction_channel": None,
+            "series": ({"name": "DOS", "kind": "line", "points": dos_points},),
+        },
+        "idos_graph": {
+            "kind": "graph2d",
+            "id": f"{view.id}_idos",
+            "title": "Integrated DOS / occupation count",
+            "description": "",
+            "x_label": f"Energy [{energy_unit}]" if energy_unit else "Energy",
+            "y_label": count_unit,
+            "interaction_channel": None,
+            "series": ({"name": "IDOS", "kind": "line", "points": idos_points},),
+        },
+        "payload": _json_value(payload),
+    }
+
+
 def webgl_to_json_data(view: WebGLView) -> dict[str, Any]:
     return {
         "kind": "webgl",
         "id": view.id,
         "title": _plain_text(view.title),
         "description": _plain_text(view.description),
+        "renderer": view.renderer,
         "payload": _json_value(view.payload),
         "static_support": "placeholder",
     }

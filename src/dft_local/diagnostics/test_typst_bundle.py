@@ -127,6 +127,51 @@ def test_typst_bundle_preserves_webgl_as_static_placeholder(tmp_path: Path) -> N
     assert "unsupported-view(band_surface-data)" in components
 
 
+
+def test_typst_bundle_renders_dos_idos_webgl_as_static_graphs(tmp_path: Path) -> None:
+    result = DiagnosticResult(
+        title="DOS report",
+        summary="Has DOS.",
+        webgl=(
+            WebGLView(
+                id="dos_idos",
+                title="DOS / IDOS",
+                description="Density of states.",
+                renderer="dos_idos",
+                payload={
+                    "kind": "dos-idos-preview",
+                    "energy_unit": "eV",
+                    "count_unit": "states",
+                    "energy": [-1.0, 0.0, 1.0],
+                    "dos": [0.5, 1.0, 0.5],
+                    "idos": [0.5, 1.5, 2.0],
+                    "target_count": 1.0,
+                    "markers": [{"id": "mu_t", "label": "mu(T)", "energy": 0.0}],
+                },
+            ),
+        ),
+    )
+
+    out = export_typst_bundle(result, tmp_path / "bundle", lib_mode="none", provenance={})
+    manifest = json.loads((out / "manifest.json").read_text())
+    item = next(item for item in manifest["items"] if item["id"] == "dos_idos")
+    assert item["kind"] == "dos-idos-static"
+    assert item["static_support"] == "graph2d"
+    assert item["plot_component"] == "dos_idos-plot"
+
+    data = json.loads((out / "data" / "dos_idos.json").read_text())
+    assert data["kind"] == "dos_idos"
+    assert data["static_support"] == "graph2d"
+    assert data["dos_graph"]["series"][0]["points"][1]["x"] == 0.0
+    assert data["dos_graph"]["series"][0]["points"][1]["y"] == 1.0
+    assert data["idos_graph"]["series"][0]["points"][2]["y"] == 2.0
+    assert data["metadata"]["markers"][0]["label"] == "mu(T)"
+
+    components = (out / "components.typ").read_text()
+    assert "#let dos_idos-plot() = dos-idos-view(dos_idos-data)" in components
+    assert "  dos_idos-plot()," in components
+
+
 def test_diagnostic_app_exports_typst_bundle_route(tmp_path: Path, monkeypatch) -> None:
     from dft_local.diagnostics.server import DiagnosticApp
 
@@ -186,6 +231,20 @@ def test_typst_bundle_smoke_compiles_with_typst_when_available(tmp_path: Path) -
                                 points=(GraphPoint(0.0, 0.0), GraphPoint(1.0, 1.0)),
                             ),
                         ),
+                    ),
+                    WebGLView(
+                        id="compile_dos_idos",
+                        title="Compile DOS / IDOS",
+                        description="Compile static DOS and IDOS graphs.",
+                        renderer="dos_idos",
+                        payload={
+                            "kind": "dos-idos-preview",
+                            "energy_unit": "eV",
+                            "count_unit": "states",
+                            "energy": [-1.0, 0.0, 1.0],
+                            "dos": [0.5, 1.0, 0.5],
+                            "idos": [0.5, 1.5, 2.0],
+                        },
                     ),
                     Table(
                         id="small_table",
