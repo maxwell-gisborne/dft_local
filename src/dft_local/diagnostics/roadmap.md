@@ -19,30 +19,57 @@ A diagnostic should:
 
 ### Dataset overview
 
-Status: missing
+Status: implemented
 
-Show:
+Diagnostic id: `dataset.overview`
+
+Shows:
 
 - data root
 - atom count
 - basis size
-- matrix shape
-- H/S nonzero blocks
-- units
-- basic sparse sanity checks
+- symbol counts
+- H/S matrix shape and BSR block structure summary
+- units and disk-to-working conversion provenance
+
+Follow-up:
+
+- add links from dataset rows to matrix and geometry diagnostics
 
 ### Geometry overview
 
-Status: missing
+Status: implemented
 
-Show:
+Diagnostic id: `geometry.overview`
+
+Shows:
 
 - nearest-neighbour graph summary
 - chosen anchor
-- edge directions
+- edge directions and classification alignment
 - visited label count
-- sublattice balance
+- sublattice balance via `eps` counts
+- G_d label ranges
 - reconstruction error
+
+### Matrix overview
+
+Status: implemented
+
+Diagnostic id: `matrix.overview`
+
+Shows:
+
+- H/S BSR shape and block rows
+- scalar and atom-block nonzero counts
+- row-block distribution
+- global Hermiticity defects
+- H/S atom-block support overlap
+
+Follow-up:
+
+- add sampled block-level Hermiticity mismatch table
+- add optional worst-row / worst-block drilldown
 
 ### Kernel overview
 
