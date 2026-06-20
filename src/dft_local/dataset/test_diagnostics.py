@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dft_local.dataset.diagnostics import compute_geometry_overview, compute_overview, diagnostics
+from dft_local.dataset.diagnostics import compute_geometry_overview, compute_matrix_overview, compute_overview, diagnostics
 from dft_local.diagnostics.models import DiagnosticSpec
 
 
@@ -53,3 +53,29 @@ def test_dataset_diagnostics_exports_geometry_spec() -> None:
     specs = {spec.id: spec for spec in diagnostics()}
 
     assert isinstance(specs["geometry.overview"], DiagnosticSpec)
+
+
+
+def test_matrix_overview_handles_missing_context() -> None:
+    result = compute_matrix_overview(None, {})
+
+    assert result.title == "Matrix overview"
+    assert "No diagnostic context" in result.summary
+    assert result.cards[0].status == "warn"
+
+
+def test_matrix_overview_renders_loaded_context() -> None:
+    from dft_local.diagnostics.server import load_default_context
+
+    result = compute_matrix_overview(load_default_context("test_run/run_dir/data"), {})
+
+    assert "H and S share" in result.summary
+    assert result.cards[0].label == "H blocks"
+    assert result.cards[1].label == "S blocks"
+    assert any(section.id == "matrix_block_overlap" for section in result.sections)
+
+
+def test_dataset_diagnostics_exports_matrix_spec() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+
+    assert isinstance(specs["matrix.overview"], DiagnosticSpec)

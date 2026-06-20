@@ -277,6 +277,181 @@ def compute_geometry_overview(ctx: Any, inputs: dict[str, object]) -> Diagnostic
     )
 
 
+
+def _safe_relative(abs_value: float, ref_value: float) -> float:
+    if ref_value == 0.0:
+        return 0.0 if abs_value == 0.0 else float("inf")
+    return abs_value / ref_value
+
+
+def _sparse_frobenius_norm(M: Any) -> float:
+    return float(np.sqrt(np.sum(np.abs(M.data) ** 2)))
+
+
+def _sparse_hermitian_defect(M: Any) -> tuple[float, float]:
+    defect = M - M.getH()
+    defect_abs = _sparse_frobenius_norm(defect)
+    ref = _sparse_frobenius_norm(M)
+    return defect_abs, _safe_relative(defect_abs, ref)
+
+
+def _block_coordinates(M: Any) -> set[tuple[int, int]]:
+    coords: set[tuple[int, int]] = set()
+    for row in range(M.indptr.size - 1):
+        for col in M.indices[M.indptr[row] : M.indptr[row + 1]]:
+            coords.add((int(row), int(col)))
+    return coords
+
+
+def _matrix_overview_rows(name: str, M: Any, nbasis: int, natoms: int) -> tuple[tuple[object, ...], dict[str, float]]:
+    row_block_counts = np.diff(M.indptr)
+    herm_abs, herm_rel = _sparse_hermitian_defect(M)
+    expected_shape = (nbasis, nbasis)
+
+    metrics = {
+        "hermitian_abs": herm_abs,
+        "hermitian_rel": herm_rel,
+        "block_count": float(M.indices.size),
+        "row_block_min": float(np.min(row_block_counts)) if len(row_block_counts) else 0.0,
+        "row_block_median": float(np.median(row_block_counts)) if len(row_block_counts) else 0.0,
+        "row_block_max": float(np.max(row_block_counts)) if len(row_block_counts) else 0.0,
+    }
+
+    row = (
+        name,
+        str(M.shape),
+        M.shape == expected_shape,
+        str(M.blocksize),
+        M.indptr.size - 1,
+        (M.indptr.size - 1) == natoms,
+        int(M.nnz),
+        int(M.indices.size),
+        int(np.min(row_block_counts)) if len(row_block_counts) else 0,
+        float(np.median(row_block_counts)) if len(row_block_counts) else 0.0,
+        int(np.max(row_block_counts)) if len(row_block_counts) else 0,
+        herm_abs,
+        herm_rel,
+    )
+    return row, metrics
+
+
+def compute_matrix_overview(ctx: Any, inputs: dict[str, object]) -> DiagnosticResult:
+    """Summarise sparse H/S matrix structure and Hermiticity."""
+
+    if ctx is None:
+        return DiagnosticResult(
+            title="Matrix overview",
+            summary="No diagnostic context was provided.",
+            cards=(
+                Card("context", "missing", "warn", "Run with a loaded data root to inspect H and S."),
+            ),
+            sections=(
+                DiagnosticSection(
+                    id="matrix_missing_context",
+                    title="Missing context",
+                    tables=(
+                        _table(
+                            id="matrix_missing_context_table",
+                            title="Context status",
+                            description="Matrix overview needs a loaded DiagnosticContext.",
+                            rows=[
+                                ("context", "missing"),
+                                ("expected", "DiagnosticContext from load_default_context(root)"),
+                            ],
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    data = ctx.state.data
+    meta = data.metadata
+
+    h_row, h_metrics = _matrix_overview_rows("H", data.H, meta.nbasis, meta.natoms)
+    s_row, s_metrics = _matrix_overview_rows("S", data.S, meta.nbasis, meta.natoms)
+
+    h_blocks = _block_coordinates(data.H)
+    s_blocks = _block_coordinates(data.S)
+    shared_blocks = h_blocks & s_blocks
+    union_blocks = h_blocks | s_blocks
+    h_only = h_blocks - s_blocks
+    s_only = s_blocks - h_blocks
+    overlap_fraction = (
+        len(shared_blocks) / len(union_blocks)
+        if len(union_blocks)
+        else 1.0
+    )
+
+    h_status = "ok" if h_metrics["hermitian_rel"] < 1e-5 else "warn"
+    s_status = "ok" if s_metrics["hermitian_rel"] < 1e-8 else "warn"
+
+    return DiagnosticResult(
+        title="Matrix overview",
+        summary=(
+            f"H and S share {len(shared_blocks)} sparse atom-block positions "
+            f"out of {len(union_blocks)} in the union."
+        ),
+        cards=(
+            Card("H blocks", int(h_metrics["block_count"]), "ok", "Number of nonzero BSR atom blocks in H."),
+            Card("S blocks", int(s_metrics["block_count"]), "ok", "Number of nonzero BSR atom blocks in S."),
+            Card("H Hermiticity rel", h_metrics["hermitian_rel"], h_status, "||H - H†|| / ||H||."),
+            Card("S Hermiticity rel", s_metrics["hermitian_rel"], s_status, "||S - S†|| / ||S||."),
+            Card("H/S block overlap", overlap_fraction, "ok" if overlap_fraction == 1.0 else "warn", "Shared block positions divided by union block positions."),
+        ),
+        sections=(
+            DiagnosticSection(
+                id="matrix_structure",
+                title="Sparse matrix structure",
+                tables=(
+                    _table(
+                        id="matrix_structure_table",
+                        title="BSR structure",
+                        description="Shape, BSR block structure, row-block distribution, and global Hermiticity defects.",
+                        headers=(
+                            "matrix",
+                            "shape",
+                            "shape ok",
+                            "blocksize",
+                            "block rows",
+                            "block rows ok",
+                            "scalar nnz",
+                            "block nnz",
+                            "row blocks min",
+                            "row blocks median",
+                            "row blocks max",
+                            "Hermiticity abs",
+                            "Hermiticity rel",
+                        ),
+                        rows=[h_row, s_row],
+                        numeric={4, 6, 7, 8, 9, 10, 11, 12},
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="matrix_block_overlap",
+                title="H/S support overlap",
+                tables=(
+                    _table(
+                        id="matrix_block_overlap_table",
+                        title="Atom-block support overlap",
+                        description="Comparison of nonzero atom-block coordinates in H and S.",
+                        rows=[
+                            ("H block positions", len(h_blocks)),
+                            ("S block positions", len(s_blocks)),
+                            ("shared positions", len(shared_blocks)),
+                            ("union positions", len(union_blocks)),
+                            ("H-only positions", len(h_only)),
+                            ("S-only positions", len(s_only)),
+                            ("overlap fraction", overlap_fraction),
+                        ],
+                        numeric={1},
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 def diagnostics() -> tuple[DiagnosticSpec, ...]:
     return (
         DiagnosticSpec(
@@ -294,5 +469,13 @@ def diagnostics() -> tuple[DiagnosticSpec, ...]:
             description="Nearest-neighbour graph, edge directions, and G_d group labelling summary.",
             inputs=(),
             compute=compute_geometry_overview,
+        ),
+        DiagnosticSpec(
+            id="matrix.overview",
+            group="matrix",
+            title="Matrix overview",
+            description="Sparse H/S BSR structure, support overlap, and global Hermiticity summary.",
+            inputs=(),
+            compute=compute_matrix_overview,
         ),
     )
