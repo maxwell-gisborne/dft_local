@@ -323,3 +323,49 @@ def test_production_gd_symbol_probe_is_visible_in_diagnostic() -> None:
     }
 
     assert "boltzmann_validation_production_symbol_errors" in table_ids
+
+def test_finite_field_dc_validation_scaffold_sections_are_visible() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+
+    assert "transport.boltzmann.validation.finite_field_dc" in specs
+
+    result = specs["transport.boltzmann.validation.finite_field_dc"].compute(None, {})
+
+    assert result.title == "Finite-field DC validation"
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section_ids = {section.id for section in sections}
+
+    expected_sections = {
+        "finite_field_dc_validation_overview",
+        "finite_field_dc_validation_manifest",
+        "finite_field_dc_validation_input_health",
+        "finite_field_dc_validation_band_crossing_hazards",
+        "finite_field_dc_validation_velocity_validation",
+        "finite_field_dc_validation_vincent_reconstruction",
+        "finite_field_dc_validation_strong_dc_validation",
+        "finite_field_dc_validation_weak_dc_limit",
+        "finite_field_dc_validation_mode_decomposition",
+        "finite_field_dc_validation_analytic_toys",
+        "finite_field_dc_validation_unit_scaling",
+        "finite_field_dc_validation_k_convergence",
+        "finite_field_dc_validation_symmetry",
+    }
+
+    assert expected_sections <= section_ids
+
+    table_ids = {
+        block.id
+        for section in sections
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_dashboard" in table_ids
+    assert "finite_field_dc_validation_manifest_table" in table_ids
+    assert "finite_field_dc_validation_vincent_reconstruction_evidence_plan" in table_ids
+    assert "finite_field_dc_validation_mode_decomposition_evidence_plan" in table_ids

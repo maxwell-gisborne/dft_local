@@ -214,6 +214,279 @@ A tensor of the form `sum_k w_k v(k) v(k)^T` with non-negative weights must be s
     )
 
 
+def _finite_field_dc_section(
+    *,
+    section_id: str,
+    title: str,
+    description: str,
+    claim: str,
+    evidence: tuple[tuple[str, str, str], ...],
+    placeholders: tuple[str, ...],
+    collapsed: bool = False,
+) -> DiagnosticSection:
+    return DiagnosticSection(
+        id=section_id,
+        title=title,
+        description=description,
+        collapsed=collapsed,
+        body=(
+            MarkdownBlock(
+                id=f"{section_id}_prose",
+                title="Validation claim",
+                markdown=f"""**Claim.** {claim}
+
+This section is currently a scaffold. The tables below name the evidence that must be filled in by later diagnostics.
+""",
+            ),
+            Table(
+                id=f"{section_id}_evidence_plan",
+                title="Evidence plan",
+                description="Checks, plots, or tables that will turn this section from prose into validation evidence.",
+                headers=("evidence", "status", "purpose"),
+                rows=tuple(TableRow(row) for row in evidence),
+            ),
+            Table(
+                id=f"{section_id}_placeholders",
+                title="Diagnostic placeholders",
+                description="Concrete diagnostic blocks to replace with computed outputs.",
+                headers=("placeholder", "status"),
+                rows=tuple(TableRow((item, "dummy")) for item in placeholders),
+            ),
+        ),
+    )
+
+
+def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
+    """Scaffold for validating finite-field, band-labelled DC conductivity."""
+
+    dashboard_rows = (
+        TableRow(("input health", "dummy", "starred H/S symbols define stable generalized eigenproblems")),
+        TableRow(("band-crossing hazards", "dummy", "near crossings and label jumps are mapped in k-space")),
+        TableRow(("velocity validation", "dummy", "velocity agrees with analytic, finite-difference, unit, Gamma, and Vincent checks")),
+        TableRow(("Vincent reconstruction", "dummy", "2π normalization and residual few-percent gap are isolated")),
+        TableRow(("strong DC contact", "dummy", "strong band-labelled result agrees with Vincent/Ashcroft form in shared regime")),
+        TableRow(("weak DC limit", "dummy", "finite-field result approaches weak-field result as E -> 0")),
+        TableRow(("mode closure", "dummy", "Gamma, F, and tilde(rho) reconstruct total conductivity")),
+        TableRow(("analytic toys", "dummy", "periodic known-input tests give known outputs")),
+        TableRow(("unit consistency", "dummy", "same physical calculation agrees after SI conversion")),
+        TableRow(("k convergence", "dummy", "conductivity stabilizes under N_u, N_v refinement")),
+        TableRow(("symmetry sanity", "dummy", "tensor and direction sweeps obey expected symmetries")),
+    )
+
+    manifest_rows = (
+        TableRow(("dataset", "dummy")),
+        TableRow(("temperature T", "dummy")),
+        TableRow(("chemical potential mu", "dummy")),
+        TableRow(("relaxation time tau", "dummy")),
+        TableRow(("units", "dummy")),
+        TableRow(("N_u, N_v", "dummy")),
+        TableRow(("electric field E", "dummy")),
+        TableRow(("field angle theta", "dummy")),
+        TableRow(("band index n", "dummy; energy ordering")),
+        TableRow(("symmetrization scheme", "dummy")),
+        TableRow(("reciprocal 2π normalization", "dummy; must be physically audited, not treated as cosmetic convention")),
+        TableRow(("conductivity normalization", "dummy")),
+    )
+
+    return DiagnosticResult(
+        title="Finite-field DC validation",
+        summary="Scaffold for validating finite-field, band-labelled DC conductivity and its lattice-mode decomposition.",
+        body=(
+            DiagnosticSection(
+                id="finite_field_dc_validation_overview",
+                title="Overview",
+                description="Top-level validation dashboard and report spine.",
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_overview_prose",
+                        title="Validation target",
+                        markdown="""This diagnostic validates the finite-field, band-labelled DC conductivity.
+
+The target object is not the band-free formula and not only the Hellmann-Feynman derivative. The target is the finite-field band-labelled conductivity tensor, together with its lattice-mode decomposition into `Gamma`, `F`, and `tilde(rho)`.
+
+The diagnostic is arranged as a validation ladder: first the inputs, then the velocity ingredients, then Vincent reconstruction, then strong and weak DC consistency, then mode closure, analytic tests, unit scaling, k-point convergence, and symmetry sanity.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_dashboard",
+                        title="Validation dashboard",
+                        description="Dummy pass/warn/fail summary. Later sections should feed this table.",
+                        headers=("category", "status", "claim"),
+                        rows=dashboard_rows,
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="finite_field_dc_validation_manifest",
+                title="Manifest",
+                description="Inputs and conventions for the selected validation run.",
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_manifest_prose",
+                        title="Why this block matters",
+                        markdown="""The manifest freezes the calculation being validated.
+
+The `2π` normalization is listed explicitly because it changes the physical conductivity number. It is not treated as a harmless notation choice once velocities, reciprocal-space measure, and SI conductivity normalization are assembled.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_manifest_table",
+                        title="Selected run",
+                        description="Dummy values until the real diagnostic inputs are wired in.",
+                        headers=("input", "value"),
+                        rows=manifest_rows,
+                    ),
+                ),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_input_health",
+                title="Input health",
+                description="Algebraic and sampling checks for starred H and S symbols.",
+                claim="The starred Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.",
+                evidence=(
+                    ("H_star(k) Hermiticity defect", "dummy", "reject damaged Hamiltonian symbols"),
+                    ("S_star(k) Hermiticity defect", "dummy", "overlap should be Hermitian positive, not unitary"),
+                    ("min eig S_star(k)", "dummy", "ensure generalized problem is positive definite"),
+                    ("cond S_star(k)", "dummy", "flag unstable overlap inversions"),
+                    ("symbol smoothness / neighbour jumps", "dummy", "detect rough symbols before velocity is trusted"),
+                ),
+                placeholders=("H/S health table", "symbol smoothness plot", "condition-number map"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_band_crossing_hazards",
+                title="Band-crossing hazards",
+                description="Maps k-space regions where energy-ordered band labels become fragile.",
+                claim="For the selected energy-ordered band, the diagnostic identifies k-space regions where near crossings or eigenvector jumps can contaminate velocity and conductivity.",
+                evidence=(
+                    ("minimum gap to adjacent bands", "dummy", "locate physical crossing hazards"),
+                    ("same-label neighbour overlap", "dummy", "detect eigenvector or label jumps"),
+                    ("velocity anomaly overlay", "dummy", "explain spikes using crossing maps"),
+                    ("active subspace comparison", "dummy", "check whether summed near-degenerate bands are stable"),
+                ),
+                placeholders=("band energy surface", "minimum-gap k-map", "label-overlap k-map", "velocity anomaly overlay"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_velocity_validation",
+                title="Velocity validation",
+                description="Checks velocity before it is used inside conductivity.",
+                claim="The velocity implementation agrees with periodic analytic inputs, finite-difference checks, unit scaling, Gamma reconstruction, and Vincent's velocity field under matched inputs.",
+                evidence=(
+                    ("constant and cosine analytic bands", "dummy", "known periodic velocity outputs"),
+                    ("finite-difference velocity comparison", "dummy", "local numerical derivative check"),
+                    ("velocity unit scaling", "dummy", "energy-length-over-hbar scaling"),
+                    ("Gamma modal reconstruction", "dummy", "local mode sum reconstructs velocity/current ingredient"),
+                    ("Vincent velocity field comparison", "dummy", "external velocity contact point"),
+                ),
+                placeholders=("analytic velocity table", "finite-difference scatter", "Gamma closure table", "Vincent velocity comparison"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_vincent_reconstruction",
+                title="Vincent reconstruction",
+                description="External reconstruction and residual audit.",
+                claim="With Vincent's inputs, the implementation reconstructs his DC calculation once reciprocal-space normalization is audited; the remaining few-percent discrepancy is separated into derivative, interpolation, and k-sampling hypotheses.",
+                evidence=(
+                    ("2π normalization audit", "dummy", "show right and wrong placements against analytic inputs"),
+                    ("Vincent tensor reconstruction", "dummy", "compare target and reproduced tensor"),
+                    ("residual 3–4% hypothesis scan", "dummy", "separate remaining numerical/model choices"),
+                    ("Fermi window / mu check", "dummy", "rule out simple input mismatch"),
+                ),
+                placeholders=("2π audit table", "Vincent tensor comparison", "residual hypothesis table", "mu scan"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_strong_dc_validation",
+                title="Strong DC validation",
+                description="Checks the finite-field band-labelled strong DC tensor in regimes where independent formulae should meet.",
+                claim="The band-labelled strong DC conductivity agrees with the Vincent/Ashcroft-style expression in their shared assumptions and parameter regime.",
+                evidence=(
+                    ("matched-input strong vs Vincent/Ashcroft", "dummy", "same dispersion, tau, T, mu, k-grid, and normalization"),
+                    ("strong spectral decomposition", "dummy", "band-labelled tensor assembly is internally visible"),
+                    ("temperature / smoothness regime check", "dummy", "avoid overclaiming under-resolved low-temperature derivatives"),
+                ),
+                placeholders=("strong DC tensor table", "strong/contact error plot", "spectral decomposition summary"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_weak_dc_limit",
+                title="Weak DC limit",
+                description="Small-field limit of finite-field DC conductivity.",
+                claim="The finite-field band-labelled DC conductivity approaches the weak-field DC result as E -> 0.",
+                evidence=(
+                    ("E sweep", "dummy", "show finite-field tensor tends to weak-field tensor"),
+                    ("relative tensor error", "dummy", "measure convergence window"),
+                    ("roundoff floor marker", "dummy", "avoid trusting too-small field shifts"),
+                ),
+                placeholders=("E sweep plot", "finite-minus-weak error plot", "asymptotic-window table"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_mode_decomposition",
+                title="Mode decomposition",
+                description="Closure checks for Gamma, F, and tilde(rho).",
+                claim="The lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the total finite-field band-labelled DC conductivity tensor.",
+                evidence=(
+                    ("Gamma closure", "dummy", "velocity/current mode ingredient reconstructs direct value"),
+                    ("F and tilde(rho) sanity", "dummy", "response and density factors have expected finite values"),
+                    ("conductivity recomposition", "dummy", "mode sum reconstructs total tensor"),
+                    ("cumulative mode contribution", "dummy", "show how many modes carry the tensor"),
+                ),
+                placeholders=("Gamma/F/tilde(rho) tables", "mode recomposition tensor", "difference tensor", "spatial mode maps"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_analytic_toys",
+                title="Analytic toys",
+                description="Periodic known-input checks.",
+                claim="On controlled periodic analytic inputs, the diagnostic gives expected zero, symmetry, scaling, and two-band behaviour.",
+                evidence=(
+                    ("constant band", "dummy", "zero velocity and zero conductivity"),
+                    ("1D cosine band", "dummy", "periodic known derivative and even v^2 contribution"),
+                    ("2D separable cosine band", "dummy", "controlled anisotropy and zero off-diagonal by symmetry"),
+                    ("periodic two-level Dirac-like model", "dummy", "gapped and near-crossing two-band behaviour"),
+                ),
+                placeholders=("analytic toy summary table", "cosine derivative plot", "two-level band hazard map"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_unit_scaling",
+                title="Unit consistency",
+                description="Physical scaling and SI conversion checks.",
+                claim="The same physical calculation gives the same SI result after conversion from different internal unit systems.",
+                evidence=(
+                    ("velocity unit conversion", "dummy", "m/s agreement from different internal units"),
+                    ("conductivity unit conversion", "dummy", "S/m agreement from different internal units"),
+                    ("tau linearity", "dummy", "DC conductivity scales linearly with tau where expected"),
+                    ("energy/length scale audit", "dummy", "catch missing hbar or length factors"),
+                ),
+                placeholders=("unit conversion table", "tau scaling plot", "scale-law table"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_k_convergence",
+                title="k-point convergence",
+                description="Refinement in N_u and N_v only.",
+                claim="The reported conductivity is stable under refinement of N_u and N_v.",
+                evidence=(
+                    ("sigma component convergence", "dummy", "tensor components stabilize"),
+                    ("trace / norm convergence", "dummy", "robust scalar convergence metric"),
+                    ("weak-limit error convergence", "dummy", "small-field comparison is not grid artefact"),
+                    ("Vincent residual convergence", "dummy", "separate 3–4% residual from k-grid error"),
+                ),
+                placeholders=("N_u,N_v convergence plot", "relative-to-finest table", "component convergence table"),
+            ),
+            _finite_field_dc_section(
+                section_id="finite_field_dc_validation_symmetry",
+                title="Symmetry sanity",
+                description="Tensor, k-space, and direction-sweep symmetry checks.",
+                claim="Tensor components and direction sweeps obey expected lattice and time-reversal symmetries up to finite-size and sampling defects.",
+                evidence=(
+                    ("sigma_xy vs sigma_yx", "dummy", "Onsager/time-reversal sanity where applicable"),
+                    ("direction sweep periodicity", "dummy", "lattice symmetry in field angle"),
+                    ("k inversion checks", "dummy", "E(k)=E(-k), velocity oddness, conductivity evenness"),
+                    ("finite-sample symmetry defect", "dummy", "separate physics from sampling/truncation defects"),
+                ),
+                placeholders=("tensor symmetry table", "direction sweep plot", "k-inversion defect map"),
+            ),
+        ),
+    )
+
+
 def diagnostics() -> tuple[DiagnosticSpec, ...]:
     return (
         DiagnosticSpec(
@@ -223,5 +496,13 @@ def diagnostics() -> tuple[DiagnosticSpec, ...]:
             description="Validate the Boltzmann operator approach independently of reference-output matching.",
             inputs=(),
             compute=compute_overview,
+        ),
+        DiagnosticSpec(
+            id="transport.boltzmann.validation.finite_field_dc",
+            group="transport.boltzmann.validation",
+            title="Finite-field DC validation",
+            description="Validate finite-field, band-labelled DC conductivity and its Gamma/F/tilde(rho) lattice-mode decomposition.",
+            inputs=(),
+            compute=compute_finite_field_dc_validation,
         ),
     )
