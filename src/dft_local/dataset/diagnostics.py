@@ -6,6 +6,8 @@ from typing import Any
 
 import numpy as np
 
+from dft_local.core.local_problem import SymbolPair
+from dft_local.core.numerics import DenseMatrixDiagnostics
 from dft_local.diagnostics.models import (
     Card,
     DiagnosticResult,
@@ -616,6 +618,195 @@ def compute_kernel_overview(ctx: Any, inputs: dict[str, object]) -> DiagnosticRe
     )
 
 
+
+def _dense_diag_row(label: str, diag: dict[str, object]) -> tuple[object, ...]:
+    return (
+        label,
+        diag["shape"],
+        diag["dtype"],
+        diag["finite"],
+        diag["norm"],
+        diag["hermitian_defect_abs"],
+        diag["hermitian_defect_rel"],
+        diag["eig_min"],
+        diag["eig_max"],
+        diag["condition_number_abs"],
+        diag["positive_definite"],
+    )
+
+
+def _symbol_degree(inputs: dict[str, object]) -> int:
+    degree = int(inputs.get("irrep_degree", 2))
+    if degree not in (1, 2):
+        raise ValueError(f"irrep_degree must be 1 or 2, got {degree}")
+    return degree
+
+
+def _symbol_sigma(inputs: dict[str, object], degree: int) -> int | None:
+    if degree == 2:
+        return None
+
+    sigma = int(inputs.get("sigma", 1))
+    if sigma not in (-1, 1):
+        raise ValueError(f"sigma must be ±1 for degree-1 irreps, got {sigma}")
+    return sigma
+
+
+def compute_symbol_point(ctx: Any, inputs: dict[str, object]) -> DiagnosticResult:
+    """Inspect H(k), S(k), overlap spectrum, and generalized energies at one irrep point."""
+
+    choice = _kernel_choice(inputs)
+    k1 = float(inputs.get("k1", 0.0))
+    k2 = float(inputs.get("k2", 0.0))
+    degree = _symbol_degree(inputs)
+    sigma = _symbol_sigma(inputs, degree)
+
+    if ctx is None:
+        return DiagnosticResult(
+            title="Symbol point",
+            summary="No diagnostic context was provided.",
+            cards=(
+                Card("context", "missing", "warn", "Run with a loaded data root to inspect symbols."),
+                Card("kernel choice", choice, "ok", "Requested kernel variant."),
+            ),
+            sections=(
+                DiagnosticSection(
+                    id="symbol_missing_context",
+                    title="Missing context",
+                    tables=(
+                        _table(
+                            id="symbol_missing_context_table",
+                            title="Context status",
+                            description="Symbol point needs a loaded DiagnosticContext.",
+                            rows=[
+                                ("context", "missing"),
+                                ("expected", "DiagnosticContext from load_default_context(root)"),
+                                ("kernel choice", choice),
+                                ("k1", k1),
+                                ("k2", k2),
+                                ("irrep degree", degree),
+                                ("sigma", sigma),
+                            ],
+                            numeric={1},
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    KH, KS = ctx.kernels(choice)
+    pair = SymbolPair(KH, KS, k1, k2, degree=degree, sigma=sigma, name=choice)
+    problem = pair.form()
+    sym_problem = problem.symmetrised()
+
+    H_diag = DenseMatrixDiagnostics.from_dense_matrix(problem.Hk, name="H(k)").as_dict()
+    S_diag = DenseMatrixDiagnostics.from_dense_matrix(
+        problem.Sk,
+        name="S(k)",
+        check_eigenvalues=True,
+    ).as_dict()
+    H_sym_diag = DenseMatrixDiagnostics.from_dense_matrix(
+        sym_problem.Hk,
+        name="Hermitian part H(k)",
+    ).as_dict()
+    S_sym_diag = DenseMatrixDiagnostics.from_dense_matrix(
+        sym_problem.Sk,
+        name="Hermitian part S(k)",
+        check_eigenvalues=True,
+    ).as_dict()
+
+    overlap_eigs = problem.overlap_eigenvalues()
+
+    energy_rows: list[tuple[object, ...]]
+    energy_status = "ok"
+    energy_detail = "Generalized eigenvalues from Hermitian parts of H(k), S(k)."
+
+    try:
+        energies = problem.energies()
+        energy_rows = [(i, float(E)) for i, E in enumerate(energies)]
+    except Exception as exc:
+        energy_status = "error"
+        energy_detail = str(exc)
+        energy_rows = [("error", energy_detail)]
+
+    return DiagnosticResult(
+        title="Symbol point",
+        summary=(
+            f"{pair.label()} using kernel choice {choice!r}; "
+            f"dense problem shape {problem.Hk.shape}."
+        ),
+        cards=(
+            Card("kernel choice", choice, "ok", "Selected kernel variant."),
+            Card("k1", k1, "ok", "First logical irrep coordinate."),
+            Card("k2", k2, "ok", "Second logical irrep coordinate."),
+            Card("degree", degree, "ok", "Irrep degree used to form the symbol."),
+            Card("S positive", S_diag["positive_definite"], "ok" if S_diag["positive_definite"] else "warn", "Positive definiteness of Hermitian part of S(k)."),
+            Card("energies", len(energy_rows), energy_status, energy_detail),
+        ),
+        sections=(
+            DiagnosticSection(
+                id="symbol_dense_diagnostics",
+                title="Dense symbol diagnostics",
+                tables=(
+                    _table(
+                        id="symbol_dense_diagnostics_table",
+                        title="H(k), S(k) diagnostics",
+                        description="Dense matrix diagnostics before and after taking Hermitian parts.",
+                        headers=(
+                            "matrix",
+                            "shape",
+                            "dtype",
+                            "finite",
+                            "norm",
+                            "Hermiticity abs",
+                            "Hermiticity rel",
+                            "eig min",
+                            "eig max",
+                            "condition number",
+                            "positive definite",
+                        ),
+                        rows=[
+                            _dense_diag_row("H(k)", H_diag),
+                            _dense_diag_row("S(k)", S_diag),
+                            _dense_diag_row("Hermitian H(k)", H_sym_diag),
+                            _dense_diag_row("Hermitian S(k)", S_sym_diag),
+                        ],
+                        numeric={4, 5, 6, 7, 8, 9},
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="symbol_overlap",
+                title="Overlap eigenvalues",
+                tables=(
+                    _table(
+                        id="symbol_overlap_eigenvalues",
+                        title="Eigenvalues of Hermitian part of S(k)",
+                        description="Overlap spectrum used to check generalized eigenproblem conditioning.",
+                        headers=("index", "eigenvalue"),
+                        rows=[(i, float(v)) for i, v in enumerate(overlap_eigs)],
+                        numeric={0, 1},
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="symbol_energies",
+                title="Generalized energies",
+                tables=(
+                    _table(
+                        id="symbol_energy_table",
+                        title="Generalized eigenvalues",
+                        description=energy_detail,
+                        headers=("band", "energy"),
+                        rows=energy_rows,
+                        numeric={0, 1} if energy_status == "ok" else set(),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+
 def diagnostics() -> tuple[DiagnosticSpec, ...]:
     return (
         DiagnosticSpec(
@@ -662,5 +853,30 @@ def diagnostics() -> tuple[DiagnosticSpec, ...]:
                 ),
             ),
             compute=compute_kernel_overview,
+        ),
+        DiagnosticSpec(
+            id="symbol.point",
+            group="symbol",
+            title="Symbol point",
+            description="Inspect dense H(k), S(k), overlap eigenvalues, and generalized energies at one irrep point.",
+            inputs=(
+                InputSpec(
+                    "kernel_choice",
+                    "Kernel choice",
+                    "select",
+                    "average_star",
+                    options=(
+                        ("anchored", "anchored"),
+                        ("anchored_star", "anchored star"),
+                        ("average", "average"),
+                        ("average_star", "average star"),
+                    ),
+                ),
+                InputSpec("k1", "k1", "float", 0.0),
+                InputSpec("k2", "k2", "float", 0.0),
+                InputSpec("irrep_degree", "irrep degree", "int", 2, min_value=1, max_value=2),
+                InputSpec("sigma", "sigma", "int", 1, min_value=-1, max_value=1),
+            ),
+            compute=compute_symbol_point,
         ),
     )
