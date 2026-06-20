@@ -62,23 +62,26 @@ def test_typst_bundle_exports_manifest_components_and_data(tmp_path: Path) -> No
         provenance={"created_at": "now", "code_commit": "abc"},
     )
 
-    assert (out / "diagnostics.json").exists()
+    assert (out / "generated" / "diagnostics.json").exists()
     assert (out / "manifest.json").exists()
     assert (out / "diagnostics.typ").exists()
-    assert (out / "components.typ").exists()
+    assert (out / "generated" / "components.typ").exists()
     assert not (out / "lib").is_symlink()
     assert (out / "lib" / "mod.typ").exists()
     assert default_typst_lib_source().is_absolute()
     assert default_typst_lib_source().exists()
-    assert (out / "data" / "field_strength.json").exists()
-    assert (out / "data" / "params.json").exists()
+    assert (out / "generated" / "data" / "field_strength.json").exists()
+    assert (out / "generated" / "data" / "params.json").exists()
+    assert not (out / "data").exists()
 
     manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["schema"] == "dft-local.typst-bundle.v1"
     assert manifest["report_id"] == "Validation_report"
+    assert manifest["generated"]["components"] == "generated/components.typ"
     assert manifest["provenance"]["code_commit"] == "abc"
     assert any(item["kind"] == "graph2d" and item["component"] == "field_strength" for item in manifest["items"])
 
-    graph = json.loads((out / "data" / "field_strength.json").read_text())
+    graph = json.loads((out / "generated" / "data" / "field_strength.json").read_text())
     assert graph["series"][0]["points"][1] == {
         "entity_id": None,
         "label": "",
@@ -87,7 +90,7 @@ def test_typst_bundle_exports_manifest_components_and_data(tmp_path: Path) -> No
         "y": 2.0,
     }
 
-    components = (out / "components.typ").read_text()
+    components = (out / "generated" / "components.typ").read_text()
     assert '#let field_strength-data = json("data/field_strength.json")' in components
     assert "#let field_strength-plot() = line-graph(field_strength-data)" in components
     assert "#let field_strength() = diagnostic-figure(" in components
@@ -119,11 +122,11 @@ def test_typst_bundle_preserves_webgl_as_static_placeholder(tmp_path: Path) -> N
     assert item["kind"] == "webgl-placeholder"
     assert item["static_support"] == "placeholder"
 
-    data = json.loads((out / "data" / "band_surface.json").read_text())
+    data = json.loads((out / "generated" / "data" / "band_surface.json").read_text())
     assert data["static_support"] == "placeholder"
     assert data["payload"] == {"points": [1, 2, 3]}
 
-    components = (out / "components.typ").read_text()
+    components = (out / "generated" / "components.typ").read_text()
     assert "unsupported-view(band_surface-data)" in components
 
 
@@ -159,7 +162,7 @@ def test_typst_bundle_renders_dos_idos_webgl_as_static_graphs(tmp_path: Path) ->
     assert item["static_support"] == "graph2d"
     assert item["plot_component"] == "dos_idos-plot"
 
-    data = json.loads((out / "data" / "dos_idos.json").read_text())
+    data = json.loads((out / "generated" / "data" / "dos_idos.json").read_text())
     assert data["kind"] == "dos_idos"
     assert data["static_support"] == "graph2d"
     assert data["dos_graph"]["series"][0]["points"][1]["x"] == 0.0
@@ -167,7 +170,7 @@ def test_typst_bundle_renders_dos_idos_webgl_as_static_graphs(tmp_path: Path) ->
     assert data["idos_graph"]["series"][0]["points"][2]["y"] == 2.0
     assert data["metadata"]["markers"][0]["label"] == "mu(T)"
 
-    components = (out / "components.typ").read_text()
+    components = (out / "generated" / "components.typ").read_text()
     assert "#let dos_idos-plot() = dos-idos-view(dos_idos-data)" in components
     assert "  dos_idos-plot()," in components
 
@@ -213,14 +216,14 @@ def test_typst_bundle_renders_region_surface_webgl_as_static_summary(tmp_path: P
     assert item["kind"] == "region-surface-static"
     assert item["static_support"] == "summary-table"
 
-    data = json.loads((out / "data" / "surface.json").read_text())
+    data = json.loads((out / "generated" / "data" / "surface.json").read_text())
     assert data["kind"] == "region_surface"
     assert data["static_support"] == "summary-table"
     assert data["summary_table"]["rows"][1] == ["grid", "2 x 2"]
     assert data["band_table"]["rows"][0] == [0, 0.0, 1.5, 3.0, "eV"]
     assert data["band_table"]["rows"][1] == [1, 10.0, 11.5, 13.0, "eV"]
 
-    components = (out / "components.typ").read_text()
+    components = (out / "generated" / "components.typ").read_text()
     assert "region-surface-summary(surface-data)" in components
 
 
@@ -235,10 +238,10 @@ def test_diagnostic_app_exports_typst_bundle_route(tmp_path: Path, monkeypatch) 
     out = tmp_path / "diagnostic_bundles" / "transport_boltzmann_calculation_overview"
     assert "Typst diagnostic bundle exported" in html
     assert (out / "diagnostics.typ").exists()
-    assert (out / "components.typ").exists()
+    assert (out / "generated" / "components.typ").exists()
     assert (out / "lib").is_symlink()
     assert (out / "manifest.json").exists()
-    assert (out / "diagnostics.json").exists()
+    assert (out / "generated" / "diagnostics.json").exists()
 
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["report_id"] == "transport_boltzmann_calculation_overview"

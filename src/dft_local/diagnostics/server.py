@@ -363,6 +363,9 @@ class DiagnosticApp:
             out_dir,
             report_id=diagnostic_id.replace(".", "_"),
             title=spec.title,
+            diagnostic_id=diagnostic_id,
+            inputs=raw_inputs,
+            include_context=self.ctx is not None,
         )
         rel = escape(str(out_dir))
         body = (
@@ -372,10 +375,10 @@ class DiagnosticApp:
             f"<p>Wrote <code>{rel}</code>.</p>"
             "<ul>"
             f"<li><code>{rel}/diagnostics.typ</code></li>"
-            f"<li><code>{rel}/components.typ</code></li>"
+            f"<li><code>{rel}/generated/components.typ</code></li>"
             f"<li><code>{rel}/manifest.json</code></li>"
-            f"<li><code>{rel}/diagnostics.json</code></li>"
-            f"<li><code>{rel}/data/</code></li>"
+            f"<li><code>{rel}/generated/diagnostics.json</code></li>"
+            f"<li><code>{rel}/generated/data/</code></li>"
             "</ul>"
         )
         return render_page(f"export · {spec.title}", body)

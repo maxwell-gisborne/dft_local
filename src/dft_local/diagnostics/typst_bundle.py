@@ -46,20 +46,44 @@ def export_typst_bundle(
     *,
     report_id: str | None = None,
     title: str | None = None,
+    diagnostic_id: str | None = None,
+    data_root: str | None = None,
+    inputs: dict[str, Any] | None = None,
+    include_context: bool | None = None,
+    layout: dict[str, Any] | None = None,
     provenance: dict[str, Any] | None = None,
     lib_source: str | Path | None = None,
     lib_mode: LibMode = "symlink",
+    write_root_document: bool = True,
 ) -> Path:
-    """Write a Typst diagnostic bundle for ``result`` and return its path."""
+    """Write a Typst diagnostic bundle for ``result`` and return its path.
+
+    The root bundle files are user-facing:
+
+    ``manifest.json``
+        Editable refresh manifest and provenance record.
+
+    ``diagnostics.typ``
+        Editable standalone Typst entrypoint.
+
+    Machine-owned exports live under ``generated/`` so bundle refreshes can
+    update data and component glue without overwriting the document shell.
+    """
 
     writer = _BundleWriter(
         result=result,
         out_dir=Path(out_dir),
         report_id=report_id or _slug(_plain_text(result.title)) or "diagnostics",
         title=title or _plain_text(result.title),
+        diagnostic_id=diagnostic_id,
+        data_root=data_root,
+        inputs=inputs or {},
+        include_context=include_context,
+        layout=layout or {},
         provenance=provenance or default_provenance(),
         lib_source=Path(lib_source) if lib_source is not None else default_typst_lib_source(),
         lib_mode=lib_mode,
+        write_root_document=write_root_document,
     )
     writer.write()
     return writer.out_dir
@@ -99,26 +123,41 @@ class _BundleWriter:
         out_dir: Path,
         report_id: str,
         title: str,
+        diagnostic_id: str | None,
+        data_root: str | None,
+        inputs: dict[str, Any],
+        include_context: bool | None,
+        layout: dict[str, Any],
         provenance: dict[str, Any],
         lib_source: Path,
         lib_mode: LibMode,
+        write_root_document: bool,
     ) -> None:
         self.result = result
         self.out_dir = out_dir
         self.report_id = report_id
         self.title = title
+        self.diagnostic_id = diagnostic_id or report_id
+        self.data_root = data_root
+        self.inputs = inputs
+        self.include_context = include_context
+        self.layout = layout
         self.provenance = provenance
         self.lib_source = lib_source
         self.lib_mode = lib_mode
-        self.data_dir = out_dir / "data"
+        self.write_root_document = write_root_document
+        self.generated_dir = out_dir / "generated"
+        self.data_dir = self.generated_dir / "data"
+        self.assets_dir = self.generated_dir / "assets"
         self.items: list[dict[str, Any]] = []
         self.component_defs: list[str] = []
         self.report_calls: list[str] = []
 
     def write(self) -> None:
         self.out_dir.mkdir(parents=True, exist_ok=True)
+        self.generated_dir.mkdir(parents=True, exist_ok=True)
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        (self.out_dir / "assets").mkdir(exist_ok=True)
+        self.assets_dir.mkdir(exist_ok=True)
 
         self._write_lib()
         self._write_diagnostics_json()
@@ -169,7 +208,7 @@ class _BundleWriter:
         _write_fallback_typst_lib(target)
 
     def _write_diagnostics_json(self) -> None:
-        _write_json(self.out_dir / "diagnostics.json", result_to_json_data(self.result))
+        _write_json(self.generated_dir / "diagnostics.json", result_to_json_data(self.result))
 
     def _collect_result(self) -> None:
         for block in _result_blocks(self.result):
@@ -264,7 +303,7 @@ class _BundleWriter:
     def _collect_table(self, table: Table, *, parent: str) -> str:
         cid = _safe_component_name(table.id, "table")
         data_path = f"data/{_slug(table.id)}.json"
-        _write_json(self.out_dir / data_path, table_to_json_data(table))
+        _write_json(self.generated_dir / data_path, table_to_json_data(table))
         self.component_defs.append(
             f"#let {cid}-data = json(\"{data_path}\")\n"
             f"#let {cid}() = diagnostic-figure(\n"
@@ -279,7 +318,7 @@ class _BundleWriter:
     def _collect_graph(self, graph: Graph2D, *, parent: str) -> str:
         cid = _safe_component_name(graph.id, "graph")
         data_path = f"data/{_slug(graph.id)}.json"
-        _write_json(self.out_dir / data_path, graph_to_json_data(graph))
+        _write_json(self.generated_dir / data_path, graph_to_json_data(graph))
         self.component_defs.append(
             f"#let {cid}-data = json(\"{data_path}\")\n"
             f"#let {cid}-plot() = line-graph({cid}-data)\n"
@@ -297,7 +336,7 @@ class _BundleWriter:
         data_path = f"data/{_slug(view.id)}.json"
 
         if _is_dos_idos_view(view):
-            _write_json(self.out_dir / data_path, dos_idos_to_json_data(view))
+            _write_json(self.generated_dir / data_path, dos_idos_to_json_data(view))
             self.component_defs.append(
                 f"#let {cid}-data = json(\"{data_path}\")\n"
                 f"#let {cid}-plot() = dos-idos-view({cid}-data)\n"
@@ -320,7 +359,7 @@ class _BundleWriter:
             return cid
 
         if _is_region_surface_view(view):
-            _write_json(self.out_dir / data_path, region_surface_to_json_data(view))
+            _write_json(self.generated_dir / data_path, region_surface_to_json_data(view))
             self.component_defs.append(
                 f"#let {cid}-data = json(\"{data_path}\")\n"
                 f"#let {cid}() = diagnostic-figure(\n"
@@ -340,7 +379,7 @@ class _BundleWriter:
             )
             return cid
 
-        _write_json(self.out_dir / data_path, webgl_to_json_data(view))
+        _write_json(self.generated_dir / data_path, webgl_to_json_data(view))
         self.component_defs.append(
             f"#let {cid}-data = json(\"{data_path}\")\n"
             f"#let {cid}() = diagnostic-figure(\n"
@@ -363,7 +402,7 @@ class _BundleWriter:
     def _collect_matrix(self, matrix: Matrix, *, parent: str) -> str:
         cid = _safe_component_name(matrix.id, "matrix")
         data_path = f"data/{_slug(matrix.id)}.json"
-        _write_json(self.out_dir / data_path, matrix_to_json_data(matrix))
+        _write_json(self.generated_dir / data_path, matrix_to_json_data(matrix))
         self.component_defs.append(
             f"#let {cid}-data = json(\"{data_path}\")\n"
             f"#let {cid}() = diagnostic-figure(\n"
@@ -379,7 +418,7 @@ class _BundleWriter:
         cid = _safe_component_name(card.entity_id or card.label, "card")
         data_path = f"data/{_slug(cid)}.json"
         _write_json(
-            self.out_dir / data_path,
+            self.generated_dir / data_path,
             {
                 "label": _plain_text(card.label),
                 "value": _json_value(card.value),
@@ -398,7 +437,7 @@ class _BundleWriter:
         cid = _safe_component_name(block_id, "unsupported")
         data_path = f"data/{_slug(cid)}.json"
         _write_json(
-            self.out_dir / data_path,
+            self.generated_dir / data_path,
             {
                 "id": str(block_id),
                 "title": title,
@@ -427,7 +466,7 @@ class _BundleWriter:
             "kind": kind,
             "component": component,
             "parent": parent,
-            "data": data_path,
+            "data": f"generated/{data_path}",
             "title": _plain_text(title),
         }
         item.update(extra)
@@ -439,13 +478,28 @@ class _BundleWriter:
         _write_json(
             self.out_dir / "manifest.json",
             {
+                "schema": "dft-local.typst-bundle.v1",
                 "report_id": self.report_id,
+                "diagnostic_id": self.diagnostic_id,
                 "title": self.title,
                 "summary": _plain_text(self.result.summary),
+                "data_root": self.data_root,
+                "inputs": self.inputs,
+                "include_context": self.include_context,
+                "layout": self.layout or {"title": self.title},
+                "export": {
+                    "lib_mode": self.lib_mode,
+                },
                 "provenance": self.provenance,
                 "typst_lib": {
                     "mode": self.lib_mode,
                     "source": str(self.lib_source),
+                },
+                "generated": {
+                    "components": "generated/components.typ",
+                    "diagnostics_json": "generated/diagnostics.json",
+                    "data_dir": "generated/data",
+                    "assets_dir": "generated/assets",
                 },
                 "items": self.items,
             },
@@ -454,8 +508,8 @@ class _BundleWriter:
     def _write_components_typ(self) -> None:
         text = (
             "// Generated by dft_local.diagnostics.typst_bundle. Do not edit by hand.\n"
-            '#import "lib/mod.typ": *\n\n'
-            '#let manifest = json("manifest.json")\n\n'
+            '#import "../lib/mod.typ": *\n\n'
+            '#let manifest = json("../manifest.json")\n\n'
             '#let display-value(x) = {\n'
             '  if type(x) == bool {\n'
             '    if x { "true" } else { "false" }\n'
@@ -468,13 +522,18 @@ class _BundleWriter:
             + "\n".join(self.component_defs)
             + "\n"
         )
-        (self.out_dir / "components.typ").write_text(text)
+        (self.generated_dir / "components.typ").write_text(text)
 
     def _write_diagnostics_typ(self) -> None:
+        target = self.out_dir / "diagnostics.typ"
+        if target.exists() and not self.write_root_document:
+            return
+
         calls = "\n\n".join(f"#{name}()" for name in self.report_calls)
         text = (
-            "// Generated by dft_local.diagnostics.typst_bundle. Do not edit by hand.\n"
-            '#import "components.typ": *\n\n'
+            "// Editable Typst diagnostic report entrypoint.\n"
+            "// Regenerate with `dft-local bundle . --refresh-root` if the section shell should be reset.\n"
+            '#import "generated/components.typ": *\n\n'
             f"= {_typst_content(self.result.title)}\n\n"
             f"{_typst_content(self.result.summary)}\n\n"
             "#block[\n"
@@ -484,7 +543,7 @@ class _BundleWriter:
             "]\n\n"
             f"{calls}\n"
         )
-        (self.out_dir / "diagnostics.typ").write_text(text)
+        target.write_text(text)
 
 
 

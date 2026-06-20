@@ -117,22 +117,23 @@ The Typst path is a static archival/reporting path. It lowers the same
 Bundle layout:
 
     diagnostic_bundles/<diagnostic_id_with_underscores>/
-      diagnostics.typ
-      components.typ
-      diagnostics.json
       manifest.json
-      data/
-      assets/
-      lib/
+      diagnostics.typ
+      generated/
+        components.typ
+        diagnostics.json
+        data/
+        assets/
+      lib -> ../../typst-diagnostics-lib
 
 Important files:
 
-- `diagnostics.typ` is the standalone report entrypoint.
-- `components.typ` contains generated Typst component wrappers.
-- `diagnostics.json` contains the whole diagnostic tree.
-- `manifest.json` records exported items, provenance, bundle mode, and static
-  support status.
-- `data/*.json` contains one JSON file per exported block.
+- `manifest.json` is the editable refresh manifest and provenance record.
+- `diagnostics.typ` is the editable standalone Typst entrypoint.
+- `generated/components.typ` contains generated Typst component wrappers.
+- `generated/diagnostics.json` contains the whole diagnostic tree.
+- `generated/data/*.json` contains one JSON file per exported block.
+- `generated/assets/` contains generated static assets when needed.
 - `lib/` points at the reusable Typst helper library.
 
 The default export route is:
