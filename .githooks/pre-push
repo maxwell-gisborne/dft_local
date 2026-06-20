@@ -4,8 +4,8 @@ set -eu
 echo "pre-push: running JavaScript checks"
 npm run js:check
 
-echo "pre-push: running pytest -q"
-PYTHONPATH=src python -m pytest -q
+echo "pre-push: running pytest -q -n 4 --dist loadscope"
+PYTHONPATH=src python -m pytest -q -n 4 --dist loadscope
 
 echo "pre-push: running dft-local test --timeout 120"
 PYTHONPATH=src python -m dft_local test --timeout 120

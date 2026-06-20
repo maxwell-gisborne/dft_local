@@ -5,6 +5,12 @@
  */
 
 /**
+ * @typedef {typeof globalThis & {
+ *   __dftLocalThreeRuntime?: Promise<{THREE:any, OrbitControls:any}> | {THREE:any, OrbitControls:any}
+ * }} DftGlobalThis
+ */
+
+/**
  * @typedef {{x:number, y:number, entity_id?:string|null, label?:string, meta?:Record<string, unknown>}} GraphPoint
  * @typedef {{name:string, kind:"line"|"points"|"line_points", points:GraphPoint[]}} GraphSeries
  * @typedef {{id:string, title:string, x_label:string, y_label:string, series:GraphSeries[], static?:boolean}} GraphPayload
@@ -102,7 +108,7 @@ let threeRuntimePromise = null;
 async function loadThreeRuntime() {
   if (threeRuntimePromise) return threeRuntimePromise;
 
-  const injectedRuntime = globalThis.__dftLocalThreeRuntime;
+  const injectedRuntime = /** @type {DftGlobalThis} */ (globalThis).__dftLocalThreeRuntime;
   if (injectedRuntime) {
     threeRuntimePromise = Promise.resolve(injectedRuntime);
     return threeRuntimePromise;
