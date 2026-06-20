@@ -11,7 +11,7 @@ import json
 from dft_local.diagnostics.models import DiagnosticSection, HtmlBlock, MarkdownBlock, DiagnosticResult, Graph2D, TypstMathBlock, Card, Table
 from dft_local.diagnostics.typst import TypstRenderError, render_typst_error, render_typst_math_to_svg
 from dft_local.diagnostics.user_strings import RichText, TypstMath, rich
-from dft_local.core.units import DisplayQuantity
+from dft_local.core.units import DisplayQuantity, display_unit_symbol
 
 
 
@@ -463,8 +463,29 @@ def table_json_header_value(header: object) -> str:
 
 
 def table_json_cell_value(value: object) -> object:
+    """Return a JSON-safe table cell while preserving semantic display values."""
+
     if isinstance(value, DisplayQuantity):
-        return float(value.value)
+        unit = getattr(value, "unit", None)
+        return {
+            "kind": "quantity",
+            "value": float(value.value),
+            "name": getattr(value, "name", ""),
+            "dimension": str(getattr(value, "dimension", "")),
+            "unit": str(unit) if unit is not None else "",
+            "unit_symbol": display_unit_symbol(unit) if unit is not None else "",
+            "raw_unit_symbol": getattr(unit, "symbol", str(unit) if unit is not None else ""),
+        }
+
+    if isinstance(value, RichText):
+        return "".join(str(table_json_cell_value(part)) for part in value.parts)
+
+    if isinstance(value, TypstMath):
+        return value.source
+
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+
     return fmt(value)
 
 
