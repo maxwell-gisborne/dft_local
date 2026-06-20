@@ -23,6 +23,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_band_crossing_hazard_probe,
     finite_field_velocity_validation_probe,
     finite_field_unit_scaling_probe,
+    finite_field_analytic_toy_coverage_probe,
     operator_symbol_validation_probe,
 )
 
@@ -301,6 +302,23 @@ def _finite_field_unit_scaling_rows(probe: dict[str, object]) -> tuple[TableRow,
     )
 
 
+def _finite_field_analytic_toy_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "summary of current real probes")),
+        TableRow(("toy count", _fmt_probe_value(probe["toy_count"]), "controlled analytic cases")),
+        TableRow(("cosine symbol max error", _fmt_probe_value(probe["separable_cosine_symbol_max_error"]), "near 0")),
+        TableRow(("cosine derivative max error", _fmt_probe_value(probe["separable_cosine_derivative_max_error"]), "near 0")),
+        TableRow(("identity overlap min eig", _fmt_probe_value(probe["identity_overlap_min_eig"]), "> 1e-10")),
+        TableRow(("identity overlap condition", _fmt_probe_value(probe["identity_overlap_condition"]), "finite")),
+        TableRow(("periodic Dirac min gap", _fmt_probe_value(probe["periodic_dirac_min_gap"]), "controlled near-crossing")),
+        TableRow(("periodic Dirac hazard count", _fmt_probe_value(probe["periodic_dirac_hazard_count"]), ">= 1")),
+        TableRow(("HF velocity max error", _fmt_probe_value(probe["velocity_hf_max_error"]), "near 0")),
+        TableRow(("unit velocity factor error", _fmt_probe_value(probe["unit_velocity_factor_error"]), "near 0")),
+        TableRow(("all current toys pass", _fmt_probe_value(probe["all_current_toys_pass"]), "True")),
+        TableRow(("missing toy", _fmt_probe_value(probe["missing_toy"]), "next analytic target")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -479,6 +497,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     )
     velocity_probe = finite_field_velocity_validation_probe()
     unit_scaling_probe = finite_field_unit_scaling_probe()
+    analytic_toy_probe = finite_field_analytic_toy_coverage_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -686,18 +705,39 @@ This first implementation uses the separable cosine production-symbol toy. It va
                 ),
                 placeholders=("Gamma/F/tilde(rho) tables", "mode recomposition tensor", "difference tensor", "spatial mode maps"),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_analytic_toys",
+            DiagnosticSection(
+                id="finite_field_dc_validation_analytic_toys",
                 title="Analytic toys",
-                description="Periodic known-input checks.",
-                claim="On controlled periodic analytic inputs, the diagnostic gives expected zero, symmetry, scaling, and two-band behaviour.",
-                evidence=(
-                    ("constant band", "dummy", "zero velocity and zero conductivity"),
-                    ("1D cosine band", "dummy", "periodic known derivative and even v^2 contribution"),
-                    ("2D separable cosine band", "dummy", "controlled anisotropy and zero off-diagonal by symmetry"),
-                    ("periodic two-level Dirac-like model", "dummy", "gapped and near-crossing two-band behaviour"),
+                description="Closed-form systems used to test the implementation independent of BigDFT data.",
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_analytic_toys_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** Controlled analytic toys isolate algebra, derivatives, crossings, overlap health, and unit scaling before any BigDFT dataset-specific effects are introduced.
+
+This section now summarises the real toy-backed probes used by the validation ladder. The missing analytic target is the finite-field lattice-mode closure toy for Gamma/F/rho decomposition.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_analytic_toys_table",
+                        title="Analytic toy coverage",
+                        description="Summary of currently implemented controlled analytic probes.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_analytic_toy_rows(analytic_toy_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_analytic_toys_placeholders",
+                        title="Remaining placeholders",
+                        description="Analytic toy coverage still needed for the full finite-field validation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("finite-field Gamma/F/rho closure toy", "pending")),
+                            TableRow(("periodic two-band conductivity toy", "pending")),
+                            TableRow(("active-subspace near-crossing toy", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("analytic toy summary table", "cosine derivative plot", "two-level band hazard map"),
             ),
             DiagnosticSection(
                 id="finite_field_dc_validation_unit_scaling",

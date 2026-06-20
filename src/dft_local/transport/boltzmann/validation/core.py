@@ -819,6 +819,61 @@ def finite_field_unit_scaling_probe() -> dict[str, float | bool | str]:
         "conductivity_si_status": "pending full conductivity unit-conversion run",
     }
 
+
+def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool | str]:
+    """Summarise analytic toy coverage for the finite-field validation ladder."""
+
+    symbol_probe = gd_symbol_production_validation_probe()
+    input_health = finite_field_input_health_probe(n_u=5, n_v=7, symmetrization="star")
+    band_hazards = finite_field_band_crossing_hazard_probe(
+        n_u=10,
+        n_v=10,
+        gap_threshold=0.50,
+        mass=0.20,
+    )
+    velocity = finite_field_velocity_validation_probe()
+    units = finite_field_unit_scaling_probe()
+
+    max_symbol_error = max(
+        float(symbol_probe["fixed_symbol_abs_error"]),
+        float(symbol_probe["generic_symbol_channel_abs_error"]),
+        float(symbol_probe["energy_surface_max_abs_error"]),
+    )
+    max_derivative_error = max(
+        float(symbol_probe["fixed_dk1_abs_error"]),
+        float(symbol_probe["fixed_dk2_abs_error"]),
+        float(symbol_probe["generic_dk1_channel_abs_error"]),
+        float(symbol_probe["generic_dk2_channel_abs_error"]),
+        float(symbol_probe["energy_surface_dk1_max_abs_error"]),
+        float(symbol_probe["energy_surface_dk2_max_abs_error"]),
+        float(velocity["finite_difference_dk1_abs_error"]),
+        float(velocity["finite_difference_dk2_abs_error"]),
+    )
+
+    return {
+        "source": "summary of controlled analytic probes",
+        "toy_count": 4,
+        "separable_cosine_symbol_max_error": float(max_symbol_error),
+        "separable_cosine_derivative_max_error": float(max_derivative_error),
+        "identity_overlap_min_eig": float(input_health["s_eig_min"]),
+        "identity_overlap_condition": float(input_health["s_condition_number_abs_max"]),
+        "periodic_dirac_min_gap": float(band_hazards["min_gap"]),
+        "periodic_dirac_hazard_count": int(band_hazards["hazard_count"]),
+        "velocity_hf_max_error": float(max(
+            velocity["hellmann_feynman_dk1_abs_error"],
+            velocity["hellmann_feynman_dk2_abs_error"],
+        )),
+        "unit_velocity_factor_error": float(units["velocity_factor_abs_error"]),
+        "all_current_toys_pass": bool(
+            max_symbol_error < 1.0e-12
+            and max_derivative_error < 1.0e-9
+            and float(input_health["s_eig_min"]) > 1.0e-10
+            and int(band_hazards["hazard_count"]) >= 1
+            and float(units["velocity_factor_abs_error"]) < 1.0e-12
+        ),
+        "missing_toy": "finite-field lattice-mode Gamma/F/rho closure toy",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

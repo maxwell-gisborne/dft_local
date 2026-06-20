@@ -635,3 +635,55 @@ def test_finite_field_dc_unit_scaling_section_contains_real_metrics() -> None:
     assert rows["atomic length to Å"] == "5.29177211e-01"
     assert rows["mu conversion required"] == "True"
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_analytic_toy_coverage_probe_summarises_real_toys() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_analytic_toy_coverage_probe,
+    )
+
+    probe = finite_field_analytic_toy_coverage_probe()
+
+    assert probe["toy_count"] == 4
+    assert probe["separable_cosine_symbol_max_error"] < 1.0e-12
+    assert probe["separable_cosine_derivative_max_error"] < 1.0e-9
+    assert probe["identity_overlap_min_eig"] > 1.0e-10
+    assert probe["periodic_dirac_hazard_count"] >= 1
+    assert probe["velocity_hf_max_error"] < 1.0e-12
+    assert probe["unit_velocity_factor_error"] < 1.0e-12
+    assert probe["all_current_toys_pass"] is True
+
+
+def test_finite_field_dc_analytic_toys_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_analytic_toys"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_analytic_toys_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_analytic_toys_table"].rows
+    }
+
+    assert rows["toy count"] == "4"
+    assert rows["all current toys pass"] == "True"
+    assert "dummy" not in set(rows.values())
