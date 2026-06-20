@@ -492,6 +492,10 @@ def _write_fallback_typst_lib(target: Path) -> None:
     """Write a minimal built-in Typst library when the project lib is absent."""
 
     (target / "mod.typ").write_text(
+        '// Basic notation used by exported diagnostic math blocks.\n'
+        '// Keep this bundle-local so exported diagnostics remain standalone.\n'
+        '#let hbar = $ upright(ℏ) $\n'
+        '#let diff = $ partial $\n\n'
         '#import "plots.typ": *\n'
         '#import "tables.typ": *\n'
         '#import "diagnostic.typ": *\n'
