@@ -319,6 +319,27 @@ class _BundleWriter:
             )
             return cid
 
+        if _is_region_surface_view(view):
+            _write_json(self.out_dir / data_path, region_surface_to_json_data(view))
+            self.component_defs.append(
+                f"#let {cid}-data = json(\"{data_path}\")\n"
+                f"#let {cid}() = diagnostic-figure(\n"
+                f"  region-surface-summary({cid}-data),\n"
+                f"  title: [{_typst_content(view.title)}],\n"
+                f"  caption: [{_typst_content(view.description)}],\n"
+                f")\n"
+            )
+            self._add_data_item(
+                view.id,
+                "region-surface-static",
+                cid,
+                parent,
+                data_path,
+                view.title,
+                static_support="summary-table",
+            )
+            return cid
+
         _write_json(self.out_dir / data_path, webgl_to_json_data(view))
         self.component_defs.append(
             f"#let {cid}-data = json(\"{data_path}\")\n"
@@ -493,7 +514,8 @@ def _write_fallback_typst_lib(target: Path) -> None:
     )
     (target / "plots.typ").write_text(
         '#import "@preview/cetz:0.3.4"\n'
-        '#import "@preview/lilaq:0.4.0" as lq\n\n'
+        '#import "@preview/lilaq:0.4.0" as lq\n'
+    '#import "tables.typ": diagnostic-table\n\n'
         '#let line-graph(data) = {\n'
         '  let series = data.series.map(s => (\n'
         '    label: s.name,\n'
@@ -515,6 +537,10 @@ def _write_fallback_typst_lib(target: Path) -> None:
         '#let dos-idos-view(data) = [\n'
         '  #line-graph(data.dos_graph)\n\n'
         '  #line-graph(data.idos_graph)\n'
+        ']\n\n'
+        '#let region-surface-summary(data) = [\n'
+        '  #diagnostic-table(data.summary_table)\n\n'
+        '  #diagnostic-table(data.band_table)\n'
         ']\n'
     )
 
@@ -654,6 +680,109 @@ def dos_idos_to_json_data(view: WebGLView) -> dict[str, Any]:
         },
         "payload": _json_value(payload),
     }
+
+
+def _is_region_surface_view(view: WebGLView) -> bool:
+    payload = view.payload
+    return (
+        view.renderer == "region_surface"
+        and isinstance(payload, dict)
+        and isinstance(payload.get("energies"), list)
+    )
+
+
+def region_surface_to_json_data(view: WebGLView) -> dict[str, Any]:
+    payload = dict(view.payload)
+    field_id = _plain_text(payload.get("selected_field", "energy"))
+    field_values = payload.get("field_values")
+    values = None
+    if isinstance(field_values, dict) and isinstance(field_values.get(field_id), list):
+        values = field_values[field_id]
+    if values is None:
+        values = payload.get("energies", ())
+
+    band_rows = _surface_band_summary_rows(values)
+    unit = _surface_field_unit(payload, field_id)
+    if unit:
+        band_rows = tuple(tuple(row[:4]) + (unit,) for row in band_rows)
+
+    return {
+        "kind": "region_surface",
+        "id": view.id,
+        "renderer": view.renderer,
+        "title": _plain_text(view.title),
+        "description": _plain_text(view.description),
+        "static_support": "summary-table",
+        "summary_table": {
+            "kind": "table",
+            "id": f"{view.id}_summary",
+            "title": "Surface payload summary",
+            "description": "Static summary of an interactive region surface payload.",
+            "headers": ("quantity", "value"),
+            "rows": (
+                ("renderer", view.renderer),
+                ("grid", f"{_json_value(payload.get('nu'))} x {_json_value(payload.get('nv'))}"),
+                ("bands", _json_value(payload.get("nbands"))),
+                ("selected band", _json_value(payload.get("selected_band"))),
+                ("selected field", field_id),
+                ("unit", unit),
+                ("field count", len(payload.get("fields", ())) if isinstance(payload.get("fields"), list) else 0),
+            ),
+            "numeric": (),
+        },
+        "band_table": {
+            "kind": "table",
+            "id": f"{view.id}_bands",
+            "title": "Per-band scalar summary",
+            "description": "Minimum, mean, and maximum of the selected scalar field over the sampled region.",
+            "headers": ("band", "min", "mean", "max", "unit"),
+            "rows": band_rows,
+            "numeric": (0, 1, 2, 3),
+        },
+        "payload": _json_value(payload),
+    }
+
+
+def _surface_field_unit(payload: dict[str, Any], field_id: str) -> str:
+    fields = payload.get("fields")
+    if isinstance(fields, list):
+        for field in fields:
+            if isinstance(field, dict) and field.get("id") == field_id:
+                return _plain_text(field.get("unit", ""))
+    if field_id == "energy":
+        return _plain_text(payload.get("energy_unit", ""))
+    return ""
+
+
+def _surface_band_summary_rows(values: Any) -> tuple[tuple[Any, ...], ...]:
+    points_by_band: dict[int, list[float]] = {}
+    _collect_surface_values(values, (), points_by_band)
+    return tuple(
+        (
+            band,
+            min(samples),
+            sum(samples) / len(samples),
+            max(samples),
+            "",
+        )
+        for band, samples in sorted(points_by_band.items())
+        if samples
+    )
+
+
+def _collect_surface_values(value: Any, index: tuple[int, ...], out: dict[int, list[float]]) -> None:
+    if isinstance(value, list):
+        for i, child in enumerate(value):
+            _collect_surface_values(child, index + (i,), out)
+        return
+
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return
+
+    band = index[-1] if index else 0
+    out.setdefault(int(band), []).append(number)
 
 
 def webgl_to_json_data(view: WebGLView) -> dict[str, Any]:

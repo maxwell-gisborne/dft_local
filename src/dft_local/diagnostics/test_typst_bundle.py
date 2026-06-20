@@ -172,6 +172,58 @@ def test_typst_bundle_renders_dos_idos_webgl_as_static_graphs(tmp_path: Path) ->
     assert "  dos_idos-plot()," in components
 
 
+
+def test_typst_bundle_renders_region_surface_webgl_as_static_summary(tmp_path: Path) -> None:
+    result = DiagnosticResult(
+        title="Surface report",
+        summary="Has a surface.",
+        webgl=(
+            WebGLView(
+                id="surface",
+                title="Surface",
+                description="Band surface.",
+                renderer="region_surface",
+                payload={
+                    "kind": "band-surface-preview",
+                    "nu": 2,
+                    "nv": 2,
+                    "nbands": 2,
+                    "selected_band": 1,
+                    "energy_unit": "eV",
+                    "energies": [
+                        [[0.0, 10.0], [1.0, 11.0]],
+                        [[2.0, 12.0], [3.0, 13.0]],
+                    ],
+                    "fields": [{"id": "energy", "label": "Energy", "unit": "eV", "signed": True}],
+                    "field_values": {
+                        "energy": [
+                            [[0.0, 10.0], [1.0, 11.0]],
+                            [[2.0, 12.0], [3.0, 13.0]],
+                        ],
+                    },
+                    "selected_field": "energy",
+                },
+            ),
+        ),
+    )
+
+    out = export_typst_bundle(result, tmp_path / "bundle", lib_mode="none", provenance={})
+    manifest = json.loads((out / "manifest.json").read_text())
+    item = next(item for item in manifest["items"] if item["id"] == "surface")
+    assert item["kind"] == "region-surface-static"
+    assert item["static_support"] == "summary-table"
+
+    data = json.loads((out / "data" / "surface.json").read_text())
+    assert data["kind"] == "region_surface"
+    assert data["static_support"] == "summary-table"
+    assert data["summary_table"]["rows"][1] == ["grid", "2 x 2"]
+    assert data["band_table"]["rows"][0] == [0, 0.0, 1.5, 3.0, "eV"]
+    assert data["band_table"]["rows"][1] == [1, 10.0, 11.5, 13.0, "eV"]
+
+    components = (out / "components.typ").read_text()
+    assert "region-surface-summary(surface-data)" in components
+
+
 def test_diagnostic_app_exports_typst_bundle_route(tmp_path: Path, monkeypatch) -> None:
     from dft_local.diagnostics.server import DiagnosticApp
 
@@ -244,6 +296,21 @@ def test_typst_bundle_smoke_compiles_with_typst_when_available(tmp_path: Path) -
                             "energy": [-1.0, 0.0, 1.0],
                             "dos": [0.5, 1.0, 0.5],
                             "idos": [0.5, 1.5, 2.0],
+                        },
+                    ),
+                    WebGLView(
+                        id="compile_surface",
+                        title="Compile surface",
+                        description="Compile static surface summary.",
+                        renderer="region_surface",
+                        payload={
+                            "kind": "band-surface-preview",
+                            "nu": 2,
+                            "nv": 2,
+                            "nbands": 1,
+                            "selected_band": 0,
+                            "energy_unit": "eV",
+                            "energies": [[[0.0], [1.0]], [[2.0], [3.0]]],
                         },
                     ),
                     Table(
