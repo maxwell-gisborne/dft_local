@@ -494,8 +494,7 @@ def _write_fallback_typst_lib(target: Path) -> None:
     (target / "mod.typ").write_text(
         '// Basic notation used by exported diagnostic math blocks.\n'
         '// Keep this bundle-local so exported diagnostics remain standalone.\n'
-        '#let hbar = $ upright(ℏ) $\n'
-        '#let diff = $ partial $\n\n'
+        '#import "@preview/physica:0.9.8": *\n\n'
         '#import "plots.typ": *\n'
         '#import "tables.typ": *\n'
         '#import "diagnostic.typ": *\n'
