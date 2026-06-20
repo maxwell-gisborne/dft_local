@@ -170,16 +170,20 @@ test("band surface viewer renders in a real browser", async () => {
     assert.match(status, /domain extended/);
     assert.doesNotMatch(status, /no surface data/);
 
-    await page.waitForFunction(() => {
-      const host = document.querySelector("[data-dft-three-surface]");
-      if (!host) return false;
+    try {
+      await page.waitForFunction(() => {
+        const host = document.querySelector("[data-dft-three-surface]");
+        if (!host) return false;
 
-      return (
-        host.querySelector("canvas") !== null
-        || (host.textContent || "").includes("three.js failed to load")
-        || (host.textContent || "").includes("no surface data")
-      );
-    }, { timeout: 10000 });
+        return (
+          host.querySelector("canvas") !== null
+          || (host.textContent || "").includes("three.js failed to load")
+          || (host.textContent || "").includes("no surface data")
+        );
+      }, { timeout: 10000 });
+    } catch (error) {
+      assert.fail(await debugSurfacePage(page, errors));
+    }
 
     const threeText = await page.locator("[data-dft-three-surface]").innerText();
     const canvasCount = await page.locator("[data-dft-three-surface] canvas").count();
