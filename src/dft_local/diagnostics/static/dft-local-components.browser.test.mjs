@@ -2,10 +2,10 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { createServer } from "node:http";
 
 let chromium;
@@ -13,6 +13,273 @@ try {
   ({ chromium } = await import("@playwright/test"));
 } catch {
   throw new Error("Missing browser test dependency. Run: npm install");
+}
+
+
+const TEST_THREE_RUNTIME = `
+function makePosition() {
+  return {
+    x: 0,
+    y: 0,
+    z: 0,
+    set(x = 0, y = 0, z = 0) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+      return this;
+    },
+    copy(other) {
+      this.x = Number(other?.x ?? 0);
+      this.y = Number(other?.y ?? 0);
+      this.z = Number(other?.z ?? 0);
+      return this;
+    },
+    add(other) {
+      this.x += Number(other?.x ?? 0);
+      this.y += Number(other?.y ?? 0);
+      this.z += Number(other?.z ?? 0);
+      return this;
+    },
+    subVectors(a, b) {
+      this.x = Number(a?.x ?? 0) - Number(b?.x ?? 0);
+      this.y = Number(a?.y ?? 0) - Number(b?.y ?? 0);
+      this.z = Number(a?.z ?? 0) - Number(b?.z ?? 0);
+      return this;
+    },
+    length() {
+      return Math.hypot(this.x, this.y, this.z);
+    },
+    normalize() {
+      const norm = this.length() || 1.0;
+      this.x /= norm;
+      this.y /= norm;
+      this.z /= norm;
+      return this;
+    },
+    multiplyScalar(value) {
+      this.x *= Number(value);
+      this.y *= Number(value);
+      this.z *= Number(value);
+      return this;
+    },
+    lerp(other, alpha) {
+      const t = Number(alpha);
+      this.x += (Number(other?.x ?? 0) - this.x) * t;
+      this.y += (Number(other?.y ?? 0) - this.y) * t;
+      this.z += (Number(other?.z ?? 0) - this.z) * t;
+      return this;
+    },
+    clone() {
+      return makePosition().copy(this);
+    },
+  };
+}
+
+class TestObject3D {
+  constructor() {
+    this.children = [];
+    this.userData = {};
+    this.visible = true;
+    this.name = "";
+    this.position = makePosition();
+    this.scale = makePosition().set(1, 1, 1);
+  }
+
+  add(...items) {
+    this.children.push(...items);
+    return this;
+  }
+
+  remove(...items) {
+    this.children = this.children.filter((item) => !items.includes(item));
+    return this;
+  }
+
+  lookAt() {
+    return this;
+  }
+}
+
+class TestGeometry {
+  constructor() {
+    this.attributes = {};
+    this.index = null;
+  }
+
+  setAttribute(name, value) {
+    this.attributes[name] = value;
+    return this;
+  }
+
+  setIndex(value) {
+    this.index = value;
+    return this;
+  }
+
+  setFromPoints(points) {
+    this.points = points;
+    return this;
+  }
+
+  computeVertexNormals() {
+    return this;
+  }
+
+  dispose() {}
+}
+
+class TestMaterial {
+  constructor(options = {}) {
+    this.options = options;
+  }
+
+  dispose() {}
+}
+
+class TestWebGLRenderer {
+  constructor() {
+    this.domElement = document.createElement("canvas");
+    this.domElement.dataset.testThreeCanvas = "1";
+  }
+
+  setSize(width, height) {
+    this.domElement.width = Number(width) || 1;
+    this.domElement.height = Number(height) || 1;
+  }
+
+  setPixelRatio() {}
+  render() {}
+  dispose() {}
+}
+
+class TestOrbitControls extends EventTarget {
+  constructor(camera, domElement) {
+    super();
+    this.object = camera;
+    this.domElement = domElement;
+    this.target = makePosition();
+    this.enableDamping = false;
+    this.dampingFactor = 0;
+    this.screenSpacePanning = true;
+  }
+
+  update() {
+    this.dispatchEvent(new Event("change"));
+  }
+
+  dispose() {}
+}
+
+window.__dftLocalThreeRuntime = Promise.resolve({
+  THREE: {
+    WebGLRenderer: TestWebGLRenderer,
+    Scene: class extends TestObject3D {
+      constructor() {
+        super();
+        this.background = null;
+      }
+    },
+    Color: class {
+      constructor(value) {
+        this.value = value;
+      }
+    },
+    PerspectiveCamera: class extends TestObject3D {
+      constructor(fov = 45, aspect = 1, near = 0.001, far = 100000) {
+        super();
+        this.fov = fov;
+        this.aspect = aspect;
+        this.near = near;
+        this.far = far;
+      }
+
+      updateProjectionMatrix() {}
+    },
+    AmbientLight: class extends TestObject3D {},
+    DirectionalLight: class extends TestObject3D {},
+    Group: class extends TestObject3D {},
+    Vector3: class {
+      constructor(x = 0, y = 0, z = 0) {
+        return makePosition().set(x, y, z);
+      }
+    },
+    BufferGeometry: TestGeometry,
+    BufferAttribute: class {
+      constructor(array, itemSize) {
+        this.array = array;
+        this.itemSize = itemSize;
+      }
+    },
+    Float32BufferAttribute: class {
+      constructor(array, itemSize) {
+        this.array = array;
+        this.itemSize = itemSize;
+      }
+    },
+    MeshStandardMaterial: TestMaterial,
+    MeshBasicMaterial: TestMaterial,
+    LineBasicMaterial: TestMaterial,
+    SpriteMaterial: TestMaterial,
+    Mesh: class extends TestObject3D {
+      constructor(geometry, material) {
+        super();
+        this.geometry = geometry;
+        this.material = material;
+      }
+    },
+    Line: class extends TestObject3D {
+      constructor(geometry, material) {
+        super();
+        this.geometry = geometry;
+        this.material = material;
+      }
+    },
+    LineSegments: class extends TestObject3D {
+      constructor(geometry, material) {
+        super();
+        this.geometry = geometry;
+        this.material = material;
+      }
+    },
+    Sprite: class extends TestObject3D {
+      constructor(material) {
+        super();
+        this.material = material;
+      }
+    },
+    SphereGeometry: class extends TestGeometry {},
+    AxesHelper: class extends TestObject3D {},
+    CanvasTexture: class {
+      constructor(canvas) {
+        this.canvas = canvas;
+      }
+    },
+    MathUtils: {
+      degToRad(value) {
+        return Number(value) * Math.PI / 180;
+      },
+    },
+    DoubleSide: 2,
+  },
+  OrbitControls: TestOrbitControls,
+});
+`;
+
+/**
+ * @returns {string}
+ */
+function browserTestComponentSource() {
+  return TEST_THREE_RUNTIME + "\n" + readFileSync(
+    "src/dft_local/diagnostics/static/dft-local-components.js",
+    "utf8",
+  );
+}
+
+/**
+ * @param {string} root
+ */
+function writeBrowserTestComponent(root) {
+  writeFileSync(join(root, "dft-local-components.js"), browserTestComponentSource());
 }
 
 /**
@@ -90,8 +357,7 @@ async function debugSurfacePage(page, errors) {
 
 test("band surface viewer renders in a real browser", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   const payload = {
     nu: 3,
@@ -246,7 +512,7 @@ test("band surface domain dropdown switches primitive BZ and extended modes", as
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -314,7 +580,7 @@ test("band surface domain dropdown changes rendered status", async () => {
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -346,8 +612,7 @@ test("band surface domain dropdown changes rendered status", async () => {
 
 test("band surface legend toggles bands", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-multiband-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   const payload = {
     nu: 2,
@@ -413,8 +678,7 @@ test("band surface legend toggles bands", async () => {
 
 test("band surface legend does not allow hiding every band", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-legend-last-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   const payload = {
     nu: 2,
@@ -483,8 +747,7 @@ test("band surface legend does not allow hiding every band", async () => {
 
 test("generic model refresh updates existing custom element", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-model-refresh-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   writeFileSync(join(root, "index.html"), `<!doctype html>
 <html>
@@ -548,8 +811,7 @@ test("generic model refresh updates existing custom element", async () => {
 
 test("datastar-style run patches model island without replacing viewer", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-datastar-model-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   const firstPayload = {
     nu: 2,
@@ -636,8 +898,7 @@ test("datastar-style run patches model island without replacing viewer", async (
 
 test("stateful table patch preserves selected row identity", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-table-patch-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   writeFileSync(join(root, "index.html"), `<!doctype html>
 <html>
@@ -711,8 +972,7 @@ test("stateful table patch preserves selected row identity", async () => {
 
 test("real diagnostic rerun endpoint returns Datastar SSE", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-real-drun-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   // Minimal static proxy page: fetch the real /d-run equivalent from a fake local endpoint
   // and apply the important SSE effects manually. This checks our SSE parser assumptions
@@ -908,8 +1168,7 @@ test("real diagnostic rerun endpoint returns Datastar SSE", async () => {
 
 test("server-produced Datastar SSE patches model island without replacing viewer", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-server-sse-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   const firstPayload = {
     nu: 2,
@@ -1072,7 +1331,7 @@ test("band surface legend toggles mesh visibility without rebuilding meshes", as
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -1180,7 +1439,7 @@ test("band surface energy zero slider shifts group transform without rebuilding 
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -1296,7 +1555,7 @@ test("band surface slice panel preserves graph component view state", async () =
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -1395,7 +1654,7 @@ test("band surface slice panel renders band plot and k-space plot", async () => 
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -1527,7 +1786,7 @@ test("band surface slice slider updates 3D plane immediately", async () => {
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -1632,7 +1891,7 @@ test("band surface viewer draws cheap slice plane outline in 3D", async () => {
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -1836,7 +2095,7 @@ test("band surface viewer shows slice intersection panel", async () => {
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -1930,7 +2189,7 @@ test("band surface view sliders respond to wheel and shift-wheel", async () => {
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -2014,7 +2273,7 @@ test("band surface energy scale slider updates group transform without rebuildin
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -2128,7 +2387,7 @@ test("model patch observer refreshes component after script text mutation", asyn
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -2216,7 +2475,7 @@ test("real group-resolved DiagnosticApp page boots band surface viewer", async (
 
   try {
     writeFileSync(join(root, "index.html"), pageHtml);
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
 
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
@@ -2348,7 +2607,7 @@ test("real group-resolved DiagnosticApp SSE updates band surface model", async (
 </body>
 </html>`);
 
-    copyFileSync("src/dft_local/diagnostics/static/dft-local-components.js", join(root, "dft-local-components.js"));
+    writeBrowserTestComponent(root);
     const server = await serveDirectory(root);
     const page = await browserInstance.newPage();
 
@@ -2425,8 +2684,7 @@ test("real group-resolved DiagnosticApp SSE updates band surface model", async (
 
 test("real DiagnosticApp SSE fixture applies in browser", async () => {
   const root = mkdtempSync(join(tmpdir(), "dft-local-browser-real-server-sse-"));
-  const componentPath = resolve("src/dft_local/diagnostics/static/dft-local-components.js");
-  writeFileSync(join(root, "dft-local-components.js"), readFileSync(componentPath));
+  writeBrowserTestComponent(root);
 
   const initialPayload = {
     nu: 2,

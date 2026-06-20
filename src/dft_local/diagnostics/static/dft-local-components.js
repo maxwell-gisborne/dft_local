@@ -102,6 +102,12 @@ let threeRuntimePromise = null;
 async function loadThreeRuntime() {
   if (threeRuntimePromise) return threeRuntimePromise;
 
+  const injectedRuntime = globalThis.__dftLocalThreeRuntime;
+  if (injectedRuntime) {
+    threeRuntimePromise = Promise.resolve(injectedRuntime);
+    return threeRuntimePromise;
+  }
+
   threeRuntimePromise = Promise.all([
     import(THREE_MODULE_URL),
     import(ORBIT_CONTROLS_MODULE_URL),
