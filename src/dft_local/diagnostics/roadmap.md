@@ -97,22 +97,28 @@ Follow-up:
 
 ### Symbol point
 
-Status: missing
+Status: implemented
+
+Diagnostic id: `symbol.point`
 
 Inputs:
 
-- kernel choice
-- `k1`
-- `k2`
-- irrep degree
-- sigma for fixed irreps
+- kernel choice: `anchored`, `anchored_star`, `average`, `average_star`
+- logical irrep coordinates `k1`, `k2`
+- irrep degree: `1` or `2`
+- `sigma` for degree-1 fixed irreps
 
-Show:
+Shows:
 
-- H(k) diagnostics
-- S(k) diagnostics
+- dense H(k), S(k) diagnostics
+- Hermiticity defects before and after taking Hermitian parts
 - overlap eigenvalues
-- band energies
+- generalized eigenvalues
+
+Follow-up:
+
+- add physical k-coordinate annotation from the embedding dual map
+- add compact energy-window cards for band-edge inspection
 
 ### Band path
 
