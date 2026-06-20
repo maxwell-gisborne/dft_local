@@ -447,12 +447,12 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                         markdown=rich(
                             "The local calculation has two related Boltzmann formulas in play. ",
                             "The weak formula is the linear-response DC conductivity. It assumes an infinitesimal electric field, so the current is obtained by contracting two velocities against the Fermi-window factor ",
-                            TypstMath("$ - (diff f_0) / (diff epsilon) $", display=False, name="ashcroft_local_intro_fermi_window"),
+                            TypstMath("$ - (partial f_0) / (partial epsilon) $", display=False, name="ashcroft_local_intro_fermi_window"),
                             ". The strong formula is the finite-field steady-state calculation. It first solves for the displaced occupation ",
                             TypstMath("$ f_E (k) $", display=False, name="ashcroft_local_intro_displaced_occupation"),
                             ", computes the current from that occupation, and then recovers the weak tensor by differentiating the current at zero field. ",
                             "The local derivative is therefore checked in two ways. For the weak formula we use the chain rule, differentiating the band energy and then applying ",
-                            TypstMath("$ (diff f_0) / (diff epsilon) $", display=False, name="ashcroft_local_intro_chain_rule"),
+                            TypstMath("$ (partial f_0) / (partial epsilon) $", display=False, name="ashcroft_local_intro_chain_rule"),
                             ". For the strong formula we also test the periodic spectral derivative of the sampled occupation ",
                             TypstMath("$ f_0 (k) $", display=False, name="ashcroft_local_intro_periodic_occupation"),
                             ". These agree only when the Fermi occupation is smooth enough on the sampled periodic grid; at low temperature the Fermi window is sharp, so the periodic derivative can be under-resolved. ",
@@ -462,7 +462,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                     TypstMathBlock(
                         id="ashcroft_conductivity_equation",
                         math=TypstMath(
-                            "$ sigma_(alpha beta) = e^2 tau integral (d^2 k) / ((2 pi)^2) v_alpha (k) v_beta (k) (- (diff f_0) / (diff epsilon)) $",
+                            "$ sigma_(alpha beta) = e^2 tau integral (d^2 k) / ((2 pi)^2) v_alpha (k) v_beta (k) (- (partial f_0) / (partial epsilon)) $",
                             display=True,
                             name="ashcroft_conductivity_equation",
                         ),
@@ -476,7 +476,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                     TypstMathBlock(
                         id="ashcroft_velocity_equation",
                         math=TypstMath(
-                            "$ v_alpha (k) = (1 / hbar) (diff epsilon (k)) / (diff k_alpha) $",
+                            "$ v_alpha (k) = (1 / hbar) (partial epsilon (k)) / (partial k_alpha) $",
                             display=True,
                             name="ashcroft_velocity_equation",
                         ),
@@ -490,7 +490,7 @@ def compute_overview(ctx, inputs: dict[str, object]) -> DiagnosticResult:
                     TypstMathBlock(
                         id="ashcroft_fermi_window_equation",
                         math=TypstMath(
-                            "$ - (diff f_0) / (diff epsilon) = (f_0 (1 - f_0)) / (k_B T) $",
+                            "$ - (partial f_0) / (partial epsilon) = (f_0 (1 - f_0)) / (k_B T) $",
                             display=True,
                             name="ashcroft_fermi_window_equation",
                         ),
