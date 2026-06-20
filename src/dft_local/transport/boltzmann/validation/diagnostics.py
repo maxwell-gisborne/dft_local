@@ -4,6 +4,21 @@ from __future__ import annotations
 
 import numpy as np
 
+from dft_local.core.units import (
+    CHARGE,
+    CONDUCTIVITY,
+    DIMENSIONLESS,
+    ELECTRON_VOLT,
+    ENERGY,
+    FEMTOSECOND,
+    KELVIN,
+    LENGTH,
+    TEMPERATURE,
+    TIME,
+    VELOCITY,
+    DisplayQuantity,
+    Unit,
+)
 from dft_local.diagnostics.models import (
     DiagnosticResult,
     DiagnosticSection,
@@ -226,15 +241,33 @@ A tensor of the form `sum_k w_k v(k) v(k)^T` with non-negative weights must be s
     )
 
 
-def _fmt_probe_value(value) -> str:
+UNITLESS = Unit("", DIMENSIONLESS, 1.0)
+PERCENT = Unit("%", DIMENSIONLESS, 0.01)
+SIEMENS = Unit("S", (CHARGE ** 2) / (ENERGY * TIME), 1.0)
+SIEMENS_PER_METER = Unit("S/m", CONDUCTIVITY, 1.0)
+METER_PER_SECOND = Unit("m/s", VELOCITY, 1.0)
+VOLT_PER_METER = Unit("V/m", ENERGY / (CHARGE * LENGTH), 1.0)
+
+
+def _display_quantity(value: object, *, name: str = "finite-field value") -> DisplayQuantity:
+    return DisplayQuantity(float(value), DIMENSIONLESS, UNITLESS, name=name)
+
+
+def _fmt_probe_value(value):
+    """Return typed diagnostic values, not preformatted number strings."""
+
+    if isinstance(value, np.bool_):
+        return bool(value)
     if isinstance(value, bool):
-        return str(value)
+        return value
+    if isinstance(value, np.integer):
+        return int(value)
     if isinstance(value, int):
-        return str(value)
-    if isinstance(value, float):
-        return f"{value:.8e}"
+        return value
+    if isinstance(value, (float, np.floating)):
+        return _display_quantity(value)
     if value is None:
-        return "None"
+        return None
     return str(value)
 
 
@@ -539,14 +572,15 @@ def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
 def _finite_field_dc_input_rows(inputs) -> tuple[TableRow, ...]:
     return (
         TableRow(("dataset", str(inputs.get("dataset", "default")))),
-        TableRow(("temperature T", str(inputs.get("temperature", 300.0)))),
-        TableRow(("chemical potential mu", str(inputs.get("mu", 0.0)))),
-        TableRow(("relaxation time tau", str(inputs.get("tau", 1.0)))),
+        TableRow(("temperature T", DisplayQuantity(float(inputs.get("temperature", 300.0)), TEMPERATURE, KELVIN, name="temperature"))),
+        TableRow(("chemical potential mu", DisplayQuantity(float(inputs.get("mu", 0.0)), ENERGY, ELECTRON_VOLT, name="mu"))),
+        TableRow(("relaxation time tau", DisplayQuantity(float(inputs.get("tau", 1.0)), TIME, FEMTOSECOND, name="tau"))),
         TableRow(("units", str(inputs.get("units", "eVAng")))),
-        TableRow(("N_u, N_v", f"{inputs.get('n_u', 11)}, {inputs.get('n_v', 11)}")),
-        TableRow(("electric field E", str(inputs.get("electric_field", 1.0)))),
-        TableRow(("field angle theta", str(inputs.get("theta", 0.0)))),
-        TableRow(("band index n", f"{inputs.get('band_index', 0)}; energy ordering")),
+        TableRow(("N_u", int(inputs.get("n_u", 11)))),
+        TableRow(("N_v", int(inputs.get("n_v", 11)))),
+        TableRow(("electric field E", DisplayQuantity(float(inputs.get("electric_field", 1.0)), ENERGY / (CHARGE * LENGTH), VOLT_PER_METER, name="electric field"))),
+        TableRow(("field angle theta", DisplayQuantity(float(inputs.get("theta", 0.0)), DIMENSIONLESS, UNITLESS, name="theta"))),
+        TableRow(("band index n", int(inputs.get("band_index", 0)))),
         TableRow(("symmetrization scheme", str(inputs.get("symmetrization", "star")))),
         TableRow(("reciprocal 2π normalization", "dummy; must be physically audited, not treated as cosmetic convention")),
         TableRow(("conductivity normalization", "dummy")),

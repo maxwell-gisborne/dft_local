@@ -3,6 +3,15 @@ from __future__ import annotations
 
 import numpy as np
 
+from dft_local.core.units import DisplayQuantity
+
+
+def assert_display_quantity(value, expected: float | None = None) -> DisplayQuantity:
+    assert isinstance(value, DisplayQuantity)
+    if expected is not None:
+        assert abs(value.value - expected) <= max(1e-12, abs(expected) * 1e-12)
+    return value
+
 from dft_local.transport.boltzmann.validation.core import (
     antisymmetric_relative_norm,
     is_positive_semidefinite,
@@ -417,7 +426,8 @@ def test_finite_field_dc_validation_has_form_inputs() -> None:
     }
 
     assert rows["dataset"] == "default"
-    assert rows["N_u, N_v"] == "11, 11"
+    assert rows["N_u"] == 11
+    assert rows["N_v"] == 11
     assert rows["symmetrization scheme"] == "star"
 
 def test_finite_field_input_health_probe_checks_symbol_health() -> None:
@@ -470,8 +480,8 @@ def test_finite_field_dc_input_health_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_input_health_table"].rows
     }
 
-    assert rows["sample count"] == "35"
-    assert rows["S positive"] == "True"
+    assert rows["sample count"] == 35
+    assert rows["S positive"] is True
     assert "dummy" not in set(rows.values())
 
 def test_finite_field_band_crossing_hazard_probe_finds_toy_gap() -> None:
@@ -529,8 +539,8 @@ def test_finite_field_dc_band_crossing_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_band_crossing_hazards_table"].rows
     }
 
-    assert rows["sample count"] == "100"
-    assert rows["has hazard"] == "True"
+    assert rows["sample count"] == 100
+    assert rows["has hazard"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -582,8 +592,8 @@ def test_finite_field_dc_velocity_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_velocity_validation_table"].rows
     }
 
-    assert rows["production derivative dk1 error"] == "0.00000000e+00"
-    assert rows["Hellmann-Feynman dk1 error"] == "0.00000000e+00"
+    assert_display_quantity(rows["production derivative dk1 error"], 0.0)
+    assert_display_quantity(rows["Hellmann-Feynman dk1 error"], 0.0)
     assert "dummy" not in set(rows.values())
 
 
@@ -631,9 +641,9 @@ def test_finite_field_dc_unit_scaling_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_unit_scaling_table"].rows
     }
 
-    assert rows["atomic energy to eV"] == "2.72113839e+01"
-    assert rows["atomic length to Å"] == "5.29177211e-01"
-    assert rows["mu conversion required"] == "True"
+    assert_display_quantity(rows["atomic energy to eV"], 27.21138386)
+    assert_display_quantity(rows["atomic length to Å"], 0.52917721092)
+    assert rows["mu conversion required"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -684,8 +694,8 @@ def test_finite_field_dc_analytic_toys_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_analytic_toys_table"].rows
     }
 
-    assert rows["toy count"] == "4"
-    assert rows["all current toys pass"] == "True"
+    assert rows["toy count"] == 4
+    assert rows["all current toys pass"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -735,8 +745,8 @@ def test_finite_field_dc_k_convergence_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_k_convergence_table"].rows
     }
 
-    assert rows["grid count"] == "5"
-    assert rows["all grid errors small"] == "True"
+    assert rows["grid count"] == 5
+    assert rows["all grid errors small"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -789,8 +799,8 @@ def test_finite_field_dc_symmetry_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_symmetry_table"].rows
     }
 
-    assert rows["sample count"] == "289"
-    assert rows["all symmetry checks pass"] == "True"
+    assert rows["sample count"] == 289
+    assert rows["all symmetry checks pass"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -840,7 +850,7 @@ def test_finite_field_dc_vincent_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_vincent_reconstruction_table"].rows
     }
 
-    assert rows["best adjacent matches Vincent"] == "True"
+    assert rows["best adjacent matches Vincent"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -893,7 +903,7 @@ def test_finite_field_dc_strong_dc_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_strong_dc_validation_table"].rows
     }
 
-    assert rows["strong DC internal pass"] == "True"
+    assert rows["strong DC internal pass"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -945,7 +955,7 @@ def test_finite_field_dc_weak_dc_limit_section_contains_real_metrics() -> None:
         for row in tables["finite_field_dc_validation_weak_dc_limit_table"].rows
     }
 
-    assert rows["weak-limit pass"] == "True"
+    assert rows["weak-limit pass"] is True
     assert "dummy" not in set(rows.values())
 
 
@@ -1000,5 +1010,5 @@ def test_finite_field_dc_mode_decomposition_section_contains_real_metrics() -> N
         for row in tables["finite_field_dc_validation_mode_decomposition_table"].rows
     }
 
-    assert rows["mode closure pass"] == "True"
+    assert rows["mode closure pass"] is True
     assert "dummy" not in set(rows.values())
