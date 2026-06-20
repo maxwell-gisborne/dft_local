@@ -8,6 +8,7 @@ from dft_local.diagnostics.models import (
     DiagnosticResult,
     DiagnosticSection,
     DiagnosticSpec,
+    InputSpec,
     MarkdownBlock,
     Table,
     TableRow,
@@ -214,6 +215,113 @@ A tensor of the form `sum_k w_k v(k) v(k)^T` with non-negative weights must be s
     )
 
 
+def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
+    return (
+        InputSpec(
+            "dataset",
+            "Dataset",
+            "str",
+            "default",
+            help="Dataset or fixture name used for the selected validation run.",
+        ),
+        InputSpec(
+            "temperature",
+            "Temperature T",
+            "float",
+            300.0,
+            min_value=0.0,
+            help="Temperature used in the Fermi window.",
+        ),
+        InputSpec(
+            "mu",
+            "Chemical potential μ",
+            "float",
+            0.0,
+            help="Chemical potential for the selected run, in the active energy units.",
+        ),
+        InputSpec(
+            "tau",
+            "Relaxation time τ",
+            "float",
+            1.0,
+            min_value=0.0,
+            help="Relaxation time used by the DC conductivity formula.",
+        ),
+        InputSpec(
+            "units",
+            "Units",
+            "select",
+            "eVAng",
+            options=(("eVAng", "eV Å"), ("au", "atomic units"), ("si", "SI")),
+            help="Internal unit convention for the validation calculation.",
+        ),
+        InputSpec(
+            "n_u",
+            "N_u",
+            "int",
+            11,
+            min_value=1,
+            help="Number of k-points in the first reciprocal coordinate.",
+        ),
+        InputSpec(
+            "n_v",
+            "N_v",
+            "int",
+            11,
+            min_value=1,
+            help="Number of k-points in the second reciprocal coordinate.",
+        ),
+        InputSpec(
+            "electric_field",
+            "Electric field E",
+            "float",
+            1.0,
+            min_value=0.0,
+            help="Finite electric-field strength for the selected run.",
+        ),
+        InputSpec(
+            "theta",
+            "Field angle θ",
+            "float",
+            0.0,
+            help="Field direction angle in radians.",
+        ),
+        InputSpec(
+            "band_index",
+            "Band index n",
+            "int",
+            0,
+            min_value=0,
+            help="Energy-ordered band index to inspect.",
+        ),
+        InputSpec(
+            "symmetrization",
+            "Symmetrization",
+            "select",
+            "star",
+            options=(("star", "star"), ("direct", "direct"), ("raw", "raw")),
+            help="Symmetrization scheme used to build the symbols.",
+        ),
+    )
+
+
+def _finite_field_dc_input_rows(inputs) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("dataset", str(inputs.get("dataset", "default")))),
+        TableRow(("temperature T", str(inputs.get("temperature", 300.0)))),
+        TableRow(("chemical potential mu", str(inputs.get("mu", 0.0)))),
+        TableRow(("relaxation time tau", str(inputs.get("tau", 1.0)))),
+        TableRow(("units", str(inputs.get("units", "eVAng")))),
+        TableRow(("N_u, N_v", f"{inputs.get('n_u', 11)}, {inputs.get('n_v', 11)}")),
+        TableRow(("electric field E", str(inputs.get("electric_field", 1.0)))),
+        TableRow(("field angle theta", str(inputs.get("theta", 0.0)))),
+        TableRow(("band index n", f"{inputs.get('band_index', 0)}; energy ordering")),
+        TableRow(("symmetrization scheme", str(inputs.get("symmetrization", "star")))),
+        TableRow(("reciprocal 2π normalization", "dummy; must be physically audited, not treated as cosmetic convention")),
+        TableRow(("conductivity normalization", "dummy")),
+    )
+
+
 def _finite_field_dc_section(
     *,
     section_id: str,
@@ -273,20 +381,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
         TableRow(("symmetry sanity", "dummy", "tensor and direction sweeps obey expected symmetries")),
     )
 
-    manifest_rows = (
-        TableRow(("dataset", "dummy")),
-        TableRow(("temperature T", "dummy")),
-        TableRow(("chemical potential mu", "dummy")),
-        TableRow(("relaxation time tau", "dummy")),
-        TableRow(("units", "dummy")),
-        TableRow(("N_u, N_v", "dummy")),
-        TableRow(("electric field E", "dummy")),
-        TableRow(("field angle theta", "dummy")),
-        TableRow(("band index n", "dummy; energy ordering")),
-        TableRow(("symmetrization scheme", "dummy")),
-        TableRow(("reciprocal 2π normalization", "dummy; must be physically audited, not treated as cosmetic convention")),
-        TableRow(("conductivity normalization", "dummy")),
-    )
+    input_rows = _finite_field_dc_input_rows(inputs)
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -318,13 +413,13 @@ The diagnostic is arranged as a validation ladder: first the inputs, then the ve
                 ),
             ),
             DiagnosticSection(
-                id="finite_field_dc_validation_manifest",
-                title="Manifest",
-                description="Inputs and conventions for the selected validation run.",
+                id="finite_field_dc_validation_inputs",
+                title="Inputs",
+                description="Calculation inputs, provenance, and conventions for the selected validation run.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
-                        id="finite_field_dc_validation_manifest_prose",
+                        id="finite_field_dc_validation_inputs_prose",
                         title="Why this block matters",
                         markdown="""The manifest freezes the calculation being validated.
 
@@ -332,11 +427,11 @@ The `2π` normalization is listed explicitly because it changes the physical con
 """,
                     ),
                     Table(
-                        id="finite_field_dc_validation_manifest_table",
+                        id="finite_field_dc_validation_inputs_table",
                         title="Selected run",
                         description="Dummy values until the real diagnostic inputs are wired in.",
                         headers=("input", "value"),
-                        rows=manifest_rows,
+                        rows=input_rows,
                     ),
                 ),
             ),
@@ -502,7 +597,7 @@ def diagnostics() -> tuple[DiagnosticSpec, ...]:
             group="transport.boltzmann.validation",
             title="Finite-field DC validation",
             description="Validate finite-field, band-labelled DC conductivity and its Gamma/F/tilde(rho) lattice-mode decomposition.",
-            inputs=(),
+            inputs=_finite_field_dc_inputs(),
             compute=compute_finite_field_dc_validation,
         ),
     )

@@ -342,7 +342,7 @@ def test_finite_field_dc_validation_scaffold_sections_are_visible() -> None:
 
     expected_sections = {
         "finite_field_dc_validation_overview",
-        "finite_field_dc_validation_manifest",
+        "finite_field_dc_validation_inputs",
         "finite_field_dc_validation_input_health",
         "finite_field_dc_validation_band_crossing_hazards",
         "finite_field_dc_validation_velocity_validation",
@@ -366,6 +366,56 @@ def test_finite_field_dc_validation_scaffold_sections_are_visible() -> None:
     }
 
     assert "finite_field_dc_validation_dashboard" in table_ids
-    assert "finite_field_dc_validation_manifest_table" in table_ids
+    assert "finite_field_dc_validation_inputs_table" in table_ids
     assert "finite_field_dc_validation_vincent_reconstruction_evidence_plan" in table_ids
     assert "finite_field_dc_validation_mode_decomposition_evidence_plan" in table_ids
+
+def test_finite_field_dc_validation_has_form_inputs() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    input_names = {input_spec.name for input_spec in spec.inputs}
+
+    assert {
+        "dataset",
+        "temperature",
+        "mu",
+        "tau",
+        "units",
+        "n_u",
+        "n_v",
+        "electric_field",
+        "theta",
+        "band_index",
+        "symmetrization",
+    } <= input_names
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    inputs_section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_inputs"
+    )
+
+    tables = {
+        block.id: block
+        for block in inputs_section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_inputs_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_inputs_table"].rows
+    }
+
+    assert rows["dataset"] == "default"
+    assert rows["N_u, N_v"] == "11, 11"
+    assert rows["symmetrization scheme"] == "star"
