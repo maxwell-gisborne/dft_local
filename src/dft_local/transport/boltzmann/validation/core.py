@@ -1180,6 +1180,58 @@ def finite_field_strong_dc_validation_probe() -> dict[str, float | int | bool | 
         "residual_status": "strong spectral tensor is internally closed; weak-chain gap is derivative-definition residual",
     }
 
+
+def finite_field_weak_dc_limit_probe() -> dict[str, float | int | bool | str]:
+    """Check strong finite-field DC approaches weak DC in a matched spectral basis."""
+
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        analytic_sinusoidal_conductivity_probe,
+    )
+
+    probe = analytic_sinusoidal_conductivity_probe()
+    field_rows = list(probe["strong_weak_field_rows"])
+
+    zero_row = field_rows[0]
+    small_nonzero_row = field_rows[1]
+    largest_row = field_rows[-1]
+
+    min_nonzero_eta = min(float(row["eta"]) for row in field_rows if float(row["eta"]) > 0.0)
+    max_eta = max(float(row["eta"]) for row in field_rows)
+
+    max_field_tensor_discrepancy = max(float(row["relative_tensor_discrepancy"]) for row in field_rows)
+    max_field_trace_discrepancy = max(abs(float(row["relative_trace_discrepancy"])) for row in field_rows)
+    max_imaginary_leakage = max(float(row["imaginary_leakage"]) for row in field_rows)
+
+    return {
+        "source": "analytic sinusoidal Ashcroft strong/weak sweep",
+        "field_row_count": int(len(field_rows)),
+        "zero_eta": float(zero_row["eta"]),
+        "zero_field_V_per_m": float(zero_row["field_V_per_m"]),
+        "zero_relative_tensor_discrepancy": float(zero_row["relative_tensor_discrepancy"]),
+        "zero_relative_trace_discrepancy": float(zero_row["relative_trace_discrepancy"]),
+        "small_eta": float(small_nonzero_row["eta"]),
+        "small_field_V_per_m": float(small_nonzero_row["field_V_per_m"]),
+        "small_relative_tensor_discrepancy": float(small_nonzero_row["relative_tensor_discrepancy"]),
+        "small_relative_trace_discrepancy": float(small_nonzero_row["relative_trace_discrepancy"]),
+        "largest_eta": float(largest_row["eta"]),
+        "largest_relative_tensor_discrepancy": float(largest_row["relative_tensor_discrepancy"]),
+        "largest_relative_trace_discrepancy": float(largest_row["relative_trace_discrepancy"]),
+        "min_nonzero_eta": float(min_nonzero_eta),
+        "max_eta": float(max_eta),
+        "max_field_tensor_discrepancy": float(max_field_tensor_discrepancy),
+        "max_abs_field_trace_discrepancy": float(max_field_trace_discrepancy),
+        "max_imaginary_leakage": float(max_imaginary_leakage),
+        "relative_weak_limit_error": float(probe["relative_weak_limit_error"]),
+        "strong_zero_field_imaginary_leakage": float(probe["strong_zero_field_imaginary_leakage"]),
+        "weak_limit_pass": bool(
+            float(probe["relative_weak_limit_error"]) < 1.0e-12
+            and float(zero_row["relative_tensor_discrepancy"]) < 1.0e-12
+            and abs(float(zero_row["relative_trace_discrepancy"])) < 1.0e-12
+            and np.isfinite(max_field_tensor_discrepancy)
+        ),
+        "roundoff_floor_status": "zero-field agreement checked; finite eta sweep exposes nonlinear departure",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

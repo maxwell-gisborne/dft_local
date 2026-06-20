@@ -28,6 +28,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_symmetry_sanity_probe,
     finite_field_vincent_reconstruction_probe,
     finite_field_strong_dc_validation_probe,
+    finite_field_weak_dc_limit_probe,
     operator_symbol_validation_probe,
 )
 
@@ -397,6 +398,29 @@ def _finite_field_strong_dc_rows(probe: dict[str, object]) -> tuple[TableRow, ..
     )
 
 
+def _finite_field_weak_dc_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "matched spectral-basis analytic toy")),
+        TableRow(("field row count", _fmt_probe_value(probe["field_row_count"]), "eta sweep rows")),
+        TableRow(("zero eta", _fmt_probe_value(probe["zero_eta"]), "0")),
+        TableRow(("zero field", _fmt_probe_value(probe["zero_field_V_per_m"]), "V/m")),
+        TableRow(("zero relative tensor discrepancy", _fmt_probe_value(probe["zero_relative_tensor_discrepancy"]), "near 0")),
+        TableRow(("zero relative trace discrepancy", _fmt_probe_value(probe["zero_relative_trace_discrepancy"]), "near 0")),
+        TableRow(("small eta", _fmt_probe_value(probe["small_eta"]), "first nonzero field")),
+        TableRow(("small field", _fmt_probe_value(probe["small_field_V_per_m"]), "V/m")),
+        TableRow(("small relative tensor discrepancy", _fmt_probe_value(probe["small_relative_tensor_discrepancy"]), "small")),
+        TableRow(("small relative trace discrepancy", _fmt_probe_value(probe["small_relative_trace_discrepancy"]), "small")),
+        TableRow(("largest eta", _fmt_probe_value(probe["largest_eta"]), "largest sweep field")),
+        TableRow(("largest relative tensor discrepancy", _fmt_probe_value(probe["largest_relative_tensor_discrepancy"]), "nonlinear departure")),
+        TableRow(("largest relative trace discrepancy", _fmt_probe_value(probe["largest_relative_trace_discrepancy"]), "nonlinear departure")),
+        TableRow(("relative weak-limit error", _fmt_probe_value(probe["relative_weak_limit_error"]), "near 0")),
+        TableRow(("strong zero-field imaginary leakage", _fmt_probe_value(probe["strong_zero_field_imaginary_leakage"]), "near 0")),
+        TableRow(("max imaginary leakage", _fmt_probe_value(probe["max_imaginary_leakage"]), "finite")),
+        TableRow(("weak-limit pass", _fmt_probe_value(probe["weak_limit_pass"]), "True")),
+        TableRow(("roundoff floor status", _fmt_probe_value(probe["roundoff_floor_status"]), "audit note")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -580,6 +604,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     symmetry_probe = finite_field_symmetry_sanity_probe()
     vincent_probe = finite_field_vincent_reconstruction_probe()
     strong_dc_probe = finite_field_strong_dc_validation_probe()
+    weak_dc_probe = finite_field_weak_dc_limit_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -806,17 +831,39 @@ This first implementation reuses the existing `BandIndexedStrongDcResult` on Vin
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_weak_dc_limit",
+            DiagnosticSection(
+                id="finite_field_dc_validation_weak_dc_limit",
                 title="Weak DC limit",
                 description="Small-field limit of finite-field DC conductivity.",
-                claim="The finite-field band-labelled DC conductivity approaches the weak-field DC result as E -> 0.",
-                evidence=(
-                    ("E sweep", "dummy", "show finite-field tensor tends to weak-field tensor"),
-                    ("relative tensor error", "dummy", "measure convergence window"),
-                    ("roundoff floor marker", "dummy", "avoid trusting too-small field shifts"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_weak_dc_limit_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** The finite-field band-labelled DC conductivity approaches the weak-field DC result as E -> 0 when both calculations use the same spectral derivative basis.
+
+This first implementation reuses the analytic sinusoidal Ashcroft probe. It separates the clean matched-basis weak limit from the Vincent-grid derivative-definition residual exposed in the strong DC section.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_weak_dc_limit_table",
+                        title="Weak DC limit metrics",
+                        description="Matched spectral-basis strong/weak finite-field sweep.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_weak_dc_rows(weak_dc_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_weak_dc_limit_placeholders",
+                        title="Remaining placeholders",
+                        description="Checks still needed for the full finite-field validation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("dataset-backed E sweep", "pending")),
+                            TableRow(("finite-minus-weak error plot", "pending")),
+                            TableRow(("asymptotic-window table", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("E sweep plot", "finite-minus-weak error plot", "asymptotic-window table"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_mode_decomposition",

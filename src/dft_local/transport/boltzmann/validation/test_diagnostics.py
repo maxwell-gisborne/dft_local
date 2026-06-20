@@ -895,3 +895,55 @@ def test_finite_field_dc_strong_dc_section_contains_real_metrics() -> None:
 
     assert rows["strong DC internal pass"] == "True"
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_weak_dc_limit_probe_checks_zero_field_limit() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_weak_dc_limit_probe,
+    )
+
+    probe = finite_field_weak_dc_limit_probe()
+
+    assert probe["field_row_count"] >= 3
+    assert probe["zero_eta"] == 0.0
+    assert probe["zero_relative_tensor_discrepancy"] < 1.0e-12
+    assert abs(probe["zero_relative_trace_discrepancy"]) < 1.0e-12
+    assert probe["relative_weak_limit_error"] < 1.0e-12
+    assert probe["small_eta"] > 0.0
+    assert probe["largest_eta"] > probe["small_eta"]
+    assert probe["largest_relative_tensor_discrepancy"] >= probe["small_relative_tensor_discrepancy"]
+    assert probe["weak_limit_pass"] is True
+
+
+def test_finite_field_dc_weak_dc_limit_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_weak_dc_limit"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_weak_dc_limit_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_weak_dc_limit_table"].rows
+    }
+
+    assert rows["weak-limit pass"] == "True"
+    assert "dummy" not in set(rows.values())
