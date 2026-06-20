@@ -1091,6 +1091,95 @@ def finite_field_vincent_reconstruction_probe() -> dict[str, float | bool | str]
         "residual_status": "velocity samples resolved; conductivity residual remains formula/convention audit",
     }
 
+
+def finite_field_strong_dc_validation_probe() -> dict[str, float | int | bool | str]:
+    """Validate the band-indexed strong spectral DC tensor on Vincent inputs."""
+
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        band_indexed_strong_dc_from_velocity_grid,
+        conductivity_from_epsilon_grid,
+        load_vincent_input_data,
+        vincent_reference,
+    )
+
+    reference = vincent_reference()
+    inputs = load_vincent_input_data()
+    ai = inputs.primitive_lattice_vectors_bohr
+    epsilon = inputs.epsilon_of_k
+
+    local = conductivity_from_epsilon_grid(
+        epsilon,
+        ai,
+        chemical_potential_J=float(np.mean(epsilon) * ATOMIC_UNITS.energy.scale_to_si),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+
+    weak_grid_sigma = local.conductivity_tensor_S * ((2.0 * np.pi) ** 2)
+
+    strong = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        local.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+
+    strong_grid_sigma = strong.conductivity_tensor_S.real
+    strong_from_modes = np.sum(strong.conductivity_mode_tensor_S, axis=(0, 1))
+    mode_reconstruction_abs_error = float(
+        np.max(np.abs(strong_from_modes - strong.conductivity_tensor_S))
+    )
+
+    strong_trace = float(np.trace(strong_grid_sigma))
+    weak_trace = float(np.trace(weak_grid_sigma))
+    target_trace = float(np.trace(reference.expected_conductivity_S_per_m))
+
+    strong_vs_weak_rel_trace_gap = (strong_trace - weak_trace) / weak_trace
+    strong_vs_vincent_percent_error = 100.0 * (strong_trace - target_trace) / target_trace
+
+    conductivity_norm = float(np.linalg.norm(strong.conductivity_tensor_S))
+    imaginary_leakage_ratio = float(
+        strong.imaginary_leakage_S / conductivity_norm
+        if conductivity_norm > 0.0
+        else np.nan
+    )
+
+    mode_abs = np.linalg.norm(strong.conductivity_mode_tensor_S.reshape((-1, 2, 2)), axis=(1, 2))
+    total_mode_abs = float(np.sum(mode_abs))
+    strongest_mode_fraction = float(np.max(mode_abs) / total_mode_abs) if total_mode_abs > 0.0 else np.nan
+
+    nonzero_mode_count = int(np.count_nonzero(mode_abs > 1.0e-18))
+    mode_count = int(mode_abs.size)
+
+    return {
+        "source": "BandIndexedStrongDcResult on Vincent epsilon grid",
+        "mode_count": mode_count,
+        "nonzero_mode_count": nonzero_mode_count,
+        "strong_grid_trace_S_per_m": float(strong_trace),
+        "weak_chain_grid_trace_S_per_m": float(weak_trace),
+        "vincent_target_trace_S_per_m": float(target_trace),
+        "strong_vs_weak_rel_trace_gap": float(strong_vs_weak_rel_trace_gap),
+        "strong_vs_vincent_percent_error": float(strong_vs_vincent_percent_error),
+        "mode_reconstruction_abs_error": float(mode_reconstruction_abs_error),
+        "imaginary_leakage_S": float(strong.imaginary_leakage_S),
+        "imaginary_leakage_ratio": float(imaginary_leakage_ratio),
+        "strongest_mode_fraction": float(strongest_mode_fraction),
+        "occupation_coeff_shape_0": int(strong.occupation_coefficients.shape[0]),
+        "occupation_coeff_shape_1": int(strong.occupation_coefficients.shape[1]),
+        "response_factor_finite": bool(np.isfinite(strong.response_factor).all()),
+        "velocity_coefficients_finite": bool(np.isfinite(strong.velocity_coefficients_m_per_s_per_m2).all()),
+        "strong_dc_internal_pass": bool(
+            mode_reconstruction_abs_error < 1.0e-18
+            and imaginary_leakage_ratio < 1.0e-12
+            and np.isfinite(strongest_mode_fraction)
+            and np.isfinite(strong_vs_weak_rel_trace_gap)
+        ),
+        "residual_status": "strong spectral tensor is internally closed; weak-chain gap is derivative-definition residual",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

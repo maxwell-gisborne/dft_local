@@ -27,6 +27,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_k_convergence_probe,
     finite_field_symmetry_sanity_probe,
     finite_field_vincent_reconstruction_probe,
+    finite_field_strong_dc_validation_probe,
     operator_symbol_validation_probe,
 )
 
@@ -374,6 +375,28 @@ def _finite_field_vincent_rows(probe: dict[str, object]) -> tuple[TableRow, ...]
     )
 
 
+def _finite_field_strong_dc_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "reused strong DC implementation")),
+        TableRow(("mode count", _fmt_probe_value(probe["mode_count"]), "FFT modes")),
+        TableRow(("nonzero mode count", _fmt_probe_value(probe["nonzero_mode_count"]), "active modes")),
+        TableRow(("strong-grid trace", _fmt_probe_value(probe["strong_grid_trace_S_per_m"]), "S/m")),
+        TableRow(("weak-chain grid trace", _fmt_probe_value(probe["weak_chain_grid_trace_S_per_m"]), "S/m")),
+        TableRow(("Vincent target trace", _fmt_probe_value(probe["vincent_target_trace_S_per_m"]), "S/m")),
+        TableRow(("strong/weak trace gap", _fmt_probe_value(probe["strong_vs_weak_rel_trace_gap"]), "known derivative residual")),
+        TableRow(("strong/Vincent trace error %", _fmt_probe_value(probe["strong_vs_vincent_percent_error"]), "audit residual")),
+        TableRow(("mode reconstruction abs error", _fmt_probe_value(probe["mode_reconstruction_abs_error"]), "near 0")),
+        TableRow(("imaginary leakage", _fmt_probe_value(probe["imaginary_leakage_S"]), "near 0")),
+        TableRow(("imaginary leakage ratio", _fmt_probe_value(probe["imaginary_leakage_ratio"]), "near 0")),
+        TableRow(("strongest mode fraction", _fmt_probe_value(probe["strongest_mode_fraction"]), "finite")),
+        TableRow(("occupation coeff shape", f"{probe['occupation_coeff_shape_0']} × {probe['occupation_coeff_shape_1']}", "grid shape")),
+        TableRow(("response factor finite", _fmt_probe_value(probe["response_factor_finite"]), "True")),
+        TableRow(("velocity coefficients finite", _fmt_probe_value(probe["velocity_coefficients_finite"]), "True")),
+        TableRow(("strong DC internal pass", _fmt_probe_value(probe["strong_dc_internal_pass"]), "True")),
+        TableRow(("residual status", _fmt_probe_value(probe["residual_status"]), "audit note")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -556,6 +579,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     k_convergence_probe = finite_field_k_convergence_probe()
     symmetry_probe = finite_field_symmetry_sanity_probe()
     vincent_probe = finite_field_vincent_reconstruction_probe()
+    strong_dc_probe = finite_field_strong_dc_validation_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -748,17 +772,39 @@ This first finite-field validation section reuses the existing Ashcroft/Vincent 
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_strong_dc_validation",
+            DiagnosticSection(
+                id="finite_field_dc_validation_strong_dc_validation",
                 title="Strong DC validation",
                 description="Checks the finite-field band-labelled strong DC tensor in regimes where independent formulae should meet.",
-                claim="The band-labelled strong DC conductivity agrees with the Vincent/Ashcroft-style expression in their shared assumptions and parameter regime.",
-                evidence=(
-                    ("matched-input strong vs Vincent/Ashcroft", "dummy", "same dispersion, tau, T, mu, k-grid, and normalization"),
-                    ("strong spectral decomposition", "dummy", "band-labelled tensor assembly is internally visible"),
-                    ("temperature / smoothness regime check", "dummy", "avoid overclaiming under-resolved low-temperature derivatives"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_strong_dc_validation_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** The band-labelled strong DC conductivity is internally closed as a lattice-mode spectral tensor and its residual against the weak-chain calculation is exposed rather than hidden.
+
+This first implementation reuses the existing `BandIndexedStrongDcResult` on Vincent's epsilon grid. It checks that the mode tensor re-sums to the reported strong tensor, that Fourier coefficients and response factors are finite, and that imaginary leakage is negligible.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_strong_dc_validation_table",
+                        title="Strong DC validation metrics",
+                        description="Band-indexed strong spectral tensor checks on Vincent inputs.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_strong_dc_rows(strong_dc_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_strong_dc_validation_placeholders",
+                        title="Remaining placeholders",
+                        description="Checks still needed for the full finite-field validation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("component-level strong tensor table", "pending")),
+                            TableRow(("temperature / smoothness regime table", "pending")),
+                            TableRow(("dataset-backed band-labelled strong DC run", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("strong DC tensor table", "strong/contact error plot", "spectral decomposition summary"),
             ),
             _finite_field_dc_section(
                 section_id="finite_field_dc_validation_weak_dc_limit",

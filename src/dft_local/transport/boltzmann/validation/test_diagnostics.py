@@ -842,3 +842,56 @@ def test_finite_field_dc_vincent_section_contains_real_metrics() -> None:
 
     assert rows["best adjacent matches Vincent"] == "True"
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_strong_dc_validation_probe_checks_mode_closure() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_strong_dc_validation_probe,
+    )
+
+    probe = finite_field_strong_dc_validation_probe()
+
+    assert probe["mode_count"] > 0
+    assert probe["nonzero_mode_count"] > 0
+    assert probe["strong_grid_trace_S_per_m"] > 0.0
+    assert probe["weak_chain_grid_trace_S_per_m"] > 0.0
+    assert abs(probe["strong_vs_weak_rel_trace_gap"]) < 0.2
+    assert probe["mode_reconstruction_abs_error"] < 1.0e-18
+    assert probe["imaginary_leakage_ratio"] < 1.0e-12
+    assert probe["response_factor_finite"] is True
+    assert probe["velocity_coefficients_finite"] is True
+    assert probe["strong_dc_internal_pass"] is True
+
+
+def test_finite_field_dc_strong_dc_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_strong_dc_validation"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_strong_dc_validation_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_strong_dc_validation_table"].rows
+    }
+
+    assert rows["strong DC internal pass"] == "True"
+    assert "dummy" not in set(rows.values())
