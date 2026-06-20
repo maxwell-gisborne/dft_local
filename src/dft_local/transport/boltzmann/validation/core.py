@@ -940,6 +940,79 @@ def finite_field_k_convergence_probe(
         "conductivity_convergence_status": "pending dataset-backed conductivity refinement",
     }
 
+
+def finite_field_symmetry_sanity_probe(
+    *,
+    n: int = 17,
+) -> dict[str, float | int | bool | str]:
+    """Check symmetry identities on the separable periodic cosine toy."""
+
+    if n < 2:
+        raise ValueError(f"n must be >= 2, got {n}")
+
+    c0 = 1.25
+    c1 = 0.70
+    c2 = -0.30
+
+    axis = np.linspace(-np.pi, np.pi, int(n), endpoint=False)
+
+    max_energy_inversion_error = 0.0
+    max_dk1_odd_error = 0.0
+    max_dk2_odd_error = 0.0
+
+    tensor = np.zeros((2, 2), dtype=np.float64)
+
+    for k1 in axis:
+        for k2 in axis:
+            k1 = float(k1)
+            k2 = float(k2)
+
+            e = expected_separable_cosine_symbol(k1, k2, c0=c0, c1=c1, c2=c2)
+            e_inv = expected_separable_cosine_symbol(-k1, -k2, c0=c0, c1=c1, c2=c2)
+            max_energy_inversion_error = max(max_energy_inversion_error, abs(e - e_inv))
+
+            dk1 = expected_separable_cosine_derivative(k1, k2, axis=0, c1=c1, c2=c2)
+            dk2 = expected_separable_cosine_derivative(k1, k2, axis=1, c1=c1, c2=c2)
+            dk1_inv = expected_separable_cosine_derivative(-k1, -k2, axis=0, c1=c1, c2=c2)
+            dk2_inv = expected_separable_cosine_derivative(-k1, -k2, axis=1, c1=c1, c2=c2)
+
+            max_dk1_odd_error = max(max_dk1_odd_error, abs(dk1 + dk1_inv))
+            max_dk2_odd_error = max(max_dk2_odd_error, abs(dk2 + dk2_inv))
+
+            v = np.asarray([dk1, dk2], dtype=np.float64)
+            tensor += np.outer(v, v)
+
+    tensor /= float(n * n)
+
+    xy_abs = abs(float(tensor[0, 1]))
+    yx_abs = abs(float(tensor[1, 0]))
+    antisym_abs = abs(float(tensor[0, 1] - tensor[1, 0]))
+
+    return {
+        "source": "separable cosine inversion and tensor symmetry toy",
+        "n": int(n),
+        "sample_count": int(n * n),
+        "energy_inversion_max_error": float(max_energy_inversion_error),
+        "dk1_odd_max_error": float(max_dk1_odd_error),
+        "dk2_odd_max_error": float(max_dk2_odd_error),
+        "tensor_xx": float(tensor[0, 0]),
+        "tensor_yy": float(tensor[1, 1]),
+        "tensor_xy": float(tensor[0, 1]),
+        "tensor_yx": float(tensor[1, 0]),
+        "tensor_xy_abs": float(xy_abs),
+        "tensor_yx_abs": float(yx_abs),
+        "tensor_antisym_abs": float(antisym_abs),
+        "all_symmetry_checks_pass": bool(
+            max_energy_inversion_error < 1.0e-12
+            and max_dk1_odd_error < 1.0e-12
+            and max_dk2_odd_error < 1.0e-12
+            and xy_abs < 1.0e-12
+            and yx_abs < 1.0e-12
+            and antisym_abs < 1.0e-12
+        ),
+        "dataset_automorphism_status": "pending H/S/H_star/S_star automorphism checks",
+    }
+
 def gd_symbol_production_validation_probe() -> dict[str, float]:
     """Validate the production GdKernelArrays symbol and derivative mechanisms."""
 

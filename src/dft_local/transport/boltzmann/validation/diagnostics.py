@@ -25,6 +25,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_unit_scaling_probe,
     finite_field_analytic_toy_coverage_probe,
     finite_field_k_convergence_probe,
+    finite_field_symmetry_sanity_probe,
     operator_symbol_validation_probe,
 )
 
@@ -337,6 +338,23 @@ def _finite_field_k_convergence_rows(probe: dict[str, object]) -> tuple[TableRow
     )
 
 
+def _finite_field_symmetry_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+    return (
+        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
+        TableRow(("sample count", _fmt_probe_value(probe["sample_count"]), "N × N")),
+        TableRow(("E(k)-E(-k) max error", _fmt_probe_value(probe["energy_inversion_max_error"]), "near 0")),
+        TableRow(("dk1 oddness max error", _fmt_probe_value(probe["dk1_odd_max_error"]), "near 0")),
+        TableRow(("dk2 oddness max error", _fmt_probe_value(probe["dk2_odd_max_error"]), "near 0")),
+        TableRow(("tensor xx", _fmt_probe_value(probe["tensor_xx"]), "positive")),
+        TableRow(("tensor yy", _fmt_probe_value(probe["tensor_yy"]), "positive")),
+        TableRow(("tensor xy", _fmt_probe_value(probe["tensor_xy"]), "near 0")),
+        TableRow(("tensor yx", _fmt_probe_value(probe["tensor_yx"]), "near 0")),
+        TableRow(("tensor antisym abs", _fmt_probe_value(probe["tensor_antisym_abs"]), "near 0")),
+        TableRow(("all symmetry checks pass", _fmt_probe_value(probe["all_symmetry_checks_pass"]), "True")),
+        TableRow(("dataset automorphism status", _fmt_probe_value(probe["dataset_automorphism_status"]), "pending")),
+    )
+
+
 def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
     return (
         InputSpec(
@@ -517,6 +535,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     unit_scaling_probe = finite_field_unit_scaling_probe()
     analytic_toy_probe = finite_field_analytic_toy_coverage_probe()
     k_convergence_probe = finite_field_k_convergence_probe()
+    symmetry_probe = finite_field_symmetry_sanity_probe()
 
     return DiagnosticResult(
         title="Finite-field DC validation",
@@ -828,18 +847,40 @@ This first implementation checks the grid-measure part of that claim on a period
                     ),
                 ),
             ),
-            _finite_field_dc_section(
-                section_id="finite_field_dc_validation_symmetry",
+            DiagnosticSection(
+                id="finite_field_dc_validation_symmetry",
                 title="Symmetry sanity",
                 description="Tensor, k-space, and direction-sweep symmetry checks.",
-                claim="Tensor components and direction sweeps obey expected lattice and time-reversal symmetries up to finite-size and sampling defects.",
-                evidence=(
-                    ("sigma_xy vs sigma_yx", "dummy", "Onsager/time-reversal sanity where applicable"),
-                    ("direction sweep periodicity", "dummy", "lattice symmetry in field angle"),
-                    ("k inversion checks", "dummy", "E(k)=E(-k), velocity oddness, conductivity evenness"),
-                    ("finite-sample symmetry defect", "dummy", "separate physics from sampling/truncation defects"),
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_symmetry_prose",
+                        title="Validation claim",
+                        markdown="""**Claim.** Tensor components and direction sweeps obey expected lattice and time-reversal symmetries up to finite-size and sampling defects.
+
+This first implementation checks the symmetry algebra on a controlled separable cosine toy: even energy under k inversion, odd derivative under k inversion, and a symmetric diagonal velocity-square tensor with vanishing cross component.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_symmetry_table",
+                        title="Symmetry sanity metrics",
+                        description="First real symmetry table for the finite-field validation diagnostic.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_symmetry_rows(symmetry_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_symmetry_placeholders",
+                        title="Remaining placeholders",
+                        description="Dataset-backed symmetry checks still required for the full finite-field validation.",
+                        headers=("placeholder", "status"),
+                        rows=(
+                            TableRow(("H/S/H_star/S_star automorphism checks", "pending")),
+                            TableRow(("direction-sweep lattice periodicity", "pending")),
+                            TableRow(("real graphene k inversion checks", "pending")),
+                            TableRow(("finite-sample symmetry defect", "pending")),
+                        ),
+                    ),
                 ),
-                placeholders=("tensor symmetry table", "direction sweep plot", "k-inversion defect map"),
             ),
         ),
     )

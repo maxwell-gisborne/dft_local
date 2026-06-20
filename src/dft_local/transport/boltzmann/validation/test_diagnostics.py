@@ -738,3 +738,57 @@ def test_finite_field_dc_k_convergence_section_contains_real_metrics() -> None:
     assert rows["grid count"] == "5"
     assert rows["all grid errors small"] == "True"
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_symmetry_sanity_probe_checks_toy_symmetries() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_symmetry_sanity_probe,
+    )
+
+    probe = finite_field_symmetry_sanity_probe()
+
+    assert probe["sample_count"] == 289
+    assert probe["energy_inversion_max_error"] < 1.0e-12
+    assert probe["dk1_odd_max_error"] < 1.0e-12
+    assert probe["dk2_odd_max_error"] < 1.0e-12
+    assert probe["tensor_xx"] > 0.0
+    assert probe["tensor_yy"] > 0.0
+    assert abs(probe["tensor_xy"]) < 1.0e-12
+    assert abs(probe["tensor_yx"]) < 1.0e-12
+    assert probe["tensor_antisym_abs"] < 1.0e-12
+    assert probe["all_symmetry_checks_pass"] is True
+
+
+def test_finite_field_dc_symmetry_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_symmetry"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_symmetry_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_symmetry_table"].rows
+    }
+
+    assert rows["sample count"] == "289"
+    assert rows["all symmetry checks pass"] == "True"
+    assert "dummy" not in set(rows.values())
