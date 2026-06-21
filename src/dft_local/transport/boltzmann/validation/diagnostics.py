@@ -40,6 +40,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_velocity_validation_probe,
     FiniteFieldVelocityValidationProbe,
     finite_field_unit_scaling_probe,
+    FiniteFieldUnitScalingProbe,
     finite_field_analytic_toy_coverage_probe,
     finite_field_k_convergence_probe,
     finite_field_symmetry_sanity_probe,
@@ -335,18 +336,21 @@ def _finite_field_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tu
     )
 
 
-def _finite_field_unit_scaling_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_unit_scaling_rows(probe: FiniteFieldUnitScalingProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
-        TableRow(("atomic energy to eV", _fmt_probe_value(probe["atomic_energy_to_ev"]), "27.21138386")),
-        TableRow(("atomic length to Å", _fmt_probe_value(probe["atomic_length_to_angstrom"]), "0.52917721092")),
-        TableRow(("hbar atomic", _fmt_probe_value(probe["hbar_atomic"]), "1 in atomic-unit context")),
-        TableRow(("hbar eV Å context", _fmt_probe_value(probe["hbar_ev_angstrom"]), "seconds in eV working energy")),
-        TableRow(("velocity AU to eVÅ factor", _fmt_probe_value(probe["velocity_au_to_evag_factor"]), "same physical velocity conversion")),
-        TableRow(("velocity factor abs error", _fmt_probe_value(probe["velocity_factor_abs_error"]), "near 0")),
-        TableRow(("Fermi window eV from AU factor", _fmt_probe_value(probe["fermi_window_ev_from_au_factor"]), "inverse-energy conversion")),
-        TableRow(("mu conversion required", _fmt_probe_value(probe["mu_conversion_required"]), "True")),
-        TableRow(("conductivity SI status", _fmt_probe_value(probe["conductivity_si_status"]), "pending")),
+        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("atomic energy to eV", q("atomic_energy_to_ev"), "27.21138386")),
+        TableRow(("atomic length to Å", q("atomic_length_to_angstrom"), "0.52917721092")),
+        TableRow(("hbar atomic", q("hbar_atomic"), "1 in atomic-unit context")),
+        TableRow(("hbar eV Å context", q("hbar_ev_angstrom"), "seconds in eV working energy")),
+        TableRow(("velocity AU to eVÅ factor", q("velocity_au_to_evag_factor"), "same physical velocity conversion")),
+        TableRow(("expected velocity factor", q("expected_velocity_au_to_evag_factor"), "reference")),
+        TableRow(("velocity factor abs error", q("velocity_factor_abs_error"), "near 0")),
+        TableRow(("Fermi window eV from AU factor", q("fermi_window_ev_from_au_factor"), "inverse-energy conversion")),
+        TableRow(("mu conversion required", probe.mu_conversion_required, "True")),
+        TableRow(("conductivity SI status", probe.conductivity_si_status, "pending")),
     )
 
 

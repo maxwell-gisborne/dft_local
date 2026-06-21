@@ -604,11 +604,11 @@ def test_finite_field_unit_scaling_probe_checks_core_factors() -> None:
 
     probe = finite_field_unit_scaling_probe()
 
-    assert probe["atomic_energy_to_ev"] == 27.21138386
-    assert probe["atomic_length_to_angstrom"] == 0.52917721092
-    assert probe["velocity_factor_abs_error"] < 1.0e-12
-    assert probe["fermi_window_ev_from_au_factor"] == 1.0 / 27.21138386
-    assert probe["mu_conversion_required"] is True
+    assert probe.atomic_energy_to_ev == 27.21138386
+    assert probe.atomic_length_to_angstrom == 0.52917721092
+    assert probe.velocity_factor_abs_error < 1.0e-12
+    assert probe.fermi_window_ev_from_au_factor == 1.0 / 27.21138386
+    assert probe.mu_conversion_required is True
 
 
 def test_finite_field_dc_unit_scaling_section_contains_real_metrics() -> None:

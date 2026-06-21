@@ -19,6 +19,7 @@ from dft_local.core.units import (
     ENERGY,
     LENGTH,
     SI_UNITS,
+    TIME,
     VELOCITY,
     Unit,
     UnitContext,
@@ -360,6 +361,50 @@ class FiniteFieldVelocityValidationProbe:
 
     unit_scaling_status: str
     vincent_velocity_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldUnitScalingProbe:
+    """Typed scalar result for finite-field unit conversion checks."""
+
+    unit_context: UnitContext
+    source: str
+
+    atomic_energy_to_ev: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="atomic energy to eV conversion factor"),
+    ]
+    atomic_length_to_angstrom: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="atomic length to angstrom conversion factor"),
+    ]
+    hbar_atomic: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hbar in atomic-unit context"),
+    ]
+    hbar_ev_angstrom: Annotated[
+        float,
+        qscalar(TIME, role="hbar in eV angstrom context"),
+    ]
+    velocity_au_to_evag_factor: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="velocity AU to eV angstrom conversion factor"),
+    ]
+    expected_velocity_au_to_evag_factor: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="expected velocity AU to eV angstrom conversion factor"),
+    ]
+    velocity_factor_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="velocity conversion factor absolute error"),
+    ]
+    fermi_window_ev_from_au_factor: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Fermi window eV from AU conversion factor"),
+    ]
+
+    mu_conversion_required: bool
+    conductivity_si_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1133,7 +1178,7 @@ def finite_field_velocity_validation_probe() -> FiniteFieldVelocityValidationPro
     )
 
 
-def finite_field_unit_scaling_probe() -> dict[str, float | bool | str]:
+def finite_field_unit_scaling_probe() -> FiniteFieldUnitScalingProbe:
     """Check core unit conversions used by finite-field validation.
 
     This is deliberately calculation-light. It validates the conversion factors
@@ -1156,19 +1201,20 @@ def finite_field_unit_scaling_probe() -> dict[str, float | bool | str]:
 
     fermi_window_ev_from_au_factor = 1.0 / energy_disk_to_ev
 
-    return {
-        "source": "core UnitContext conversion factors",
-        "atomic_energy_to_ev": float(energy_disk_to_ev),
-        "atomic_length_to_angstrom": float(length_disk_to_angstrom),
-        "hbar_atomic": float(hbar_au),
-        "hbar_ev_angstrom": float(hbar_evag),
-        "velocity_au_to_evag_factor": float(velocity_au_to_evag),
-        "expected_velocity_au_to_evag_factor": float(expected_velocity_factor),
-        "velocity_factor_abs_error": float(abs(velocity_au_to_evag - expected_velocity_factor)),
-        "fermi_window_ev_from_au_factor": float(fermi_window_ev_from_au_factor),
-        "mu_conversion_required": True,
-        "conductivity_si_status": "pending full conductivity unit-conversion run",
-    }
+    return FiniteFieldUnitScalingProbe(
+        unit_context=SI_UNITS,
+        source="core UnitContext conversion factors",
+        atomic_energy_to_ev=float(energy_disk_to_ev),
+        atomic_length_to_angstrom=float(length_disk_to_angstrom),
+        hbar_atomic=float(hbar_au),
+        hbar_ev_angstrom=float(hbar_evag),
+        velocity_au_to_evag_factor=float(velocity_au_to_evag),
+        expected_velocity_au_to_evag_factor=float(expected_velocity_factor),
+        velocity_factor_abs_error=float(abs(velocity_au_to_evag - expected_velocity_factor)),
+        fermi_window_ev_from_au_factor=float(fermi_window_ev_from_au_factor),
+        mu_conversion_required=True,
+        conductivity_si_status="pending full conductivity unit-conversion run",
+    )
 
 
 def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool | str]:
@@ -1214,13 +1260,13 @@ def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool |
             velocity.hellmann_feynman_dk1_abs_error,
             velocity.hellmann_feynman_dk2_abs_error,
         )),
-        "unit_velocity_factor_error": float(units["velocity_factor_abs_error"]),
+        "unit_velocity_factor_error": float(units.velocity_factor_abs_error),
         "all_current_toys_pass": bool(
             max_symbol_error < 1.0e-12
             and max_derivative_error < 1.0e-9
             and float(input_health["s_eig_min"]) > 1.0e-10
             and int(band_hazards["hazard_count"]) >= 1
-            and float(units["velocity_factor_abs_error"]) < 1.0e-12
+            and float(units.velocity_factor_abs_error) < 1.0e-12
         ),
         "missing_toy": "finite-field lattice-mode Gamma/F/rho closure toy",
     }
