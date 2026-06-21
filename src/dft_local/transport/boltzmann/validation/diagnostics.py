@@ -47,6 +47,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_strong_dc_validation_probe,
     FiniteFieldStrongDcValidationProbe,
     finite_field_weak_dc_limit_probe,
+    FiniteFieldWeakDcLimitProbe,
     FiniteFieldModeDecompositionProbe,
     finite_field_mode_decomposition_probe,
     operator_symbol_validation_probe,
@@ -440,26 +441,32 @@ def _finite_field_strong_dc_rows(probe: FiniteFieldStrongDcValidationProbe) -> t
     )
 
 
-def _finite_field_weak_dc_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_weak_dc_rows(probe: FiniteFieldWeakDcLimitProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "matched spectral-basis analytic toy")),
-        TableRow(("field row count", _fmt_probe_value(probe["field_row_count"]), "eta sweep rows")),
-        TableRow(("zero eta", _fmt_probe_value(probe["zero_eta"]), "0")),
-        TableRow(("zero field", _fmt_probe_value(probe["zero_field_V_per_m"]), "V/m")),
-        TableRow(("zero relative tensor discrepancy", _fmt_probe_value(probe["zero_relative_tensor_discrepancy"]), "near 0")),
-        TableRow(("zero relative trace discrepancy", _fmt_probe_value(probe["zero_relative_trace_discrepancy"]), "near 0")),
-        TableRow(("small eta", _fmt_probe_value(probe["small_eta"]), "first nonzero field")),
-        TableRow(("small field", _fmt_probe_value(probe["small_field_V_per_m"]), "V/m")),
-        TableRow(("small relative tensor discrepancy", _fmt_probe_value(probe["small_relative_tensor_discrepancy"]), "small")),
-        TableRow(("small relative trace discrepancy", _fmt_probe_value(probe["small_relative_trace_discrepancy"]), "small")),
-        TableRow(("largest eta", _fmt_probe_value(probe["largest_eta"]), "largest sweep field")),
-        TableRow(("largest relative tensor discrepancy", _fmt_probe_value(probe["largest_relative_tensor_discrepancy"]), "nonlinear departure")),
-        TableRow(("largest relative trace discrepancy", _fmt_probe_value(probe["largest_relative_trace_discrepancy"]), "nonlinear departure")),
-        TableRow(("relative weak-limit error", _fmt_probe_value(probe["relative_weak_limit_error"]), "near 0")),
-        TableRow(("strong zero-field imaginary leakage", _fmt_probe_value(probe["strong_zero_field_imaginary_leakage"]), "near 0")),
-        TableRow(("max imaginary leakage", _fmt_probe_value(probe["max_imaginary_leakage"]), "finite")),
-        TableRow(("weak-limit pass", _fmt_probe_value(probe["weak_limit_pass"]), "True")),
-        TableRow(("roundoff floor status", _fmt_probe_value(probe["roundoff_floor_status"]), "audit note")),
+        TableRow(("source", probe.source, "matched spectral-basis analytic toy")),
+        TableRow(("field row count", probe.field_row_count, "eta sweep rows")),
+        TableRow(("zero eta", q("zero_eta"), "0")),
+        TableRow(("zero field", q("zero_field"), "V/m")),
+        TableRow(("zero relative tensor discrepancy", q("zero_relative_tensor_discrepancy"), "near 0")),
+        TableRow(("zero relative trace discrepancy", q("zero_relative_trace_discrepancy"), "near 0")),
+        TableRow(("small eta", q("small_eta"), "first nonzero field")),
+        TableRow(("small field", q("small_field"), "V/m")),
+        TableRow(("small relative tensor discrepancy", q("small_relative_tensor_discrepancy"), "small")),
+        TableRow(("small relative trace discrepancy", q("small_relative_trace_discrepancy"), "small")),
+        TableRow(("largest eta", q("largest_eta"), "largest sweep field")),
+        TableRow(("largest relative tensor discrepancy", q("largest_relative_tensor_discrepancy"), "nonlinear departure")),
+        TableRow(("largest relative trace discrepancy", q("largest_relative_trace_discrepancy"), "nonlinear departure")),
+        TableRow(("min nonzero eta", q("min_nonzero_eta"), "first finite field")),
+        TableRow(("max eta", q("max_eta"), "largest finite field")),
+        TableRow(("max field tensor discrepancy", q("max_field_tensor_discrepancy"), "finite")),
+        TableRow(("max abs field trace discrepancy", q("max_abs_field_trace_discrepancy"), "finite")),
+        TableRow(("relative weak-limit error", q("relative_weak_limit_error"), "near 0")),
+        TableRow(("strong zero-field imaginary leakage", q("strong_zero_field_imaginary_leakage"), "near 0")),
+        TableRow(("max imaginary leakage", q("max_imaginary_leakage"), "finite")),
+        TableRow(("weak-limit pass", probe.weak_limit_pass, "True")),
+        TableRow(("roundoff floor status", probe.roundoff_floor_status, "audit note")),
     )
 
 

@@ -914,15 +914,15 @@ def test_finite_field_weak_dc_limit_probe_checks_zero_field_limit() -> None:
 
     probe = finite_field_weak_dc_limit_probe()
 
-    assert probe["field_row_count"] >= 3
-    assert probe["zero_eta"] == 0.0
-    assert probe["zero_relative_tensor_discrepancy"] < 1.0e-12
-    assert abs(probe["zero_relative_trace_discrepancy"]) < 1.0e-12
-    assert probe["relative_weak_limit_error"] < 1.0e-12
-    assert probe["small_eta"] > 0.0
-    assert probe["largest_eta"] > probe["small_eta"]
-    assert probe["largest_relative_tensor_discrepancy"] >= probe["small_relative_tensor_discrepancy"]
-    assert probe["weak_limit_pass"] is True
+    assert probe.field_row_count >= 3
+    assert probe.zero_eta == 0.0
+    assert probe.zero_relative_tensor_discrepancy < 1.0e-12
+    assert abs(probe.zero_relative_trace_discrepancy) < 1.0e-12
+    assert probe.relative_weak_limit_error < 1.0e-12
+    assert probe.small_eta > 0.0
+    assert probe.largest_eta > probe.small_eta
+    assert probe.largest_relative_tensor_discrepancy >= probe.small_relative_tensor_discrepancy
+    assert probe.weak_limit_pass is True
 
 
 def test_finite_field_dc_weak_dc_limit_section_contains_real_metrics() -> None:

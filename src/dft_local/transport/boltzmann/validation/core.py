@@ -13,8 +13,11 @@ from typing import Annotated
 import numpy as np
 
 from dft_local.core.units import (
+    CHARGE,
     CONDUCTIVITY,
     DIMENSIONLESS,
+    ENERGY,
+    LENGTH,
     SI_UNITS,
     VELOCITY,
     Unit,
@@ -24,6 +27,8 @@ from dft_local.core.units import (
 
 
 PERCENT = Unit("%", DIMENSIONLESS, 0.01)
+ELECTRIC_FIELD = ENERGY / (CHARGE * LENGTH)
+VOLT_PER_METER = Unit("V/m", ELECTRIC_FIELD, 1.0)
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +198,95 @@ class FiniteFieldModeDecompositionProbe:
     mode_tensor_finite: bool
     mode_closure_pass: bool
     residual_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldWeakDcLimitProbe:
+    """Typed scalar result for weak-field DC limit validation."""
+
+    unit_context: UnitContext
+    source: str
+
+    field_row_count: int
+
+    zero_eta: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="zero eta"),
+    ]
+    zero_field: Annotated[
+        float,
+        qscalar(ELECTRIC_FIELD, role="zero field", display_unit=VOLT_PER_METER),
+    ]
+    zero_relative_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="zero relative tensor discrepancy"),
+    ]
+    zero_relative_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="zero relative trace discrepancy"),
+    ]
+
+    small_eta: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="small eta"),
+    ]
+    small_field: Annotated[
+        float,
+        qscalar(ELECTRIC_FIELD, role="small field", display_unit=VOLT_PER_METER),
+    ]
+    small_relative_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="small relative tensor discrepancy"),
+    ]
+    small_relative_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="small relative trace discrepancy"),
+    ]
+
+    largest_eta: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="largest eta"),
+    ]
+    largest_relative_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="largest relative tensor discrepancy"),
+    ]
+    largest_relative_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="largest relative trace discrepancy"),
+    ]
+
+    min_nonzero_eta: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum nonzero eta"),
+    ]
+    max_eta: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum eta"),
+    ]
+    max_field_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum field tensor discrepancy"),
+    ]
+    max_abs_field_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum absolute field trace discrepancy"),
+    ]
+    max_imaginary_leakage: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="maximum imaginary leakage"),
+    ]
+    relative_weak_limit_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="relative weak-limit error"),
+    ]
+    strong_zero_field_imaginary_leakage: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="strong zero-field imaginary leakage"),
+    ]
+
+    weak_limit_pass: bool
+    roundoff_floor_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1368,7 +1462,7 @@ def finite_field_strong_dc_validation_probe() -> FiniteFieldStrongDcValidationPr
     )
 
 
-def finite_field_weak_dc_limit_probe() -> dict[str, float | int | bool | str]:
+def finite_field_weak_dc_limit_probe() -> FiniteFieldWeakDcLimitProbe:
     """Check strong finite-field DC approaches weak DC in a matched spectral basis."""
 
     from dft_local.transport.boltzmann.ashcroft_comparison.core import (
@@ -1389,35 +1483,36 @@ def finite_field_weak_dc_limit_probe() -> dict[str, float | int | bool | str]:
     max_field_trace_discrepancy = max(abs(float(row["relative_trace_discrepancy"])) for row in field_rows)
     max_imaginary_leakage = max(float(row["imaginary_leakage"]) for row in field_rows)
 
-    return {
-        "source": "analytic sinusoidal Ashcroft strong/weak sweep",
-        "field_row_count": int(len(field_rows)),
-        "zero_eta": float(zero_row["eta"]),
-        "zero_field_V_per_m": float(zero_row["field_V_per_m"]),
-        "zero_relative_tensor_discrepancy": float(zero_row["relative_tensor_discrepancy"]),
-        "zero_relative_trace_discrepancy": float(zero_row["relative_trace_discrepancy"]),
-        "small_eta": float(small_nonzero_row["eta"]),
-        "small_field_V_per_m": float(small_nonzero_row["field_V_per_m"]),
-        "small_relative_tensor_discrepancy": float(small_nonzero_row["relative_tensor_discrepancy"]),
-        "small_relative_trace_discrepancy": float(small_nonzero_row["relative_trace_discrepancy"]),
-        "largest_eta": float(largest_row["eta"]),
-        "largest_relative_tensor_discrepancy": float(largest_row["relative_tensor_discrepancy"]),
-        "largest_relative_trace_discrepancy": float(largest_row["relative_trace_discrepancy"]),
-        "min_nonzero_eta": float(min_nonzero_eta),
-        "max_eta": float(max_eta),
-        "max_field_tensor_discrepancy": float(max_field_tensor_discrepancy),
-        "max_abs_field_trace_discrepancy": float(max_field_trace_discrepancy),
-        "max_imaginary_leakage": float(max_imaginary_leakage),
-        "relative_weak_limit_error": float(probe["relative_weak_limit_error"]),
-        "strong_zero_field_imaginary_leakage": float(probe["strong_zero_field_imaginary_leakage"]),
-        "weak_limit_pass": bool(
+    return FiniteFieldWeakDcLimitProbe(
+        unit_context=SI_UNITS,
+        source="analytic sinusoidal Ashcroft strong/weak sweep",
+        field_row_count=int(len(field_rows)),
+        zero_eta=float(zero_row["eta"]),
+        zero_field=float(zero_row["field_V_per_m"]),
+        zero_relative_tensor_discrepancy=float(zero_row["relative_tensor_discrepancy"]),
+        zero_relative_trace_discrepancy=float(zero_row["relative_trace_discrepancy"]),
+        small_eta=float(small_nonzero_row["eta"]),
+        small_field=float(small_nonzero_row["field_V_per_m"]),
+        small_relative_tensor_discrepancy=float(small_nonzero_row["relative_tensor_discrepancy"]),
+        small_relative_trace_discrepancy=float(small_nonzero_row["relative_trace_discrepancy"]),
+        largest_eta=float(largest_row["eta"]),
+        largest_relative_tensor_discrepancy=float(largest_row["relative_tensor_discrepancy"]),
+        largest_relative_trace_discrepancy=float(largest_row["relative_trace_discrepancy"]),
+        min_nonzero_eta=float(min_nonzero_eta),
+        max_eta=float(max_eta),
+        max_field_tensor_discrepancy=float(max_field_tensor_discrepancy),
+        max_abs_field_trace_discrepancy=float(max_field_trace_discrepancy),
+        max_imaginary_leakage=float(max_imaginary_leakage),
+        relative_weak_limit_error=float(probe["relative_weak_limit_error"]),
+        strong_zero_field_imaginary_leakage=float(probe["strong_zero_field_imaginary_leakage"]),
+        weak_limit_pass=bool(
             float(probe["relative_weak_limit_error"]) < 1.0e-12
             and float(zero_row["relative_tensor_discrepancy"]) < 1.0e-12
             and abs(float(zero_row["relative_trace_discrepancy"])) < 1.0e-12
             and np.isfinite(max_field_tensor_discrepancy)
         ),
-        "roundoff_floor_status": "zero-field agreement checked; finite eta sweep exposes nonlinear departure",
-    }
+        roundoff_floor_status="zero-field agreement checked; finite eta sweep exposes nonlinear departure",
+    )
 
 
 def finite_field_mode_decomposition_probe() -> FiniteFieldModeDecompositionProbe:
