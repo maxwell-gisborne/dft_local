@@ -966,18 +966,18 @@ def test_finite_field_mode_decomposition_probe_checks_closure() -> None:
 
     probe = finite_field_mode_decomposition_probe()
 
-    assert probe["mode_count"] > 0
-    assert probe["gamma_reconstruction_abs_error"] < 1.0e-8
-    assert probe["rho_reconstruction_abs_error"] < 1.0e-12
-    assert probe["mode_tensor_reconstruction_abs_error"] < 1.0e-18
-    assert probe["conductivity_trace_S_per_m"] > 0.0
-    assert 0.0 < probe["top_1_mode_fraction"] <= 1.0
-    assert probe["top_1_mode_fraction"] <= probe["top_10_mode_fraction"] <= probe["top_100_mode_fraction"] <= 1.0
-    assert probe["gamma_finite"] is True
-    assert probe["rho_finite"] is True
-    assert probe["response_finite"] is True
-    assert probe["mode_tensor_finite"] is True
-    assert probe["mode_closure_pass"] is True
+    assert probe.mode_count > 0
+    assert probe.gamma_reconstruction_abs_error < 1.0e-8
+    assert probe.rho_reconstruction_abs_error < 1.0e-12
+    assert probe.mode_tensor_reconstruction_abs_error < 1.0e-18
+    assert probe.conductivity_trace > 0.0
+    assert 0.0 < probe.top_1_mode_fraction <= 1.0
+    assert probe.top_1_mode_fraction <= probe.top_10_mode_fraction <= probe.top_100_mode_fraction <= 1.0
+    assert probe.gamma_finite is True
+    assert probe.rho_finite is True
+    assert probe.response_finite is True
+    assert probe.mode_tensor_finite is True
+    assert probe.mode_closure_pass is True
 
 
 def test_finite_field_dc_mode_decomposition_section_contains_real_metrics() -> None:

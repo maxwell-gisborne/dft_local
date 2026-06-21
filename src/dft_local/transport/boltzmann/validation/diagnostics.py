@@ -47,6 +47,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_strong_dc_validation_probe,
     FiniteFieldStrongDcValidationProbe,
     finite_field_weak_dc_limit_probe,
+    FiniteFieldModeDecompositionProbe,
     finite_field_mode_decomposition_probe,
     operator_symbol_validation_probe,
 )
@@ -462,27 +463,29 @@ def _finite_field_weak_dc_rows(probe: dict[str, object]) -> tuple[TableRow, ...]
     )
 
 
-def _finite_field_mode_decomposition_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_mode_decomposition_rows(probe: FiniteFieldModeDecompositionProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "strong DC mode result")),
-        TableRow(("mode count", _fmt_probe_value(probe["mode_count"]), "FFT modes")),
-        TableRow(("Gamma reconstruction abs error", _fmt_probe_value(probe["gamma_reconstruction_abs_error"]), "near 0")),
-        TableRow(("rho reconstruction abs error", _fmt_probe_value(probe["rho_reconstruction_abs_error"]), "near 0")),
-        TableRow(("mode tensor reconstruction abs error", _fmt_probe_value(probe["mode_tensor_reconstruction_abs_error"]), "near 0")),
-        TableRow(("conductivity trace", _fmt_probe_value(probe["conductivity_trace_S_per_m"]), "S/m")),
-        TableRow(("mode norm sum", _fmt_probe_value(probe["conductivity_mode_norm_sum"]), "finite")),
-        TableRow(("top 1 mode fraction", _fmt_probe_value(probe["top_1_mode_fraction"]), "concentration")),
-        TableRow(("top 10 mode fraction", _fmt_probe_value(probe["top_10_mode_fraction"]), "concentration")),
-        TableRow(("top 100 mode fraction", _fmt_probe_value(probe["top_100_mode_fraction"]), "concentration")),
-        TableRow(("Gamma abs max", _fmt_probe_value(probe["gamma_abs_max"]), "finite")),
-        TableRow(("rho abs max", _fmt_probe_value(probe["rho_abs_max"]), "finite")),
-        TableRow(("response abs max", _fmt_probe_value(probe["response_abs_max"]), "finite")),
-        TableRow(("Gamma finite", _fmt_probe_value(probe["gamma_finite"]), "True")),
-        TableRow(("rho finite", _fmt_probe_value(probe["rho_finite"]), "True")),
-        TableRow(("response finite", _fmt_probe_value(probe["response_finite"]), "True")),
-        TableRow(("mode tensor finite", _fmt_probe_value(probe["mode_tensor_finite"]), "True")),
-        TableRow(("mode closure pass", _fmt_probe_value(probe["mode_closure_pass"]), "True")),
-        TableRow(("residual status", _fmt_probe_value(probe["residual_status"]), "audit note")),
+        TableRow(("source", probe.source, "strong DC mode result")),
+        TableRow(("mode count", probe.mode_count, "FFT modes")),
+        TableRow(("Gamma reconstruction abs error", q("gamma_reconstruction_abs_error"), "near 0")),
+        TableRow(("rho reconstruction abs error", q("rho_reconstruction_abs_error"), "near 0")),
+        TableRow(("mode tensor reconstruction abs error", q("mode_tensor_reconstruction_abs_error"), "near 0")),
+        TableRow(("conductivity trace", q("conductivity_trace"), "S/m")),
+        TableRow(("mode norm sum", q("conductivity_mode_norm_sum"), "finite")),
+        TableRow(("top 1 mode fraction", q("top_1_mode_fraction"), "concentration")),
+        TableRow(("top 10 mode fraction", q("top_10_mode_fraction"), "concentration")),
+        TableRow(("top 100 mode fraction", q("top_100_mode_fraction"), "concentration")),
+        TableRow(("Gamma abs max", q("gamma_abs_max"), "finite")),
+        TableRow(("rho abs max", q("rho_abs_max"), "finite")),
+        TableRow(("response abs max", q("response_abs_max"), "finite")),
+        TableRow(("Gamma finite", probe.gamma_finite, "True")),
+        TableRow(("rho finite", probe.rho_finite, "True")),
+        TableRow(("response finite", probe.response_finite, "True")),
+        TableRow(("mode tensor finite", probe.mode_tensor_finite, "True")),
+        TableRow(("mode closure pass", probe.mode_closure_pass, "True")),
+        TableRow(("residual status", probe.residual_status, "audit note")),
     )
 
 
