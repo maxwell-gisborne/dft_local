@@ -39,6 +39,9 @@ from dft_local.transport.boltzmann.validation.core import (
     FiniteFieldInputHealthProbe,
     finite_field_band_crossing_hazard_probe,
     FiniteFieldBandCrossingHazardProbe,
+    finite_field_dataset_band_crossing_hazard_probe,
+    FiniteFieldDatasetBandCrossingHazardProbe,
+    FiniteFieldDatasetBandHazardPoint,
     finite_field_velocity_validation_probe,
     FiniteFieldVelocityValidationProbe,
     finite_field_unit_scaling_probe,
@@ -320,6 +323,53 @@ def _finite_field_band_hazard_rows(probe: FiniteFieldBandCrossingHazardProbe) ->
         TableRow(("max band-1 neighbour jump", q("max_band1_neighbour_jump"), "energy-label smoothness proxy")),
         TableRow(("max gap neighbour jump", q("max_gap_neighbour_jump"), "gap smoothness proxy")),
     )
+
+
+def _finite_field_dataset_band_hazard_rows(probe: FiniteFieldDatasetBandCrossingHazardProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
+    return (
+        TableRow(("source", probe.source, "selected dataset/model source")),
+        TableRow(("sample count", probe.sample_count, "N_u × N_v")),
+        TableRow(("band count", probe.band_count, "number of sorted energy labels")),
+        TableRow(("selected band", probe.selected_band, "band whose neighbouring crossings are relevant")),
+        TableRow(("gap threshold", q("gap_threshold"), "hazard if selected-band adjacent gap is below this")),
+        TableRow(("minimum adjacent gap", q("min_gap"), "larger is safer for energy-ordered labels")),
+        TableRow(("minimum-gap k1", q("min_gap_k1"), "location")),
+        TableRow(("minimum-gap k2", q("min_gap_k2"), "location")),
+        TableRow(("minimum-gap lower band", probe.min_gap_lower_band, "lower sorted label")),
+        TableRow(("minimum-gap upper band", probe.min_gap_upper_band, "upper sorted label")),
+        TableRow(("hazard count", probe.hazard_count, "number of adjacent gaps below threshold")),
+        TableRow(("hazard fraction", q("hazard_fraction"), "hazard count / sample count")),
+        TableRow(("has hazard", probe.has_hazard, "diagnostic flag")),
+        TableRow(("max band neighbour jump", q("max_band_neighbour_jump"), "energy-label smoothness proxy")),
+        TableRow(("max gap neighbour jump", q("max_gap_neighbour_jump"), "gap smoothness proxy")),
+    )
+
+
+def _finite_field_dataset_band_hazard_point_rows(
+    points: tuple[FiniteFieldDatasetBandHazardPoint, ...],
+) -> tuple[TableRow, ...]:
+    rows: list[TableRow] = []
+    for point in points:
+        q = lambda field, point=point: diagnostic_scalar_quantity(point, field)
+        rows.append(
+            TableRow(
+                (
+                    q("k1"),
+                    q("k2"),
+                    point.lower_band,
+                    point.upper_band,
+                    q("lower_energy"),
+                    q("upper_energy"),
+                    q("gap"),
+                    q("threshold"),
+                )
+            )
+        )
+    if not rows:
+        return (TableRow(("none", "none", "none", "none", "none", "none", "none", "none")),)
+    return tuple(rows)
 
 
 def _finite_field_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tuple[TableRow, ...]:
@@ -615,6 +665,14 @@ def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
             options=(("star", "star"), ("direct", "direct"), ("raw", "raw")),
             help="Symmetrization scheme used to build or post-process the symbols.",
         ),
+        InputSpec(
+            "gap_threshold",
+            "Band-gap hazard threshold",
+            "float",
+            0.05,
+            min_value=0.0,
+            help="Adjacent sorted-energy gap below which a sampled k-point is marked as a band-label hazard.",
+        ),
     )
 
 
@@ -632,6 +690,7 @@ def _finite_field_dc_input_rows(inputs) -> tuple[TableRow, ...]:
         TableRow(("band index n", int(inputs.get("band_index", 0)))),
         TableRow(("kernel choice", str(inputs.get("kernel_choice", "average")))),
         TableRow(("symmetrization scheme", str(inputs.get("symmetrization", "star")))),
+        TableRow(("band-gap hazard threshold", _display_quantity(inputs.get("gap_threshold", 0.05), name="band-gap hazard threshold"))),
         TableRow(("band label convention", "energy ordering at each sampled k")),
         TableRow(("reciprocal 2π normalization", "physical audit required; not cosmetic")),
         TableRow(("k-domain / reciprocal measure", "sampled reciprocal cell; audited against Vincent and analytic checks")),
@@ -647,7 +706,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
 
     dashboard_rows = (
         TableRow(("input health", "complete", "selected H/S symbols define stable generalized eigenproblems")),
-        TableRow(("band-crossing hazards", "toy-only", "near crossings and label hazards are mapped on a controlled k-space toy")),
+        TableRow(("band-crossing hazards", "partial", "dataset-backed adjacent-gap hazards are mapped; velocity overlays and label-overlap maps remain pending")),
         TableRow(("velocity validation", "partial", "analytic and finite-difference checks are live; Gamma/Vincent checks remain explicit pending rows")),
         TableRow(("Vincent reconstruction", "open-audit", "velocity samples are resolved; 2π normalization and residual few-percent conductivity gap remain visible audit items")),
         TableRow(("strong DC contact", "partial", "strong band-labelled result is checked on Vincent-grid inputs; shared-regime comparison still being tightened")),
@@ -681,6 +740,20 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
         symmetrization=symmetrization,
         source=input_health_source,
     )
+    if KH_input is None or KS_input is None:
+        dataset_band_hazard_probe = None
+    else:
+        dataset_band_hazard_probe = finite_field_dataset_band_crossing_hazard_probe(
+            KH_input,
+            KS_input,
+            n_u=int(inputs.get("n_u", 11)),
+            n_v=int(inputs.get("n_v", 11)),
+            symmetrization=symmetrization,
+            gap_threshold=float(inputs.get("gap_threshold", 0.05)),
+            band_index=int(inputs.get("band_index", 0)),
+            source=input_health_source,
+        )
+
     band_hazard_probe = finite_field_band_crossing_hazard_probe(
         n_u=int(inputs.get("n_u", 11)),
         n_v=int(inputs.get("n_v", 11)),
@@ -807,24 +880,45 @@ The input-health table reports Hermiticity at two different stages. **H kernel s
                         title="Validation claim",
                         markdown="""**Claim.** The diagnostic can identify k-space regions where near crossings make energy-ordered band labels fragile.
 
-This first implementation uses a periodic two-level Dirac-like toy model. It is not a selected-band graphene map yet. It exists to make the hazard logic concrete: compute adjacent-band gaps, locate the minimum gap, count points below a threshold, and report neighbour-jump smoothness proxies. The production version should use the selected `band_index`, report the adjacent-band gap map, and overlay velocity anomalies near the flagged regions.
+This section identifies k-points where the selected energy-ordered band label becomes fragile. At each sampled k-point, the selected dataset-backed H/S symbol is solved and only adjacent gaps touching the selected band are inspected. For band `n`, this means the gaps to `n-1` and `n+1` when those neighbours exist. A k-point is marked hazardous when one of those selected-band adjacent gaps falls below the configured threshold. Crossings between unrelated bands are not reported here because they do not directly threaten the selected band-labelled conductivity quantity. The controlled two-level toy is retained only as a sanity check for the hazard logic; the production result is the dataset-backed hazard-point table.
 """,
                     ),
                     Table(
-                        id="finite_field_dc_validation_band_crossing_hazards_table",
-                        title="Band-crossing hazard metrics",
-                        description="Toy-backed hazard table for energy-ordered band labels.",
+                        id="finite_field_dc_validation_dataset_band_crossing_hazards_table",
+                        title="Dataset-backed band-crossing hazard summary",
+                        description="Adjacent-gap hazard metrics for the selected dataset-backed H/S symbol model.",
+                        headers=("metric", "value", "target"),
+                        rows=(
+                            _finite_field_dataset_band_hazard_rows(dataset_band_hazard_probe)
+                            if dataset_band_hazard_probe is not None
+                            else (TableRow(("source", "controlled fallback", "dataset context unavailable")),)
+                        ),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_dataset_band_crossing_hazard_points",
+                        title="Dataset-backed hazardous k-points",
+                        description="Smallest adjacent-gap hazards, sorted by gap. Empty means no sampled adjacent gap is below the threshold.",
+                        headers=("k1", "k2", "lower band", "upper band", "E lower", "E upper", "gap", "threshold"),
+                        rows=(
+                            _finite_field_dataset_band_hazard_point_rows(dataset_band_hazard_probe.hazard_points)
+                            if dataset_band_hazard_probe is not None
+                            else (TableRow(("none", "none", "none", "none", "none", "none", "none", "none")),)
+                        ),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_band_crossing_hazards_toy_table",
+                        title="Controlled toy hazard sanity check",
+                        description="Toy-backed check that the adjacent-gap hazard machinery can flag fragile energy-ordered labels.",
                         headers=("metric", "value", "target"),
                         rows=_finite_field_band_hazard_rows(band_hazard_probe),
                     ),
                     Table(
                         id="finite_field_dc_validation_band_crossing_hazards_placeholders",
-                        title="Remaining selected-band checks",
-                        description="Dataset-backed checks needed before this section explains anomalies in the chosen conductivity band.",
+                        title="Remaining selected-band visual checks",
+                        description="Dataset-backed hazard scalars and point tables are live. Remaining checks are visual overlays and label-continuity maps.",
                         headers=("check", "status"),
                         rows=(
                             TableRow(("selected-band adjacent-gap k-map", "pending")),
-                            TableRow(("selected-band minimum-gap location table", "pending")),
                             TableRow(("velocity anomaly overlay near gap hazards", "pending")),
                             TableRow(("eigenvector-overlap / label-jump k-map", "pending")),
                             TableRow(("degenerate-subspace fallback check", "pending")),

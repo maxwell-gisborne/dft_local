@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import numpy as np
+import scipy.linalg as la
 
 from dft_local.core.units import (
     CHARGE,
@@ -543,6 +544,91 @@ class FiniteFieldBandCrossingHazardProbe:
         float,
         qscalar(DIMENSIONLESS, role="maximum gap neighbour jump"),
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldDatasetBandHazardPoint:
+    """One dataset-backed k-point where adjacent energy labels are fragile."""
+
+    unit_context: UnitContext
+
+    k1: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard k1"),
+    ]
+    k2: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard k2"),
+    ]
+    lower_band: int
+    upper_band: int
+    lower_energy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard lower energy"),
+    ]
+    upper_energy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard upper energy"),
+    ]
+    gap: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard adjacent band gap"),
+    ]
+    threshold: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard gap threshold"),
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldDatasetBandCrossingHazardProbe:
+    """Dataset-backed scalar result for fragile energy-ordered band labels."""
+
+    unit_context: UnitContext
+    source: str
+
+    n_u: int
+    n_v: int
+    sample_count: int
+    band_count: int
+    selected_band: int
+
+    gap_threshold: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="adjacent band gap hazard threshold"),
+    ]
+    min_gap: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum adjacent band gap"),
+    ]
+    min_gap_k1: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum-gap k1"),
+    ]
+    min_gap_k2: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum-gap k2"),
+    ]
+    min_gap_lower_band: int
+    min_gap_upper_band: int
+
+    hazard_count: int
+    hazard_fraction: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard fraction"),
+    ]
+    has_hazard: bool
+
+    max_band_neighbour_jump: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum energy-ordered band neighbour jump"),
+    ]
+    max_gap_neighbour_jump: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum adjacent-gap neighbour jump"),
+    ]
+
+    hazard_points: tuple[FiniteFieldDatasetBandHazardPoint, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1329,6 +1415,164 @@ def finite_field_band_crossing_hazard_probe(
         max_band0_neighbour_jump=float(max_band0_jump),
         max_band1_neighbour_jump=float(max_band1_jump),
         max_gap_neighbour_jump=float(max_gap_jump),
+    )
+
+
+def finite_field_dataset_band_crossing_hazard_probe(
+    KH: GdKernelArrays,
+    KS: GdKernelArrays,
+    *,
+    n_u: int = 11,
+    n_v: int = 11,
+    gap_threshold: float = 0.50,
+    band_index: int = 0,
+    symmetrization: str = "star",
+    source: str = "dataset-backed GdKernelArrays",
+    max_hazard_points: int = 32,
+) -> FiniteFieldDatasetBandCrossingHazardProbe:
+    """Locate dataset-backed k-points where sorted adjacent bands become fragile."""
+
+    if n_u < 1:
+        raise ValueError(f"n_u must be positive, got {n_u}")
+    if n_v < 1:
+        raise ValueError(f"n_v must be positive, got {n_v}")
+    if gap_threshold < 0.0:
+        raise ValueError(f"gap_threshold must be non-negative, got {gap_threshold}")
+    if max_hazard_points < 0:
+        raise ValueError(f"max_hazard_points must be non-negative, got {max_hazard_points}")
+    if band_index < 0:
+        raise ValueError(f"band_index must be non-negative, got {band_index}")
+    if symmetrization not in {"star", "direct", "raw"}:
+        raise ValueError(f"unknown symmetrization scheme: {symmetrization!r}")
+
+    if symmetrization == "star":
+        KH = KH.star_symmetrised(matrix_name=f"{KH.matrix_name} dataset band-hazard star")
+        KS = KS.star_symmetrised(matrix_name=f"{KS.matrix_name} dataset band-hazard star")
+
+    k1_grid = np.linspace(-np.pi, np.pi, int(n_u), endpoint=False)
+    k2_grid = np.linspace(-np.pi, np.pi, int(n_v), endpoint=False)
+
+    energies: np.ndarray | None = None
+    gaps: np.ndarray | None = None
+    hazard_points: list[FiniteFieldDatasetBandHazardPoint] = []
+
+    min_gap = np.inf
+    min_gap_k1 = 0.0
+    min_gap_k2 = 0.0
+    min_gap_lower_band = -1
+    min_gap_upper_band = -1
+    hazard_count = 0
+
+    for i, k1 in enumerate(k1_grid):
+        for j, k2 in enumerate(k2_grid):
+            pair = SymbolPair(KH=KH, KS=KS, k1=float(k1), k2=float(k2), degree=2)
+            problem = pair.form()
+
+            H = problem.Hk
+            S = problem.Sk
+            if symmetrization == "direct":
+                H = 0.5 * (H + H.conj().T)
+                S = 0.5 * (S + S.conj().T)
+
+            vals = la.eigvalsh(H, S).real
+            vals = np.sort(vals)
+
+            if energies is None:
+                energies = np.empty((int(n_u), int(n_v), int(vals.shape[0])), dtype=np.float64)
+                gaps = np.empty((int(n_u), int(n_v), max(0, int(vals.shape[0]) - 1)), dtype=np.float64)
+
+            energies[i, j, :] = vals
+
+            adjacent_gaps = np.diff(vals)
+            if gaps is not None:
+                gaps[i, j, :] = adjacent_gaps
+
+            if adjacent_gaps.size == 0:
+                continue
+
+            if int(band_index) >= int(vals.shape[0]):
+                raise ValueError(
+                    f"band_index {band_index} out of range for {int(vals.shape[0])} bands"
+                )
+
+            relevant_lower_bands: list[int] = []
+            if int(band_index) > 0:
+                relevant_lower_bands.append(int(band_index) - 1)
+            if int(band_index) + 1 < int(vals.shape[0]):
+                relevant_lower_bands.append(int(band_index))
+
+            for lower_band in relevant_lower_bands:
+                gap_value = float(adjacent_gaps[lower_band])
+
+                if gap_value < min_gap:
+                    min_gap = gap_value
+                    min_gap_k1 = float(k1)
+                    min_gap_k2 = float(k2)
+                    min_gap_lower_band = int(lower_band)
+                    min_gap_upper_band = int(lower_band + 1)
+
+                if gap_value < gap_threshold:
+                    hazard_count += 1
+                    hazard_points.append(
+                        FiniteFieldDatasetBandHazardPoint(
+                            unit_context=SI_UNITS,
+                            k1=float(k1),
+                            k2=float(k2),
+                            lower_band=int(lower_band),
+                            upper_band=int(lower_band + 1),
+                            lower_energy=float(vals[lower_band]),
+                            upper_energy=float(vals[lower_band + 1]),
+                            gap=gap_value,
+                            threshold=float(gap_threshold),
+                        )
+                    )
+
+    if energies is None or gaps is None:
+        raise RuntimeError("dataset band hazard probe did not sample any energies")
+
+    max_band_jump = 0.0
+    max_gap_jump = 0.0
+
+    for i in range(int(n_u)):
+        for j in range(int(n_v)):
+            neighbours = (
+                ((i + 1) % int(n_u), j),
+                (i, (j + 1) % int(n_v)),
+            )
+            for a, b in neighbours:
+                max_band_jump = max(
+                    max_band_jump,
+                    float(np.max(np.abs(energies[a, b, :] - energies[i, j, :]))),
+                )
+                if gaps.shape[2] > 0:
+                    max_gap_jump = max(
+                        max_gap_jump,
+                        float(np.max(np.abs(gaps[a, b, :] - gaps[i, j, :]))),
+                    )
+
+    sample_count = int(n_u) * int(n_v)
+    hazard_points = sorted(hazard_points, key=lambda point: point.gap)
+
+    return FiniteFieldDatasetBandCrossingHazardProbe(
+        unit_context=SI_UNITS,
+        source=source,
+        n_u=int(n_u),
+        n_v=int(n_v),
+        sample_count=sample_count,
+        band_count=int(energies.shape[2]),
+        selected_band=int(band_index),
+        gap_threshold=float(gap_threshold),
+        min_gap=float(min_gap),
+        min_gap_k1=float(min_gap_k1),
+        min_gap_k2=float(min_gap_k2),
+        min_gap_lower_band=int(min_gap_lower_band),
+        min_gap_upper_band=int(min_gap_upper_band),
+        hazard_count=int(hazard_count),
+        hazard_fraction=float(hazard_count / sample_count),
+        has_hazard=bool(hazard_count > 0),
+        max_band_neighbour_jump=float(max_band_jump),
+        max_gap_neighbour_jump=float(max_gap_jump),
+        hazard_points=tuple(hazard_points[: int(max_hazard_points)]),
     )
 
 

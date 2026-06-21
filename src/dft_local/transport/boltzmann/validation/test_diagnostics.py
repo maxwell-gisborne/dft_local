@@ -532,16 +532,26 @@ def test_finite_field_dc_band_crossing_section_contains_real_metrics() -> None:
         if isinstance(block, Table)
     }
 
-    assert "finite_field_dc_validation_band_crossing_hazards_table" in tables
+    assert "finite_field_dc_validation_dataset_band_crossing_hazards_table" in tables
+    assert "finite_field_dc_validation_dataset_band_crossing_hazard_points" in tables
+    assert "finite_field_dc_validation_band_crossing_hazards_toy_table" in tables
 
-    rows = {
+    dataset_rows = {
         row.cells[0]: row.cells[1]
-        for row in tables["finite_field_dc_validation_band_crossing_hazards_table"].rows
+        for row in tables["finite_field_dc_validation_dataset_band_crossing_hazards_table"].rows
     }
 
-    assert rows["sample count"] == 100
-    assert rows["has hazard"] is True
-    assert "dummy" not in set(rows.values())
+    assert dataset_rows["source"] == "controlled fallback"
+    assert "dummy" not in set(dataset_rows.values())
+
+    toy_rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_band_crossing_hazards_toy_table"].rows
+    }
+
+    assert toy_rows["sample count"] == 100
+    assert toy_rows["has hazard"] is True
+    assert "dummy" not in set(toy_rows.values())
 
 
 def test_finite_field_velocity_validation_probe_checks_derivatives() -> None:
@@ -1031,3 +1041,43 @@ def test_finite_field_validation_probes_are_not_plain_dict_returns() -> None:
 
     assert offenders == []
 
+
+def test_finite_field_dataset_band_crossing_hazard_probe_uses_dataset_symbols() -> None:
+    from dft_local.diagnostics.server import load_default_context
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_dataset_band_crossing_hazard_probe,
+    )
+
+    ctx = load_default_context("test_run/run_dir/data")
+    KH, KS = ctx.kernels("average")
+
+    probe = finite_field_dataset_band_crossing_hazard_probe(
+        KH,
+        KS,
+        n_u=5,
+        n_v=5,
+        gap_threshold=0.05,
+        band_index=0,
+        symmetrization="star",
+        source="dataset-backed average GdKernelArrays",
+    )
+
+    assert probe.source == "dataset-backed average GdKernelArrays"
+    assert probe.sample_count == 25
+    assert probe.band_count == 8
+    assert probe.selected_band == 0
+    assert probe.min_gap >= 0.0
+    assert probe.min_gap < 0.05
+    assert probe.hazard_count >= 1
+    assert 0.0 < probe.hazard_fraction <= 1.0
+    assert probe.has_hazard is True
+    assert probe.min_gap_lower_band >= 0
+    assert probe.min_gap_upper_band == probe.min_gap_lower_band + 1
+    assert tuple(point.gap for point in probe.hazard_points) == tuple(
+        sorted(point.gap for point in probe.hazard_points)
+    )
+    assert all(point.gap < probe.gap_threshold for point in probe.hazard_points)
+    assert all(
+        point.lower_band == probe.selected_band or point.upper_band == probe.selected_band
+        for point in probe.hazard_points
+    )
