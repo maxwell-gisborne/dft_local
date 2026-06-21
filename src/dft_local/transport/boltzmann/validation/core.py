@@ -1136,16 +1136,19 @@ def generic_symbol_scalar_channels(symbol: np.ndarray) -> np.ndarray:
 
 
 def finite_field_input_health_probe(
+    KH: GdKernelArrays | None = None,
+    KS: GdKernelArrays | None = None,
     *,
     n_u: int = 11,
     n_v: int = 11,
     symmetrization: str = "star",
+    source: str = "controlled production GdKernelArrays toy",
 ) -> FiniteFieldInputHealthProbe:
-    """Probe H/S symbol health for the finite-field DC validation scaffold.
+    """Probe H/S symbol health for the finite-field DC validation report.
 
-    This first version uses controlled production kernels rather than the full
-    dataset. It validates the same `GdKernelArrays -> SymbolPair -> LocalProblem`
-    path used by the real calculation while keeping the diagnostic lightweight.
+    When kernels are provided, this checks the selected dataset-backed kernel
+    path. If omitted, it falls back to the small controlled production-symbol
+    toy used by unit tests.
     """
 
     if n_u < 1:
@@ -1155,12 +1158,14 @@ def finite_field_input_health_probe(
     if symmetrization not in {"star", "direct", "raw"}:
         raise ValueError(f"unknown symmetrization scheme: {symmetrization!r}")
 
-    KH = gd_separable_cosine_kernel(c0=1.25, c1=0.70, c2=-0.30)
-    KS = gd_identity_overlap_kernel()
+    if KH is None:
+        KH = gd_separable_cosine_kernel(c0=1.25, c1=0.70, c2=-0.30)
+    if KS is None:
+        KS = gd_identity_overlap_kernel()
 
     if symmetrization == "star":
-        KH = KH.star_symmetrised(matrix_name="finite-field validation H star")
-        KS = KS.star_symmetrised(matrix_name="finite-field validation S star")
+        KH = KH.star_symmetrised(matrix_name=f"{KH.matrix_name} finite-field input-health star")
+        KS = KS.star_symmetrised(matrix_name=f"{KS.matrix_name} finite-field input-health star")
 
     k1_grid = np.linspace(-np.pi, np.pi, int(n_u), endpoint=False)
     k2_grid = np.linspace(-np.pi, np.pi, int(n_v), endpoint=False)
@@ -1174,7 +1179,7 @@ def finite_field_input_health_probe(
 
     for k1 in k1_grid:
         for k2 in k2_grid:
-            pair = SymbolPair(KH=KH, KS=KS, k1=float(k1), k2=float(k2), degree=1, sigma=1)
+            pair = SymbolPair(KH=KH, KS=KS, k1=float(k1), k2=float(k2), degree=2)
             problem = pair.form()
 
             if symmetrization == "direct":
@@ -1217,7 +1222,7 @@ def finite_field_input_health_probe(
         s_condition_number_abs_max=float(max_s_cond),
         energy_neighbour_jump_max=float(max_energy_jump),
         s_positive=bool(min_s_eig > 1.0e-10),
-        source="controlled production GdKernelArrays toy",
+        source=source,
     )
 
 

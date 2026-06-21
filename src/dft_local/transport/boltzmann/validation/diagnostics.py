@@ -287,11 +287,11 @@ def _finite_field_input_health_rows(probe: FiniteFieldInputHealthProbe) -> tuple
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
-        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("source", probe.source, "selected kernel source")),
         TableRow(("sample count", probe.sample_count, "N_u × N_v")),
         TableRow(("symmetrization", probe.symmetrization, "selected input")),
-        TableRow(("H kernel star defect max", q("h_star_defect_max"), "near 0")),
-        TableRow(("S kernel star defect max", q("s_star_defect_max"), "near 0")),
+        TableRow(("H kernel star defect max", q("h_star_defect_max"), "near 0 after star; diagnostic value for raw/direct")),
+        TableRow(("S kernel star defect max", q("s_star_defect_max"), "near 0 after star; diagnostic value for raw/direct")),
         TableRow(("H(k) Hermiticity defect rel max", q("h_hermitian_defect_rel_max"), "near 0")),
         TableRow(("S(k) Hermiticity defect rel max", q("s_hermitian_defect_rel_max"), "near 0")),
         TableRow(("min eig S(k)", q("s_eig_min"), "> 1e-10")),
@@ -306,7 +306,7 @@ def _finite_field_band_hazard_rows(probe: FiniteFieldBandCrossingHazardProbe) ->
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
-        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("source", probe.source, "controlled toy source")),
         TableRow(("sample count", probe.sample_count, "N_u × N_v")),
         TableRow(("toy mass", q("mass"), "small mass gives near-crossing stress test")),
         TableRow(("gap threshold", q("gap_threshold"), "hazard if gap below this")),
@@ -326,7 +326,7 @@ def _finite_field_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tu
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
-        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("source", probe.source, "controlled production-symbol toy")),
         TableRow(("k1", q("k1"), "sample point")),
         TableRow(("k2", q("k2"), "sample point")),
         TableRow(("finite-difference epsilon", q("finite_difference_eps"), "step")),
@@ -350,7 +350,7 @@ def _finite_field_unit_scaling_rows(probe: FiniteFieldUnitScalingProbe) -> tuple
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
-        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("source", probe.source, "unit constants and scaling conventions")),
         TableRow(("atomic energy to eV", q("atomic_energy_to_ev"), "27.21138386")),
         TableRow(("atomic length to Å", q("atomic_length_to_angstrom"), "0.52917721092")),
         TableRow(("hbar atomic", q("hbar_atomic"), "1 in atomic-unit context")),
@@ -387,7 +387,7 @@ def _finite_field_k_convergence_rows(probe: FiniteFieldKConvergenceProbe) -> tup
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
-        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("source", probe.source, "controlled quadrature toy")),
         TableRow(("grid count", probe.grid_count, "number of refinements")),
         TableRow(("coarsest N", probe.coarsest_n, "first grid")),
         TableRow(("finest N", probe.finest_n, "last grid")),
@@ -406,7 +406,7 @@ def _finite_field_symmetry_rows(probe: FiniteFieldSymmetrySanityProbe) -> tuple[
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
-        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("source", probe.source, "controlled symmetry toy")),
         TableRow(("sample count", probe.sample_count, "N × N")),
         TableRow(("E(k)-E(-k) max error", q("energy_inversion_max_error"), "near 0")),
         TableRow(("dk1 oddness max error", q("dk1_odd_max_error"), "near 0")),
@@ -600,12 +600,20 @@ def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
             help="Energy-ordered band index to inspect.",
         ),
         InputSpec(
+            "kernel_choice",
+            "Kernel choice",
+            "select",
+            "average",
+            options=(("anchored", "anchored"), ("average", "average")),
+            help="Dataset-backed kernel family to inspect before applying the selected symmetrization scheme.",
+        ),
+        InputSpec(
             "symmetrization",
             "Symmetrization",
             "select",
             "star",
             options=(("star", "star"), ("direct", "direct"), ("raw", "raw")),
-            help="Symmetrization scheme used to build the symbols.",
+            help="Symmetrization scheme used to build or post-process the symbols.",
         ),
     )
 
@@ -622,6 +630,7 @@ def _finite_field_dc_input_rows(inputs) -> tuple[TableRow, ...]:
         TableRow(("electric field E", DisplayQuantity(float(inputs.get("electric_field", 1.0)), ENERGY / (CHARGE * LENGTH), VOLT_PER_METER, name="electric field"))),
         TableRow(("field angle theta", DisplayQuantity(float(inputs.get("theta", 0.0)), DIMENSIONLESS, UNITLESS, name="theta"))),
         TableRow(("band index n", int(inputs.get("band_index", 0)))),
+        TableRow(("kernel choice", str(inputs.get("kernel_choice", "average")))),
         TableRow(("symmetrization scheme", str(inputs.get("symmetrization", "star")))),
         TableRow(("band label convention", "energy ordering at each sampled k")),
         TableRow(("reciprocal 2π normalization", "physical audit required; not cosmetic")),
@@ -651,10 +660,26 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     )
 
     input_rows = _finite_field_dc_input_rows(inputs)
+    kernel_choice = str(inputs.get("kernel_choice", "average"))
+    symmetrization = str(inputs.get("symmetrization", "star"))
+
+    if ctx is None:
+        KH_input = None
+        KS_input = None
+        input_health_source = "controlled production GdKernelArrays toy; diagnostic context missing"
+    else:
+        if kernel_choice not in {"anchored", "average"}:
+            raise ValueError(f"unknown kernel choice for finite-field input health: {kernel_choice!r}")
+        KH_input, KS_input = ctx.kernels(kernel_choice)
+        input_health_source = f"dataset-backed {kernel_choice} GdKernelArrays"
+
     input_health_probe = finite_field_input_health_probe(
+        KH_input,
+        KS_input,
         n_u=int(inputs.get("n_u", 11)),
         n_v=int(inputs.get("n_v", 11)),
-        symmetrization=str(inputs.get("symmetrization", "star")),
+        symmetrization=symmetrization,
+        source=input_health_source,
     )
     band_hazard_probe = finite_field_band_crossing_hazard_probe(
         n_u=int(inputs.get("n_u", 11)),
@@ -746,7 +771,9 @@ The `2π` normalization is listed explicitly because it changes the physical con
                         title="Validation claim",
                         markdown="""**Claim.** For the selected symmetrization scheme, the Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.
 
-This first implementation uses controlled production `GdKernelArrays` toy kernels. It validates the same symbol path as the real calculation without loading the full dataset. The raw overlap symbol is checked as Hermitian positive definite, not unitary. When star symmetrization is selected, the diagnostic also reports kernel star defects.
+This section uses the selected dataset-backed `GdKernelArrays` kernel family when diagnostic context is available, then applies the selected symmetrization scheme. `raw` reports the extracted kernels as-is, `star` applies kernel-level star symmetrization, and `direct` applies Hermitian projection after forming each local symbol. The overlap symbol is checked as Hermitian positive definite, not unitary.
+
+The input-health table reports Hermiticity at two different stages. **H kernel star defect max** checks the local kernel before forming any k-space symbol, by comparing each inverse-paired block K_H(g^{-1}) with the adjoint of K_H(g). A nonzero value means the extracted local kernel is not itself star/Hermitian compatible. **H(k) Hermiticity defect rel max** checks the dense symbol after evaluating the kernel over the sampled k-grid. In `star` mode both should fall to roundoff; in `direct` mode only the formed symbol is repaired, so the kernel defect may remain.
 """,
                     ),
                     Table(
@@ -758,11 +785,11 @@ This first implementation uses controlled production `GdKernelArrays` toy kernel
                     ),
                     Table(
                         id="finite_field_dc_validation_input_health_placeholders",
-                        title="Remaining input-health checks",
-                        description="Dataset-backed checks still needed before this section validates the full production H/S symbol input.",
+                        title="Remaining input-health visual audits",
+                        description="Dataset-backed scalar checks are now live. The remaining checks are visual audits needed to inspect smoothness and conditioning over the sampled k-domain.",
                         headers=("check", "status"),
                         rows=(
-                            TableRow(("dataset-backed H/S health table", "pending")),
+                            TableRow(("dataset-backed H/S health table", "complete")),
                             TableRow(("symbol smoothness plot", "pending")),
                             TableRow(("condition-number k-map", "pending")),
                         ),
