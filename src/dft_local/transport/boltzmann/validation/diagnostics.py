@@ -18,6 +18,7 @@ from dft_local.core.units import (
     VELOCITY,
     DisplayQuantity,
     Unit,
+    diagnostic_scalar_quantity,
 )
 from dft_local.diagnostics.models import (
     DiagnosticResult,
@@ -42,6 +43,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_k_convergence_probe,
     finite_field_symmetry_sanity_probe,
     finite_field_vincent_reconstruction_probe,
+    FiniteFieldVincentReconstructionProbe,
     finite_field_strong_dc_validation_probe,
     finite_field_weak_dc_limit_probe,
     finite_field_mode_decomposition_probe,
@@ -392,21 +394,23 @@ def _finite_field_symmetry_rows(probe: dict[str, object]) -> tuple[TableRow, ...
     )
 
 
-def _finite_field_vincent_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_vincent_rows(probe: FiniteFieldVincentReconstructionProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "reused comparison domain")),
-        TableRow(("Vincent target trace", _fmt_probe_value(probe["target_trace_S_per_m"]), "S/m")),
-        TableRow(("weak-chain trace", _fmt_probe_value(probe["weak_chain_trace_S_per_m"]), "S/m")),
-        TableRow(("weak-chain trace error %", _fmt_probe_value(probe["weak_chain_trace_percent_error"]), "residual")),
-        TableRow(("strong-grid trace", _fmt_probe_value(probe["strong_grid_trace_S_per_m"]), "S/m")),
-        TableRow(("strong-grid trace error %", _fmt_probe_value(probe["strong_grid_trace_percent_error"]), "separate spectral derivative residual")),
-        TableRow(("shifted Eq. 8.30 trace", _fmt_probe_value(probe["shifted_830_trace_S_per_m"]), "S/m")),
-        TableRow(("shifted Eq. 8.30 trace error %", _fmt_probe_value(probe["shifted_830_trace_percent_error"]), "hypothesis check")),
-        TableRow(("find-simplex max velocity error", _fmt_probe_value(probe["find_simplex_max_velocity_error_m_per_s"]), "m/s")),
-        TableRow(("best-adjacent max velocity error", _fmt_probe_value(probe["best_adjacent_max_velocity_error_m_per_s"]), "m/s")),
-        TableRow(("velocity error reduction", _fmt_probe_value(probe["velocity_error_reduction"]), "large")),
-        TableRow(("best adjacent matches Vincent", _fmt_probe_value(probe["best_adjacent_matches_vincent"]), "True")),
-        TableRow(("residual status", _fmt_probe_value(probe["residual_status"]), "audit note")),
+        TableRow(("source", probe.source, "reused comparison domain")),
+        TableRow(("Vincent target trace", q("target_trace"), "S/m")),
+        TableRow(("weak-chain trace", q("weak_chain_trace"), "S/m")),
+        TableRow(("weak-chain trace error %", q("weak_chain_trace_percent_error"), "residual")),
+        TableRow(("strong-grid trace", q("strong_grid_trace"), "S/m")),
+        TableRow(("strong-grid trace error %", q("strong_grid_trace_percent_error"), "separate spectral derivative residual")),
+        TableRow(("shifted Eq. 8.30 trace", q("shifted_830_trace"), "S/m")),
+        TableRow(("shifted Eq. 8.30 trace error %", q("shifted_830_trace_percent_error"), "hypothesis check")),
+        TableRow(("find-simplex max velocity error", q("find_simplex_max_velocity_error"), "m/s")),
+        TableRow(("best-adjacent max velocity error", q("best_adjacent_max_velocity_error"), "m/s")),
+        TableRow(("velocity error reduction", q("velocity_error_reduction"), "large")),
+        TableRow(("best adjacent matches Vincent", probe.best_adjacent_matches_vincent, "True")),
+        TableRow(("residual status", probe.residual_status, "audit note")),
     )
 
 

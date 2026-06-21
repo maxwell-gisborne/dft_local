@@ -199,6 +199,20 @@ class QuantityArray:
         return len(self.axes)
 
 
+@dataclass(frozen=True, slots=True)
+class QuantityScalar:
+    """Semantic schema for a scalar numeric dataclass field.
+
+    The value is stored in the owning object's unit context.  The optional
+    display unit is only a rendering preference, for example percent for a
+    dimensionless residual.
+    """
+
+    dimension: Dimension
+    role: str = ""
+    display_unit: Unit | None = None
+
+
 def qarray(
     dimension: Dimension,
     axes: tuple[str, ...],
@@ -214,8 +228,21 @@ def qarray(
     )
 
 
-def _quantity_array_spec_from_hint(hint: Any) -> QuantityArray | None:
-    """Extract QuantityArray metadata from an annotation.
+def qscalar(
+    dimension: Dimension,
+    *,
+    role: str = "",
+    display_unit: Unit | None = None,
+) -> QuantityScalar:
+    return QuantityScalar(
+        dimension=dimension,
+        role=role,
+        display_unit=display_unit,
+    )
+
+
+def _quantity_metadata_from_hint(hint: Any, metadata_type: type) -> Any | None:
+    """Extract quantity metadata from an annotation.
 
     Handles both direct Annotated fields and optional fields such as
     ``Annotated[np.ndarray, qarray(...)] | None``.
@@ -224,18 +251,26 @@ def _quantity_array_spec_from_hint(hint: Any) -> QuantityArray | None:
     if get_origin(hint) is Annotated:
         _base, *metadata = get_args(hint)
         for item in metadata:
-            if isinstance(item, QuantityArray):
+            if isinstance(item, metadata_type):
                 return item
         return None
 
     origin = get_origin(hint)
     if origin is UnionType or origin is getattr(__import__("typing"), "Union"):
         for arg in get_args(hint):
-            spec = _quantity_array_spec_from_hint(arg)
+            spec = _quantity_metadata_from_hint(arg, metadata_type)
             if spec is not None:
                 return spec
 
     return None
+
+
+def _quantity_array_spec_from_hint(hint: Any) -> QuantityArray | None:
+    return _quantity_metadata_from_hint(hint, QuantityArray)
+
+
+def _quantity_scalar_spec_from_hint(hint: Any) -> QuantityScalar | None:
+    return _quantity_metadata_from_hint(hint, QuantityScalar)
 
 
 def quantity_array_specs(cls: type) -> dict[str, QuantityArray]:
@@ -246,6 +281,20 @@ def quantity_array_specs(cls: type) -> dict[str, QuantityArray]:
 
     for name, hint in hints.items():
         spec = _quantity_array_spec_from_hint(hint)
+        if spec is not None:
+            specs[name] = spec
+
+    return specs
+
+
+def quantity_scalar_specs(cls: type) -> dict[str, QuantityScalar]:
+    """Return QuantityScalar metadata attached with typing.Annotated."""
+
+    hints = get_type_hints(cls, include_extras=True)
+    specs: dict[str, QuantityScalar] = {}
+
+    for name, hint in hints.items():
+        spec = _quantity_scalar_spec_from_hint(hint)
         if spec is not None:
             specs[name] = spec
 
@@ -331,6 +380,22 @@ def diagnostic_card_value(quantity: DisplayQuantity) -> str:
 
 
 
+def _unit_context_from_object(obj: object) -> UnitContext:
+    units = getattr(obj, "unit_context", None)
+    if units is None:
+        units = getattr(obj, "units", None)
+    if units is None:
+        units = getattr(obj, "working_unit_context", None)
+
+    if not isinstance(units, UnitContext):
+        raise TypeError(
+            f"{type(obj).__name__} must expose a UnitContext as "
+            ".unit_context, .units, or .working_unit_context"
+        )
+
+    return units
+
+
 def display_quantity(obj: object, field_name: str, value: Any) -> DisplayQuantity:
     """Reify one SOA field value into a standalone display quantity."""
 
@@ -338,20 +403,38 @@ def display_quantity(obj: object, field_name: str, value: Any) -> DisplayQuantit
     if field_name not in specs:
         raise KeyError(f"{type(obj).__name__}.{field_name} has no QuantityArray spec")
 
-    units = getattr(obj, "units", None)
-    if units is None:
-        units = getattr(obj, "working_unit_context", None)
-
-    if not isinstance(units, UnitContext):
-        raise TypeError(
-            f"{type(obj).__name__} must expose a UnitContext as "
-            ".units or .working_unit_context"
-        )
-
+    units = _unit_context_from_object(obj)
     spec = specs[field_name]
     return DisplayQuantity(
         value=value,
         dimension=spec.dimension,
         unit=units.unit_for_dimension(spec.dimension),
         name=field_name,
+    )
+
+
+def diagnostic_scalar_quantity(
+    obj: object,
+    field_name: str,
+    *,
+    name: str | None = None,
+) -> DisplayQuantity:
+    """Reify one annotated scalar field into a diagnostic display quantity."""
+
+    specs = quantity_scalar_specs(type(obj))
+    if field_name not in specs:
+        raise KeyError(f"{type(obj).__name__}.{field_name} has no QuantityScalar spec")
+
+    spec = specs[field_name]
+    value = getattr(obj, field_name)
+    units = _unit_context_from_object(obj)
+    unit = spec.display_unit
+    if unit is None:
+        unit = Unit("", DIMENSIONLESS, 1.0) if spec.dimension == DIMENSIONLESS else units.unit_for_dimension(spec.dimension)
+
+    return diagnostic_quantity(
+        value,
+        spec.dimension,
+        unit,
+        name or spec.role or field_name,
     )

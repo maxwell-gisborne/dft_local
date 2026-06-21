@@ -8,8 +8,74 @@ operator formulation before it is compared with any external implementation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Annotated
 
 import numpy as np
+
+from dft_local.core.units import (
+    CONDUCTIVITY,
+    DIMENSIONLESS,
+    SI_UNITS,
+    VELOCITY,
+    Unit,
+    UnitContext,
+    qscalar,
+)
+
+
+PERCENT = Unit("%", DIMENSIONLESS, 0.01)
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldVincentReconstructionProbe:
+    """Typed scalar result for the Vincent reconstruction validation panel."""
+
+    unit_context: UnitContext
+    source: str
+
+    target_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="Vincent target trace"),
+    ]
+    weak_chain_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="weak-chain trace"),
+    ]
+    weak_chain_trace_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="weak-chain trace error", display_unit=PERCENT),
+    ]
+    strong_grid_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="strong-grid trace"),
+    ]
+    strong_grid_trace_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="strong-grid trace error", display_unit=PERCENT),
+    ]
+    shifted_830_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="shifted Eq. 8.30 trace"),
+    ]
+    shifted_830_trace_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="shifted Eq. 8.30 trace error", display_unit=PERCENT),
+    ]
+    find_simplex_max_velocity_error: Annotated[
+        float,
+        qscalar(VELOCITY, role="find-simplex max velocity error"),
+    ]
+    best_adjacent_max_velocity_error: Annotated[
+        float,
+        qscalar(VELOCITY, role="best-adjacent max velocity error"),
+    ]
+    velocity_error_reduction: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="velocity error reduction"),
+    ]
+
+    best_adjacent_matches_vincent: bool
+    residual_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -1014,7 +1080,7 @@ def finite_field_symmetry_sanity_probe(
     }
 
 
-def finite_field_vincent_reconstruction_probe() -> dict[str, float | bool | str]:
+def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstructionProbe:
     """Summarise existing Vincent/Ashcroft reconstruction checks."""
 
     from dft_local.transport.boltzmann.ashcroft_comparison.core import (
@@ -1075,21 +1141,22 @@ def finite_field_vincent_reconstruction_probe() -> dict[str, float | bool | str]
     best_adjacent_max_error = max(float(row["best_adjacent_error"]) for row in adjacent)
     velocity_error_reduction = find_simplex_max_error / best_adjacent_max_error
 
-    return {
-        "source": "existing Ashcroft/Vincent comparison domain",
-        "target_trace_S_per_m": float(target_trace),
-        "weak_chain_trace_S_per_m": float(weak_trace),
-        "weak_chain_trace_percent_error": float(weak_trace_percent_error),
-        "strong_grid_trace_S_per_m": float(strong_grid_trace),
-        "strong_grid_trace_percent_error": float(strong_grid_trace_percent_error),
-        "shifted_830_trace_S_per_m": float(shifted_trace),
-        "shifted_830_trace_percent_error": float(shifted_trace_percent_error),
-        "find_simplex_max_velocity_error_m_per_s": float(find_simplex_max_error),
-        "best_adjacent_max_velocity_error_m_per_s": float(best_adjacent_max_error),
-        "velocity_error_reduction": float(velocity_error_reduction),
-        "best_adjacent_matches_vincent": bool(best_adjacent_max_error < 1.0e-3),
-        "residual_status": "velocity samples resolved; conductivity residual remains formula/convention audit",
-    }
+    return FiniteFieldVincentReconstructionProbe(
+        unit_context=SI_UNITS,
+        source="existing Ashcroft/Vincent comparison domain",
+        target_trace=float(target_trace),
+        weak_chain_trace=float(weak_trace),
+        weak_chain_trace_percent_error=float(weak_trace_percent_error),
+        strong_grid_trace=float(strong_grid_trace),
+        strong_grid_trace_percent_error=float(strong_grid_trace_percent_error),
+        shifted_830_trace=float(shifted_trace),
+        shifted_830_trace_percent_error=float(shifted_trace_percent_error),
+        find_simplex_max_velocity_error=float(find_simplex_max_error),
+        best_adjacent_max_velocity_error=float(best_adjacent_max_error),
+        velocity_error_reduction=float(velocity_error_reduction),
+        best_adjacent_matches_vincent=bool(best_adjacent_max_error < 1.0e-3),
+        residual_status="velocity samples resolved; conductivity residual remains formula/convention audit",
+    )
 
 
 def finite_field_strong_dc_validation_probe() -> dict[str, float | int | bool | str]:

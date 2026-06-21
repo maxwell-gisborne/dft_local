@@ -811,13 +811,13 @@ def test_finite_field_vincent_reconstruction_probe_reuses_ashcroft_domain() -> N
 
     probe = finite_field_vincent_reconstruction_probe()
 
-    assert probe["target_trace_S_per_m"] > 0.0
-    assert probe["weak_chain_trace_S_per_m"] > 0.0
-    assert abs(probe["weak_chain_trace_percent_error"]) < 10.0
-    assert probe["find_simplex_max_velocity_error_m_per_s"] > 1.0
-    assert probe["best_adjacent_max_velocity_error_m_per_s"] < 1.0e-3
-    assert probe["velocity_error_reduction"] > 1.0e8
-    assert probe["best_adjacent_matches_vincent"] is True
+    assert probe.target_trace > 0.0
+    assert probe.weak_chain_trace > 0.0
+    assert abs(probe.weak_chain_trace_percent_error) < 10.0
+    assert probe.find_simplex_max_velocity_error > 1.0
+    assert probe.best_adjacent_max_velocity_error < 1.0e-3
+    assert probe.velocity_error_reduction > 1.0e8
+    assert probe.best_adjacent_matches_vincent is True
 
 
 def test_finite_field_dc_vincent_section_contains_real_metrics() -> None:

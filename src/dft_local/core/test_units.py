@@ -18,12 +18,17 @@ from dft_local.core.units import (
     VELOCITY,
     Unit,
     UnitContext,
+    diagnostic_scalar_quantity,
     display_quantity,
     qarray,
+    qscalar,
     quantity_array_specs,
+    quantity_scalar_specs,
     validate_quantity_arrays,
 )
 
+
+TEST_PERCENT = Unit("%", ENERGY / ENERGY, 0.01)
 
 def test_dimension_algebra_builds_derived_dimensions() -> None:
     assert VELOCITY == LENGTH / TIME
@@ -65,6 +70,69 @@ def test_quantity_array_annotation_exposes_schema_without_wrapping_array() -> No
     assert specs["epsilon"].axes == ("k1", "k2")
     assert specs["epsilon"].rank == 2
     assert specs["epsilon"].role == "band energy"
+
+
+def test_quantity_scalar_annotation_exposes_schema_without_wrapping_value() -> None:
+    @dataclass(frozen=True)
+    class ExampleScalars:
+        sigma_trace: Annotated[float, qscalar(CONDUCTIVITY, role="conductivity trace")]
+        residual: Annotated[float | None, qscalar(ENERGY / ENERGY, role="residual", display_unit=TEST_PERCENT)]
+        unit_context: UnitContext
+
+    obj = ExampleScalars(sigma_trace=2.0, residual=3.0, unit_context=SI_UNITS)
+
+    assert obj.sigma_trace == pytest.approx(2.0)
+
+    specs = quantity_scalar_specs(ExampleScalars)
+    assert specs["sigma_trace"].dimension == CONDUCTIVITY
+    assert specs["sigma_trace"].role == "conductivity trace"
+    assert specs["sigma_trace"].display_unit is None
+    assert specs["residual"].dimension == ENERGY / ENERGY
+    assert specs["residual"].display_unit == TEST_PERCENT
+
+
+def test_diagnostic_scalar_quantity_reifies_field_value_with_context_unit() -> None:
+    @dataclass(frozen=True)
+    class ConductivityScalars:
+        sigma_trace: Annotated[float, qscalar(CONDUCTIVITY, role="conductivity trace")]
+        unit_context: UnitContext
+
+    obj = ConductivityScalars(sigma_trace=2.5, unit_context=SI_UNITS)
+
+    quantity = diagnostic_scalar_quantity(obj, "sigma_trace")
+
+    assert quantity.value == pytest.approx(2.5)
+    assert quantity.dimension == CONDUCTIVITY
+    assert quantity.unit.dimension == CONDUCTIVITY
+    assert quantity.name == "conductivity trace"
+
+
+def test_diagnostic_scalar_quantity_uses_display_unit_override() -> None:
+    @dataclass(frozen=True)
+    class ErrorScalars:
+        residual: Annotated[float, qscalar(ENERGY / ENERGY, role="trace error", display_unit=TEST_PERCENT)]
+        unit_context: UnitContext
+
+    obj = ErrorScalars(residual=4.1, unit_context=SI_UNITS)
+
+    quantity = diagnostic_scalar_quantity(obj, "residual")
+
+    assert quantity.value == pytest.approx(4.1)
+    assert quantity.dimension == ENERGY / ENERGY
+    assert quantity.unit == TEST_PERCENT
+    assert quantity.name == "trace error"
+
+
+def test_diagnostic_scalar_quantity_requires_annotated_field_and_unit_context() -> None:
+    @dataclass(frozen=True)
+    class BadScalars:
+        residual: float
+        unit_context: str
+
+    obj = BadScalars(residual=1.0, unit_context="not units")
+
+    with pytest.raises(KeyError):
+        diagnostic_scalar_quantity(obj, "residual")
 
 
 def test_validate_quantity_arrays_checks_rank_and_dtype_once() -> None:
