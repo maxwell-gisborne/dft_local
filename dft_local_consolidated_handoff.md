@@ -1876,3 +1876,12 @@ Strong DC validation follow-up:
 - No-`(2π)^2` strong/weak traces remain visible only as Vincent-comparison scale diagnostics.
 - The mode-decomposition probe now reports its conductivity trace after conversion to the continuum `A_BZ / (N_k (2π)^2)` normalisation.
 - The strong/weak trace gap remains scale-invariant and continues to expose the derivative-definition residual.
+
+Strong DC / Eq. 8.30 limit validation status:
+
+- Added a direct strong differential-response DC versus Eq. 8.30 shifted finite-difference comparison on Vincent-grid inputs.
+- Both tensors are compared with continuum `A_BZ / (N_k (2π)^2)` normalisation.
+- On the current Vincent grid, the zero-field Eq. 8.30 trace is approximately `0.0033999653`, while the strong spectral trace is approximately `0.0036141851`.
+- The exposed strong/Eq. 8.30 trace residual is about `5.9%`.
+- This confirms that Eq. 8.30 currently tends to the weak chain-rule object on the Vincent grid, while strong DC differentiates the spectral occupation.
+- The section is now a limit-hypothesis diagnostic: agreement is expected only in regimes where the finite-field shift, k-grid sampling, velocity basis, and occupation derivative define the same continuum object.

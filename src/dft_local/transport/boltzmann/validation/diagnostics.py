@@ -58,6 +58,8 @@ from dft_local.transport.boltzmann.validation.core import (
     FiniteFieldVincentReconstructionProbe,
     finite_field_strong_dc_validation_probe,
     FiniteFieldStrongDcValidationProbe,
+    finite_field_strong_eq830_limit_probe,
+    FiniteFieldStrongEq830LimitProbe,
     finite_field_weak_dc_limit_probe,
     FiniteFieldWeakDcLimitProbe,
     FiniteFieldModeDecompositionProbe,
@@ -622,6 +624,34 @@ def _finite_field_strong_dc_rows(probe: FiniteFieldStrongDcValidationProbe) -> t
     )
 
 
+def _finite_field_strong_eq830_limit_rows(probe: FiniteFieldStrongEq830LimitProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
+    return (
+        TableRow(("source", probe.source, "direct comparison target")),
+        TableRow(("field row count", probe.field_row_count, "field sweep rows")),
+        TableRow(("zero field", q("zero_field"), "V/m")),
+        TableRow(("smallest nonzero field", q("smallest_nonzero_field"), "V/m")),
+        TableRow(("largest field", q("largest_field"), "V/m")),
+        TableRow(("strong continuum trace", q("strong_continuum_trace"), "differential response")),
+        TableRow(("zero-field Eq. 8.30 continuum trace", q("zero_eq830_continuum_trace"), "finite-difference response")),
+        TableRow(("small-field Eq. 8.30 continuum trace", q("smallest_eq830_continuum_trace"), "finite-difference response")),
+        TableRow(("zero strong/Eq. 8.30 tensor discrepancy", q("zero_relative_tensor_discrepancy"), "exposed residual")),
+        TableRow(("zero strong/Eq. 8.30 trace discrepancy", q("zero_relative_trace_discrepancy"), "exposed residual")),
+        TableRow(("small strong/Eq. 8.30 tensor discrepancy", q("smallest_relative_tensor_discrepancy"), "small-field residual")),
+        TableRow(("small strong/Eq. 8.30 trace discrepancy", q("smallest_relative_trace_discrepancy"), "small-field residual")),
+        TableRow(("largest strong/Eq. 8.30 tensor discrepancy", q("largest_relative_tensor_discrepancy"), "finite-field departure")),
+        TableRow(("largest strong/Eq. 8.30 trace discrepancy", q("largest_relative_trace_discrepancy"), "finite-field departure")),
+        TableRow(("minimum tensor discrepancy over sweep", q("min_relative_tensor_discrepancy"), "best sampled agreement")),
+        TableRow(("minimum abs trace discrepancy over sweep", q("min_abs_relative_trace_discrepancy"), "best sampled agreement")),
+        TableRow(("Eq. 8.30 limit status", probe.eq830_limit_status, "audit note")),
+        TableRow(("normalisation status", probe.continuum_normalisation_status, "guardrail")),
+        TableRow(("limit validation pass", probe.limit_validation_pass, "finite residuals exposed")),
+    )
+
+
+
+
 def _finite_field_weak_dc_rows(probe: FiniteFieldWeakDcLimitProbe) -> tuple[TableRow, ...]:
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
@@ -881,6 +911,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     symmetry_probe = finite_field_symmetry_sanity_probe()
     vincent_probe = finite_field_vincent_reconstruction_probe()
     strong_dc_probe = finite_field_strong_dc_validation_probe()
+    strong_eq830_limit_probe = finite_field_strong_eq830_limit_probe()
     weak_dc_probe = finite_field_weak_dc_limit_probe()
     mode_decomposition_probe = finite_field_mode_decomposition_probe()
 
@@ -1345,6 +1376,41 @@ This first implementation reuses the existing `BandIndexedStrongDcResult` on Vin
                             TableRow(("temperature / smoothness regime table", "pending")),
                             TableRow(("nonzero-field response sweep", "pending")),
                             TableRow(("dataset-backed band-labelled strong DC run", "pending")),
+                        ),
+                    ),
+                ),
+            ),
+            DiagnosticSection(
+                id="finite_field_dc_validation_strong_eq830_limit",
+                title="Strong DC / Eq. 8.30 limit",
+                description="Compares the strong differential-response DC tensor against the continuum-normalised Eq. 8.30 shifted finite-difference tensor.",
+                collapsed=False,
+                body=(
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_strong_eq830_limit_prose",
+                        title="Validation claim",
+                        markdown="""*Claim.* The band-labelled strong DC tensor should agree with the finite-difference Eq. 8.30 response only in regimes where the finite-field shift, k-grid sampling, velocity basis, and occupation derivative define the same continuum object.
+
+This section compares the strong differential-response tensor directly against the Eq. 8.30 shifted finite-difference tensor on Vincent-grid inputs with the continuum `A_BZ / (N_k (2π)^2)` normalisation. The residual is exposed as the object to study before applying Eq. 8.30 to the full physical dataset.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_strong_eq830_limit_table",
+                        title="Strong DC / Eq. 8.30 limit metrics",
+                        description="Continuum-normalised strong differential response versus Eq. 8.30 shifted finite-difference response.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_strong_eq830_limit_rows(strong_eq830_limit_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_strong_eq830_limit_placeholders",
+                        title="Remaining strong/Eq. 8.30 limit checks",
+                        description="Checks still needed before using Eq. 8.30 on the full physical dataset.",
+                        headers=("check", "status"),
+                        rows=(
+                            TableRow(("k-grid density sweep", "pending")),
+                            TableRow(("temperature / smoothness sweep", "pending")),
+                            TableRow(("component-level tensor comparison", "pending")),
+                            TableRow(("dataset-backed Eq. 8.30 run", "pending")),
                         ),
                     ),
                 ),

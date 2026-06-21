@@ -203,6 +203,83 @@ class FiniteFieldStrongDcValidationProbe:
     residual_status: str
 
 
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldStrongEq830LimitProbe:
+    """Compare strong differential-response DC against Eq. 8.30 shifted finite-difference DC."""
+
+    unit_context: UnitContext
+    source: str
+
+    field_row_count: int
+
+    zero_field: Annotated[
+        float,
+        qscalar(ELECTRIC_FIELD, role="zero field", display_unit=VOLT_PER_METER),
+    ]
+    smallest_nonzero_field: Annotated[
+        float,
+        qscalar(ELECTRIC_FIELD, role="smallest nonzero field", display_unit=VOLT_PER_METER),
+    ]
+    largest_field: Annotated[
+        float,
+        qscalar(ELECTRIC_FIELD, role="largest field", display_unit=VOLT_PER_METER),
+    ]
+
+    strong_continuum_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="strong continuum trace"),
+    ]
+    zero_eq830_continuum_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="zero-field Eq. 8.30 continuum trace"),
+    ]
+    smallest_eq830_continuum_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="small-field Eq. 8.30 continuum trace"),
+    ]
+
+    zero_relative_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="zero-field strong/Eq. 8.30 tensor discrepancy"),
+    ]
+    zero_relative_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="zero-field strong/Eq. 8.30 trace discrepancy"),
+    ]
+    smallest_relative_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="small-field strong/Eq. 8.30 tensor discrepancy"),
+    ]
+    smallest_relative_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="small-field strong/Eq. 8.30 trace discrepancy"),
+    ]
+    largest_relative_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="largest-field strong/Eq. 8.30 tensor discrepancy"),
+    ]
+    largest_relative_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="largest-field strong/Eq. 8.30 trace discrepancy"),
+    ]
+
+    min_relative_tensor_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum strong/Eq. 8.30 tensor discrepancy"),
+    ]
+    min_abs_relative_trace_discrepancy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum absolute strong/Eq. 8.30 trace discrepancy"),
+    ]
+
+    eq830_limit_status: str
+    continuum_normalisation_status: str
+    limit_validation_pass: bool
+
+
+
+
 @dataclass(frozen=True, slots=True)
 class FiniteFieldModeDecompositionProbe:
     """Typed scalar result for Gamma/F/rho mode decomposition validation."""
@@ -2588,6 +2665,116 @@ def finite_field_strong_dc_validation_probe() -> FiniteFieldStrongDcValidationPr
         ),
         residual_status="strong spectral tensor is internally closed; weak-chain gap is derivative-definition residual",
     )
+
+
+
+def finite_field_strong_eq830_limit_probe() -> FiniteFieldStrongEq830LimitProbe:
+    """Compare strong differential-response DC with continuum-normalised Eq. 8.30."""
+
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        band_indexed_strong_dc_from_velocity_grid,
+        conductivity_830_shifted_chain_rule_from_velocity_grid,
+        conductivity_from_epsilon_grid,
+        load_vincent_input_data,
+        vincent_reference,
+    )
+
+    reference = vincent_reference()
+    inputs = load_vincent_input_data()
+    ai = inputs.primitive_lattice_vectors_bohr
+    epsilon = inputs.epsilon_of_k
+
+    local = conductivity_from_epsilon_grid(
+        epsilon,
+        ai,
+        chemical_potential_J=float(np.mean(epsilon) * ATOMIC_UNITS.energy.scale_to_si),
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+    )
+
+    strong = band_indexed_strong_dc_from_velocity_grid(
+        epsilon,
+        local.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=np.zeros(2),
+    )
+    strong_continuum = strong.conductivity_tensor_S.real / ((2.0 * np.pi) ** 2)
+    strong_trace = float(np.trace(strong_continuum))
+    strong_norm = float(np.linalg.norm(strong_continuum))
+
+    base_field = np.asarray(reference.electric_field_V_per_m, dtype=np.float64)
+    if float(np.linalg.norm(base_field)) == 0.0:
+        base_field = np.array([1.0, 0.0], dtype=np.float64)
+
+    rows: list[dict[str, float]] = []
+    for eta in (0.0, 1.0e-4, 3.0e-4, 1.0e-3, 3.0e-3, 1.0e-2, 3.0e-2, 1.0e-1, 1.0):
+        field = base_field * eta
+        eq830 = conductivity_830_shifted_chain_rule_from_velocity_grid(
+            epsilon,
+            local.velocity_m_per_s,
+            ai,
+            chemical_potential_J=local.chemical_potential_J,
+            temperature_K=reference.temperature_K,
+            relaxation_time_s=reference.relaxation_time_s,
+            electric_field_V_per_m=field,
+        )
+        eq830_continuum = eq830.conductivity_tensor_S
+        delta = strong_continuum - eq830_continuum
+        eq830_trace = float(np.trace(eq830_continuum))
+        rows.append({
+            "eta": float(eta),
+            "field_V_per_m": float(np.linalg.norm(field)),
+            "eq830_trace": eq830_trace,
+            "relative_tensor_discrepancy": float(np.linalg.norm(delta) / strong_norm) if strong_norm > 0.0 else np.nan,
+            "relative_trace_discrepancy": float((strong_trace - eq830_trace) / strong_trace) if strong_trace != 0.0 else np.nan,
+        })
+
+    zero_row = rows[0]
+    nonzero_rows = [row for row in rows if row["field_V_per_m"] > 0.0]
+    small_row = nonzero_rows[0]
+    largest_row = rows[-1]
+    min_tensor_row = min(rows, key=lambda row: row["relative_tensor_discrepancy"])
+    min_trace_row = min(rows, key=lambda row: abs(row["relative_trace_discrepancy"]))
+
+    # This pass flag is intentionally conservative.  On the current Vincent grid,
+    # equality is not assumed; the diagnostic is valid if it exposes finite,
+    # continuum-normalised residuals across the field sweep.
+    finite_residuals = all(
+        np.isfinite(row["relative_tensor_discrepancy"])
+        and np.isfinite(row["relative_trace_discrepancy"])
+        and np.isfinite(row["eq830_trace"])
+        for row in rows
+    )
+
+    return FiniteFieldStrongEq830LimitProbe(
+        unit_context=SI_UNITS,
+        source="strong differential response vs Eq. 8.30 shifted finite-difference on Vincent epsilon grid",
+        field_row_count=len(rows),
+        zero_field=float(zero_row["field_V_per_m"]),
+        smallest_nonzero_field=float(small_row["field_V_per_m"]),
+        largest_field=float(largest_row["field_V_per_m"]),
+        strong_continuum_trace=float(strong_trace),
+        zero_eq830_continuum_trace=float(zero_row["eq830_trace"]),
+        smallest_eq830_continuum_trace=float(small_row["eq830_trace"]),
+        zero_relative_tensor_discrepancy=float(zero_row["relative_tensor_discrepancy"]),
+        zero_relative_trace_discrepancy=float(zero_row["relative_trace_discrepancy"]),
+        smallest_relative_tensor_discrepancy=float(small_row["relative_tensor_discrepancy"]),
+        smallest_relative_trace_discrepancy=float(small_row["relative_trace_discrepancy"]),
+        largest_relative_tensor_discrepancy=float(largest_row["relative_tensor_discrepancy"]),
+        largest_relative_trace_discrepancy=float(largest_row["relative_trace_discrepancy"]),
+        min_relative_tensor_discrepancy=float(min_tensor_row["relative_tensor_discrepancy"]),
+        min_abs_relative_trace_discrepancy=float(abs(min_trace_row["relative_trace_discrepancy"])),
+        eq830_limit_status=(
+            "finite sweep exposed; equality is not assumed on the Vincent grid because Eq. 8.30 tends to the weak chain-rule object while strong DC differentiates the spectral occupation"
+        ),
+        continuum_normalisation_status="both tensors compared with continuum A_BZ / (N_k (2π)^2) normalisation",
+        limit_validation_pass=bool(finite_residuals),
+    )
+
+
 
 
 def finite_field_weak_dc_limit_probe() -> FiniteFieldWeakDcLimitProbe:

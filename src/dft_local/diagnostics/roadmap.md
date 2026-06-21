@@ -266,3 +266,12 @@ Strong DC normalisation guardrail:
 - Done: no-`(2π)^2` traces are explicitly labelled Vincent-comparison scale only.
 - Done: mode decomposition now reports the strong DC conductivity trace in the continuum `A_BZ / (N_k (2π)^2)` normalisation.
 - Remaining: dataset-backed strong DC run still pending.
+
+Strong DC / Eq. 8.30 limit validation:
+
+- Done: added direct comparison of strong differential-response DC against Eq. 8.30 shifted finite-difference response.
+- Done: comparison uses continuum normalisation for both tensors.
+- Current Vincent-grid result: residual is finite and exposed, about `5.9%`, rather than hidden.
+- Interpretation: current Eq. 8.30 implementation tends to the weak chain-rule object on this grid; strong DC uses the spectral occupation derivative.
+- Next: add k-grid density and temperature/smoothness sweeps to identify regimes where strong DC and Eq. 8.30 agree.
+- Next: run the same comparison on dataset-backed physical band data once the k-grid/data path is ready.

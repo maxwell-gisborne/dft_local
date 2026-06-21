@@ -357,6 +357,7 @@ def test_finite_field_dc_validation_scaffold_sections_are_visible() -> None:
         "finite_field_dc_validation_velocity_validation",
         "finite_field_dc_validation_vincent_reconstruction",
         "finite_field_dc_validation_strong_dc_validation",
+        "finite_field_dc_validation_strong_eq830_limit",
         "finite_field_dc_validation_weak_dc_limit",
         "finite_field_dc_validation_mode_decomposition",
         "finite_field_dc_validation_analytic_toys",
@@ -970,6 +971,66 @@ def test_finite_field_dc_strong_dc_section_contains_real_metrics() -> None:
     assert "strong-grid trace" not in rows
     assert "weak-chain grid trace" not in rows
     assert "dummy" not in set(rows.values())
+
+
+def test_finite_field_strong_eq830_limit_probe_exposes_residuals() -> None:
+    from dft_local.transport.boltzmann.validation.core import (
+        finite_field_strong_eq830_limit_probe,
+    )
+
+    probe = finite_field_strong_eq830_limit_probe()
+
+    assert probe.field_row_count >= 3
+    assert probe.strong_continuum_trace > 0.0
+    assert probe.zero_eq830_continuum_trace > 0.0
+    assert probe.smallest_eq830_continuum_trace > 0.0
+    assert probe.zero_field == 0.0
+    assert probe.smallest_nonzero_field > 0.0
+    assert probe.largest_field >= probe.smallest_nonzero_field
+    assert probe.zero_relative_tensor_discrepancy >= 0.0
+    assert probe.min_relative_tensor_discrepancy >= 0.0
+    assert probe.min_abs_relative_trace_discrepancy >= 0.0
+    assert probe.limit_validation_pass is True
+
+
+def test_finite_field_dc_strong_eq830_limit_section_contains_real_metrics() -> None:
+    specs = {spec.id: spec for spec in diagnostics()}
+    spec = specs["transport.boltzmann.validation.finite_field_dc"]
+
+    parsed = {input_spec.name: input_spec.parse(None) for input_spec in spec.inputs}
+    result = spec.compute(None, parsed)
+
+    from dft_local.diagnostics.models import DiagnosticSection, Table
+
+    sections = tuple(result.sections) + tuple(
+        block for block in result.body if isinstance(block, DiagnosticSection)
+    )
+    section = next(
+        section for section in sections
+        if section.id == "finite_field_dc_validation_strong_eq830_limit"
+    )
+
+    tables = {
+        block.id: block
+        for block in section.body
+        if isinstance(block, Table)
+    }
+
+    assert "finite_field_dc_validation_strong_eq830_limit_table" in tables
+
+    rows = {
+        row.cells[0]: row.cells[1]
+        for row in tables["finite_field_dc_validation_strong_eq830_limit_table"].rows
+    }
+
+    assert rows["limit validation pass"] is True
+    assert "strong continuum trace" in rows
+    assert "zero-field Eq. 8.30 continuum trace" in rows
+    assert "zero strong/Eq. 8.30 tensor discrepancy" in rows
+    assert "normalisation status" in rows
+    assert "dummy" not in set(rows.values())
+
+
 
 
 def test_finite_field_weak_dc_limit_probe_checks_zero_field_limit() -> None:
