@@ -408,6 +408,233 @@ class FiniteFieldUnitScalingProbe:
 
 
 @dataclass(frozen=True, slots=True)
+class FiniteFieldAnalyticToyCoverageProbe:
+    """Typed scalar result for analytic toy coverage summary."""
+
+    unit_context: UnitContext
+    source: str
+
+    toy_count: int
+
+    separable_cosine_symbol_max_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="separable cosine symbol maximum error"),
+    ]
+    separable_cosine_derivative_max_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="separable cosine derivative maximum error"),
+    ]
+    identity_overlap_min_eig: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="identity overlap minimum eigenvalue"),
+    ]
+    identity_overlap_condition: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="identity overlap condition number"),
+    ]
+    periodic_dirac_min_gap: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="periodic Dirac minimum gap"),
+    ]
+    periodic_dirac_hazard_count: int
+    velocity_hf_max_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Hellmann-Feynman velocity maximum error"),
+    ]
+    unit_velocity_factor_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="unit velocity factor error"),
+    ]
+
+    all_current_toys_pass: bool
+    missing_toy: str
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldInputHealthProbe:
+    """Typed scalar result for finite-field H/S input health checks."""
+
+    unit_context: UnitContext
+    source: str
+
+    n_u: int
+    n_v: int
+    sample_count: int
+    symmetrization: str
+
+    h_star_defect_max: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="H kernel star defect maximum"),
+    ]
+    s_star_defect_max: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="S kernel star defect maximum"),
+    ]
+    h_hermitian_defect_rel_max: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="H(k) relative Hermiticity defect maximum"),
+    ]
+    s_hermitian_defect_rel_max: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="S(k) relative Hermiticity defect maximum"),
+    ]
+    s_eig_min: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="S(k) minimum eigenvalue"),
+    ]
+    s_condition_number_abs_max: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="S(k) maximum absolute condition number"),
+    ]
+    energy_neighbour_jump_max: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum neighbouring energy jump"),
+    ]
+
+    s_positive: bool
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldBandCrossingHazardProbe:
+    """Typed scalar result for band-label hazard checks."""
+
+    unit_context: UnitContext
+    source: str
+
+    n_u: int
+    n_v: int
+    sample_count: int
+
+    mass: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="toy mass"),
+    ]
+    gap_threshold: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="gap threshold"),
+    ]
+    min_gap: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum band gap"),
+    ]
+    min_gap_k1: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum-gap k1"),
+    ]
+    min_gap_k2: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum-gap k2"),
+    ]
+    hazard_count: int
+    hazard_fraction: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="hazard fraction"),
+    ]
+    has_hazard: bool
+    max_band0_neighbour_jump: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum band-0 neighbour jump"),
+    ]
+    max_band1_neighbour_jump: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum band-1 neighbour jump"),
+    ]
+    max_gap_neighbour_jump: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum gap neighbour jump"),
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldKConvergenceProbe:
+    """Typed scalar result for finite-field k-grid convergence checks."""
+
+    unit_context: UnitContext
+    source: str
+
+    grid_count: int
+    coarsest_n: int
+    finest_n: int
+
+    reference_average_grad_e_sq: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="analytic average squared energy gradient"),
+    ]
+    finest_average_grad_e_sq: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="finest-grid average squared energy gradient"),
+    ]
+    finest_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="finest-grid absolute error"),
+    ]
+    max_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="maximum grid absolute error"),
+    ]
+
+    improved_or_equal_steps: int
+    all_grid_errors_small: bool
+    measure_status: str
+    conductivity_convergence_status: str
+
+
+@dataclass(frozen=True, slots=True)
+class FiniteFieldSymmetrySanityProbe:
+    """Typed scalar result for finite-field symmetry sanity checks."""
+
+    unit_context: UnitContext
+    source: str
+
+    n: int
+    sample_count: int
+
+    energy_inversion_max_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="E(k)-E(-k) maximum error"),
+    ]
+    dk1_odd_max_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="dk1 oddness maximum error"),
+    ]
+    dk2_odd_max_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="dk2 oddness maximum error"),
+    ]
+    tensor_xx: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="symmetry tensor xx component"),
+    ]
+    tensor_yy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="symmetry tensor yy component"),
+    ]
+    tensor_xy: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="symmetry tensor xy component"),
+    ]
+    tensor_yx: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="symmetry tensor yx component"),
+    ]
+    tensor_xy_abs: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="absolute xy tensor component"),
+    ]
+    tensor_yx_abs: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="absolute yx tensor component"),
+    ]
+    tensor_antisym_abs: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="absolute antisymmetric tensor component"),
+    ]
+
+    all_symmetry_checks_pass: bool
+    dataset_automorphism_status: str
+
+
+@dataclass(frozen=True, slots=True)
 class OperatorValidationSummary:
     """Compact status summary for the operator-validation domain."""
 
@@ -913,7 +1140,7 @@ def finite_field_input_health_probe(
     n_u: int = 11,
     n_v: int = 11,
     symmetrization: str = "star",
-) -> dict[str, float | int | bool | str | None]:
+) -> FiniteFieldInputHealthProbe:
     """Probe H/S symbol health for the finite-field DC validation scaffold.
 
     This first version uses controlled production kernels rather than the full
@@ -976,21 +1203,22 @@ def finite_field_input_health_probe(
     kh_star = KH.star_defect()
     ks_star = KS.star_defect()
 
-    return {
-        "n_u": int(n_u),
-        "n_v": int(n_v),
-        "sample_count": int(n_u) * int(n_v),
-        "symmetrization": symmetrization,
-        "h_star_defect_max": kh_star["star_defect_max"],
-        "s_star_defect_max": ks_star["star_defect_max"],
-        "h_hermitian_defect_rel_max": float(max_h_hermitian_defect),
-        "s_hermitian_defect_rel_max": float(max_s_hermitian_defect),
-        "s_eig_min": float(min_s_eig),
-        "s_condition_number_abs_max": float(max_s_cond),
-        "energy_neighbour_jump_max": float(max_energy_jump),
-        "s_positive": bool(min_s_eig > 1.0e-10),
-        "source": "controlled production GdKernelArrays toy",
-    }
+    return FiniteFieldInputHealthProbe(
+        unit_context=SI_UNITS,
+        n_u=int(n_u),
+        n_v=int(n_v),
+        sample_count=int(n_u) * int(n_v),
+        symmetrization=symmetrization,
+        h_star_defect_max=float(kh_star["star_defect_max"]),
+        s_star_defect_max=float(ks_star["star_defect_max"]),
+        h_hermitian_defect_rel_max=float(max_h_hermitian_defect),
+        s_hermitian_defect_rel_max=float(max_s_hermitian_defect),
+        s_eig_min=float(min_s_eig),
+        s_condition_number_abs_max=float(max_s_cond),
+        energy_neighbour_jump_max=float(max_energy_jump),
+        s_positive=bool(min_s_eig > 1.0e-10),
+        source="controlled production GdKernelArrays toy",
+    )
 
 
 def periodic_two_level_dirac_hamiltonian(
@@ -1027,7 +1255,7 @@ def finite_field_band_crossing_hazard_probe(
     n_v: int = 11,
     gap_threshold: float = 0.50,
     mass: float = 0.20,
-) -> dict[str, float | int | bool | str]:
+) -> FiniteFieldBandCrossingHazardProbe:
     """Map band-label hazards for a periodic two-level Dirac-like toy model."""
 
     if n_u < 1:
@@ -1079,23 +1307,24 @@ def finite_field_band_crossing_hazard_probe(
 
     sample_count = int(n_u) * int(n_v)
 
-    return {
-        "source": "periodic two-level Dirac-like toy",
-        "n_u": int(n_u),
-        "n_v": int(n_v),
-        "sample_count": sample_count,
-        "mass": float(mass),
-        "gap_threshold": float(gap_threshold),
-        "min_gap": float(min_gap),
-        "min_gap_k1": float(min_gap_k1),
-        "min_gap_k2": float(min_gap_k2),
-        "hazard_count": int(hazard_count),
-        "hazard_fraction": float(hazard_count / sample_count),
-        "has_hazard": bool(hazard_count > 0),
-        "max_band0_neighbour_jump": float(max_band0_jump),
-        "max_band1_neighbour_jump": float(max_band1_jump),
-        "max_gap_neighbour_jump": float(max_gap_jump),
-    }
+    return FiniteFieldBandCrossingHazardProbe(
+        unit_context=SI_UNITS,
+        source="periodic two-level Dirac-like toy",
+        n_u=int(n_u),
+        n_v=int(n_v),
+        sample_count=sample_count,
+        mass=float(mass),
+        gap_threshold=float(gap_threshold),
+        min_gap=float(min_gap),
+        min_gap_k1=float(min_gap_k1),
+        min_gap_k2=float(min_gap_k2),
+        hazard_count=int(hazard_count),
+        hazard_fraction=float(hazard_count / sample_count),
+        has_hazard=bool(hazard_count > 0),
+        max_band0_neighbour_jump=float(max_band0_jump),
+        max_band1_neighbour_jump=float(max_band1_jump),
+        max_gap_neighbour_jump=float(max_gap_jump),
+    )
 
 
 def finite_difference_fixed_symbol_derivative(
@@ -1217,7 +1446,7 @@ def finite_field_unit_scaling_probe() -> FiniteFieldUnitScalingProbe:
     )
 
 
-def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool | str]:
+def finite_field_analytic_toy_coverage_probe() -> FiniteFieldAnalyticToyCoverageProbe:
     """Summarise analytic toy coverage for the finite-field validation ladder."""
 
     symbol_probe = gd_symbol_production_validation_probe()
@@ -1247,34 +1476,35 @@ def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool |
         float(velocity.finite_difference_dk2_abs_error),
     )
 
-    return {
-        "source": "summary of controlled analytic probes",
-        "toy_count": 4,
-        "separable_cosine_symbol_max_error": float(max_symbol_error),
-        "separable_cosine_derivative_max_error": float(max_derivative_error),
-        "identity_overlap_min_eig": float(input_health["s_eig_min"]),
-        "identity_overlap_condition": float(input_health["s_condition_number_abs_max"]),
-        "periodic_dirac_min_gap": float(band_hazards["min_gap"]),
-        "periodic_dirac_hazard_count": int(band_hazards["hazard_count"]),
-        "velocity_hf_max_error": float(max(
+    return FiniteFieldAnalyticToyCoverageProbe(
+        unit_context=SI_UNITS,
+        source="summary of controlled analytic probes",
+        toy_count=4,
+        separable_cosine_symbol_max_error=float(max_symbol_error),
+        separable_cosine_derivative_max_error=float(max_derivative_error),
+        identity_overlap_min_eig=float(input_health.s_eig_min),
+        identity_overlap_condition=float(input_health.s_condition_number_abs_max),
+        periodic_dirac_min_gap=float(band_hazards.min_gap),
+        periodic_dirac_hazard_count=int(band_hazards.hazard_count),
+        velocity_hf_max_error=float(max(
             velocity.hellmann_feynman_dk1_abs_error,
             velocity.hellmann_feynman_dk2_abs_error,
         )),
-        "unit_velocity_factor_error": float(units.velocity_factor_abs_error),
-        "all_current_toys_pass": bool(
+        unit_velocity_factor_error=float(units.velocity_factor_abs_error),
+        all_current_toys_pass=bool(
             max_symbol_error < 1.0e-12
             and max_derivative_error < 1.0e-9
-            and float(input_health["s_eig_min"]) > 1.0e-10
-            and int(band_hazards["hazard_count"]) >= 1
+            and float(input_health.s_eig_min) > 1.0e-10
+            and int(band_hazards.hazard_count) >= 1
             and float(units.velocity_factor_abs_error) < 1.0e-12
         ),
-        "missing_toy": "finite-field lattice-mode Gamma/F/rho closure toy",
-    }
+        missing_toy="finite-field lattice-mode Gamma/F/rho closure toy",
+    )
 
 
 def finite_field_k_convergence_probe(
     grid_sizes: tuple[int, ...] = (5, 7, 11, 17, 23),
-) -> dict[str, float | int | bool | str]:
+) -> FiniteFieldKConvergenceProbe:
     """Check k-grid convergence/measure on a periodic analytic velocity toy.
 
     For E(k) = c0 + c1 cos(k1) + c2 cos(k2), derivatives are
@@ -1322,26 +1552,27 @@ def finite_field_k_convergence_probe(
         max_error = max(max_error, float(error))
         rows_checked += 1
 
-    return {
-        "source": "periodic separable-cosine velocity-square average",
-        "grid_count": int(rows_checked),
-        "coarsest_n": int(grid_sizes[0]),
-        "finest_n": int(grid_sizes[-1]),
-        "reference_average_grad_e_sq": float(reference),
-        "finest_average_grad_e_sq": float(finest_value),
-        "finest_abs_error": float(finest_error),
-        "max_abs_error": float(max_error),
-        "improved_or_equal_steps": int(improved_or_equal_steps),
-        "all_grid_errors_small": bool(max_error < 1.0e-12),
-        "measure_status": "uniform full-period average matches analytic reference",
-        "conductivity_convergence_status": "pending dataset-backed conductivity refinement",
-    }
+    return FiniteFieldKConvergenceProbe(
+        unit_context=SI_UNITS,
+        source="periodic separable-cosine velocity-square average",
+        grid_count=int(rows_checked),
+        coarsest_n=int(grid_sizes[0]),
+        finest_n=int(grid_sizes[-1]),
+        reference_average_grad_e_sq=float(reference),
+        finest_average_grad_e_sq=float(finest_value),
+        finest_abs_error=float(finest_error),
+        max_abs_error=float(max_error),
+        improved_or_equal_steps=int(improved_or_equal_steps),
+        all_grid_errors_small=bool(max_error < 1.0e-12),
+        measure_status="uniform full-period average matches analytic reference",
+        conductivity_convergence_status="pending dataset-backed conductivity refinement",
+    )
 
 
 def finite_field_symmetry_sanity_probe(
     *,
     n: int = 17,
-) -> dict[str, float | int | bool | str]:
+) -> FiniteFieldSymmetrySanityProbe:
     """Check symmetry identities on the separable periodic cosine toy."""
 
     if n < 2:
@@ -1385,21 +1616,22 @@ def finite_field_symmetry_sanity_probe(
     yx_abs = abs(float(tensor[1, 0]))
     antisym_abs = abs(float(tensor[0, 1] - tensor[1, 0]))
 
-    return {
-        "source": "separable cosine inversion and tensor symmetry toy",
-        "n": int(n),
-        "sample_count": int(n * n),
-        "energy_inversion_max_error": float(max_energy_inversion_error),
-        "dk1_odd_max_error": float(max_dk1_odd_error),
-        "dk2_odd_max_error": float(max_dk2_odd_error),
-        "tensor_xx": float(tensor[0, 0]),
-        "tensor_yy": float(tensor[1, 1]),
-        "tensor_xy": float(tensor[0, 1]),
-        "tensor_yx": float(tensor[1, 0]),
-        "tensor_xy_abs": float(xy_abs),
-        "tensor_yx_abs": float(yx_abs),
-        "tensor_antisym_abs": float(antisym_abs),
-        "all_symmetry_checks_pass": bool(
+    return FiniteFieldSymmetrySanityProbe(
+        unit_context=SI_UNITS,
+        source="separable cosine inversion and tensor symmetry toy",
+        n=int(n),
+        sample_count=int(n * n),
+        energy_inversion_max_error=float(max_energy_inversion_error),
+        dk1_odd_max_error=float(max_dk1_odd_error),
+        dk2_odd_max_error=float(max_dk2_odd_error),
+        tensor_xx=float(tensor[0, 0]),
+        tensor_yy=float(tensor[1, 1]),
+        tensor_xy=float(tensor[0, 1]),
+        tensor_yx=float(tensor[1, 0]),
+        tensor_xy_abs=float(xy_abs),
+        tensor_yx_abs=float(yx_abs),
+        tensor_antisym_abs=float(antisym_abs),
+        all_symmetry_checks_pass=bool(
             max_energy_inversion_error < 1.0e-12
             and max_dk1_odd_error < 1.0e-12
             and max_dk2_odd_error < 1.0e-12
@@ -1407,8 +1639,8 @@ def finite_field_symmetry_sanity_probe(
             and yx_abs < 1.0e-12
             and antisym_abs < 1.0e-12
         ),
-        "dataset_automorphism_status": "pending H/S/H_star/S_star automorphism checks",
-    }
+        dataset_automorphism_status="pending H/S/H_star/S_star automorphism checks",
+    )
 
 
 def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstructionProbe:

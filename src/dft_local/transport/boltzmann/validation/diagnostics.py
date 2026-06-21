@@ -36,14 +36,19 @@ from dft_local.transport.boltzmann.validation.core import (
     weighted_outer_product_tensor,
     gd_symbol_production_validation_probe,
     finite_field_input_health_probe,
+    FiniteFieldInputHealthProbe,
     finite_field_band_crossing_hazard_probe,
+    FiniteFieldBandCrossingHazardProbe,
     finite_field_velocity_validation_probe,
     FiniteFieldVelocityValidationProbe,
     finite_field_unit_scaling_probe,
     FiniteFieldUnitScalingProbe,
     finite_field_analytic_toy_coverage_probe,
+    FiniteFieldAnalyticToyCoverageProbe,
     finite_field_k_convergence_probe,
+    FiniteFieldKConvergenceProbe,
     finite_field_symmetry_sanity_probe,
+    FiniteFieldSymmetrySanityProbe,
     finite_field_vincent_reconstruction_probe,
     FiniteFieldVincentReconstructionProbe,
     finite_field_strong_dc_validation_probe,
@@ -278,37 +283,41 @@ def _fmt_probe_value(value):
     return str(value)
 
 
-def _finite_field_input_health_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_input_health_rows(probe: FiniteFieldInputHealthProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
-        TableRow(("sample count", _fmt_probe_value(probe["sample_count"]), "N_u × N_v")),
-        TableRow(("symmetrization", _fmt_probe_value(probe["symmetrization"]), "selected input")),
-        TableRow(("H kernel star defect max", _fmt_probe_value(probe["h_star_defect_max"]), "near 0")),
-        TableRow(("S kernel star defect max", _fmt_probe_value(probe["s_star_defect_max"]), "near 0")),
-        TableRow(("H(k) Hermiticity defect rel max", _fmt_probe_value(probe["h_hermitian_defect_rel_max"]), "near 0")),
-        TableRow(("S(k) Hermiticity defect rel max", _fmt_probe_value(probe["s_hermitian_defect_rel_max"]), "near 0")),
-        TableRow(("min eig S(k)", _fmt_probe_value(probe["s_eig_min"]), "> 1e-10")),
-        TableRow(("max cond S(k)", _fmt_probe_value(probe["s_condition_number_abs_max"]), "finite")),
-        TableRow(("S positive", _fmt_probe_value(probe["s_positive"]), "True")),
-        TableRow(("max neighbour energy jump", _fmt_probe_value(probe["energy_neighbour_jump_max"]), "smoothness proxy")),
+        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("sample count", probe.sample_count, "N_u × N_v")),
+        TableRow(("symmetrization", probe.symmetrization, "selected input")),
+        TableRow(("H kernel star defect max", q("h_star_defect_max"), "near 0")),
+        TableRow(("S kernel star defect max", q("s_star_defect_max"), "near 0")),
+        TableRow(("H(k) Hermiticity defect rel max", q("h_hermitian_defect_rel_max"), "near 0")),
+        TableRow(("S(k) Hermiticity defect rel max", q("s_hermitian_defect_rel_max"), "near 0")),
+        TableRow(("min eig S(k)", q("s_eig_min"), "> 1e-10")),
+        TableRow(("max cond S(k)", q("s_condition_number_abs_max"), "finite")),
+        TableRow(("S positive", probe.s_positive, "True")),
+        TableRow(("max neighbour energy jump", q("energy_neighbour_jump_max"), "smoothness proxy")),
     )
 
 
-def _finite_field_band_hazard_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_band_hazard_rows(probe: FiniteFieldBandCrossingHazardProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
-        TableRow(("sample count", _fmt_probe_value(probe["sample_count"]), "N_u × N_v")),
-        TableRow(("toy mass", _fmt_probe_value(probe["mass"]), "small mass gives near-crossing stress test")),
-        TableRow(("gap threshold", _fmt_probe_value(probe["gap_threshold"]), "hazard if gap below this")),
-        TableRow(("minimum gap", _fmt_probe_value(probe["min_gap"]), "larger is safer for energy-ordered labels")),
-        TableRow(("minimum-gap k1", _fmt_probe_value(probe["min_gap_k1"]), "location")),
-        TableRow(("minimum-gap k2", _fmt_probe_value(probe["min_gap_k2"]), "location")),
-        TableRow(("hazard count", _fmt_probe_value(probe["hazard_count"]), "number of sampled k-points below threshold")),
-        TableRow(("hazard fraction", _fmt_probe_value(probe["hazard_fraction"]), "hazard count / sample count")),
-        TableRow(("has hazard", _fmt_probe_value(probe["has_hazard"]), "diagnostic flag")),
-        TableRow(("max band-0 neighbour jump", _fmt_probe_value(probe["max_band0_neighbour_jump"]), "energy-label smoothness proxy")),
-        TableRow(("max band-1 neighbour jump", _fmt_probe_value(probe["max_band1_neighbour_jump"]), "energy-label smoothness proxy")),
-        TableRow(("max gap neighbour jump", _fmt_probe_value(probe["max_gap_neighbour_jump"]), "gap-map smoothness proxy")),
+        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("sample count", probe.sample_count, "N_u × N_v")),
+        TableRow(("toy mass", q("mass"), "small mass gives near-crossing stress test")),
+        TableRow(("gap threshold", q("gap_threshold"), "hazard if gap below this")),
+        TableRow(("minimum gap", q("min_gap"), "larger is safer for energy-ordered labels")),
+        TableRow(("minimum-gap k1", q("min_gap_k1"), "location")),
+        TableRow(("minimum-gap k2", q("min_gap_k2"), "location")),
+        TableRow(("hazard count", probe.hazard_count, "number of sampled k-points below threshold")),
+        TableRow(("hazard fraction", q("hazard_fraction"), "hazard count / sample count")),
+        TableRow(("has hazard", probe.has_hazard, "diagnostic flag")),
+        TableRow(("max band-0 neighbour jump", q("max_band0_neighbour_jump"), "energy-label smoothness proxy")),
+        TableRow(("max band-1 neighbour jump", q("max_band1_neighbour_jump"), "energy-label smoothness proxy")),
+        TableRow(("max gap neighbour jump", q("max_gap_neighbour_jump"), "gap smoothness proxy")),
     )
 
 
@@ -354,54 +363,60 @@ def _finite_field_unit_scaling_rows(probe: FiniteFieldUnitScalingProbe) -> tuple
     )
 
 
-def _finite_field_analytic_toy_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_analytic_toy_rows(probe: FiniteFieldAnalyticToyCoverageProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "summary of current real probes")),
-        TableRow(("toy count", _fmt_probe_value(probe["toy_count"]), "controlled analytic cases")),
-        TableRow(("cosine symbol max error", _fmt_probe_value(probe["separable_cosine_symbol_max_error"]), "near 0")),
-        TableRow(("cosine derivative max error", _fmt_probe_value(probe["separable_cosine_derivative_max_error"]), "near 0")),
-        TableRow(("identity overlap min eig", _fmt_probe_value(probe["identity_overlap_min_eig"]), "> 1e-10")),
-        TableRow(("identity overlap condition", _fmt_probe_value(probe["identity_overlap_condition"]), "finite")),
-        TableRow(("periodic Dirac min gap", _fmt_probe_value(probe["periodic_dirac_min_gap"]), "controlled near-crossing")),
-        TableRow(("periodic Dirac hazard count", _fmt_probe_value(probe["periodic_dirac_hazard_count"]), ">= 1")),
-        TableRow(("HF velocity max error", _fmt_probe_value(probe["velocity_hf_max_error"]), "near 0")),
-        TableRow(("unit velocity factor error", _fmt_probe_value(probe["unit_velocity_factor_error"]), "near 0")),
-        TableRow(("all current toys pass", _fmt_probe_value(probe["all_current_toys_pass"]), "True")),
-        TableRow(("missing toy", _fmt_probe_value(probe["missing_toy"]), "next analytic target")),
+        TableRow(("source", probe.source, "summary of current real probes")),
+        TableRow(("toy count", probe.toy_count, "controlled analytic cases")),
+        TableRow(("cosine symbol max error", q("separable_cosine_symbol_max_error"), "near 0")),
+        TableRow(("cosine derivative max error", q("separable_cosine_derivative_max_error"), "near 0")),
+        TableRow(("identity overlap min eig", q("identity_overlap_min_eig"), "> 1e-10")),
+        TableRow(("identity overlap condition", q("identity_overlap_condition"), "finite")),
+        TableRow(("periodic Dirac min gap", q("periodic_dirac_min_gap"), "controlled near-crossing")),
+        TableRow(("periodic Dirac hazard count", probe.periodic_dirac_hazard_count, ">= 1")),
+        TableRow(("HF velocity max error", q("velocity_hf_max_error"), "near 0")),
+        TableRow(("unit velocity factor error", q("unit_velocity_factor_error"), "near 0")),
+        TableRow(("all current toys pass", probe.all_current_toys_pass, "True")),
+        TableRow(("missing toy", probe.missing_toy, "next analytic target")),
     )
 
 
-def _finite_field_k_convergence_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_k_convergence_rows(probe: FiniteFieldKConvergenceProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
-        TableRow(("grid count", _fmt_probe_value(probe["grid_count"]), "number of refinements")),
-        TableRow(("coarsest N", _fmt_probe_value(probe["coarsest_n"]), "first grid")),
-        TableRow(("finest N", _fmt_probe_value(probe["finest_n"]), "last grid")),
-        TableRow(("reference <|grad E|^2>", _fmt_probe_value(probe["reference_average_grad_e_sq"]), "analytic")),
-        TableRow(("finest <|grad E|^2>", _fmt_probe_value(probe["finest_average_grad_e_sq"]), "numeric")),
-        TableRow(("finest abs error", _fmt_probe_value(probe["finest_abs_error"]), "near 0")),
-        TableRow(("max abs error", _fmt_probe_value(probe["max_abs_error"]), "near 0")),
-        TableRow(("improved/equal steps", _fmt_probe_value(probe["improved_or_equal_steps"]), "non-regression count")),
-        TableRow(("all grid errors small", _fmt_probe_value(probe["all_grid_errors_small"]), "True")),
-        TableRow(("measure status", _fmt_probe_value(probe["measure_status"]), "normalisation check")),
-        TableRow(("conductivity convergence status", _fmt_probe_value(probe["conductivity_convergence_status"]), "pending")),
+        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("grid count", probe.grid_count, "number of refinements")),
+        TableRow(("coarsest N", probe.coarsest_n, "first grid")),
+        TableRow(("finest N", probe.finest_n, "last grid")),
+        TableRow(("reference <|grad E|^2>", q("reference_average_grad_e_sq"), "analytic")),
+        TableRow(("finest <|grad E|^2>", q("finest_average_grad_e_sq"), "numeric")),
+        TableRow(("finest abs error", q("finest_abs_error"), "near 0")),
+        TableRow(("max abs error", q("max_abs_error"), "near 0")),
+        TableRow(("improved/equal steps", probe.improved_or_equal_steps, "non-regression count")),
+        TableRow(("all grid errors small", probe.all_grid_errors_small, "True")),
+        TableRow(("measure status", probe.measure_status, "normalisation check")),
+        TableRow(("conductivity convergence status", probe.conductivity_convergence_status, "pending")),
     )
 
 
-def _finite_field_symmetry_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_symmetry_rows(probe: FiniteFieldSymmetrySanityProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
-        TableRow(("sample count", _fmt_probe_value(probe["sample_count"]), "N × N")),
-        TableRow(("E(k)-E(-k) max error", _fmt_probe_value(probe["energy_inversion_max_error"]), "near 0")),
-        TableRow(("dk1 oddness max error", _fmt_probe_value(probe["dk1_odd_max_error"]), "near 0")),
-        TableRow(("dk2 oddness max error", _fmt_probe_value(probe["dk2_odd_max_error"]), "near 0")),
-        TableRow(("tensor xx", _fmt_probe_value(probe["tensor_xx"]), "positive")),
-        TableRow(("tensor yy", _fmt_probe_value(probe["tensor_yy"]), "positive")),
-        TableRow(("tensor xy", _fmt_probe_value(probe["tensor_xy"]), "near 0")),
-        TableRow(("tensor yx", _fmt_probe_value(probe["tensor_yx"]), "near 0")),
-        TableRow(("tensor antisym abs", _fmt_probe_value(probe["tensor_antisym_abs"]), "near 0")),
-        TableRow(("all symmetry checks pass", _fmt_probe_value(probe["all_symmetry_checks_pass"]), "True")),
-        TableRow(("dataset automorphism status", _fmt_probe_value(probe["dataset_automorphism_status"]), "pending")),
+        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("sample count", probe.sample_count, "N × N")),
+        TableRow(("E(k)-E(-k) max error", q("energy_inversion_max_error"), "near 0")),
+        TableRow(("dk1 oddness max error", q("dk1_odd_max_error"), "near 0")),
+        TableRow(("dk2 oddness max error", q("dk2_odd_max_error"), "near 0")),
+        TableRow(("tensor xx", q("tensor_xx"), "positive")),
+        TableRow(("tensor yy", q("tensor_yy"), "positive")),
+        TableRow(("tensor xy", q("tensor_xy"), "near 0")),
+        TableRow(("tensor yx", q("tensor_yx"), "near 0")),
+        TableRow(("tensor antisym abs", q("tensor_antisym_abs"), "near 0")),
+        TableRow(("all symmetry checks pass", probe.all_symmetry_checks_pass, "True")),
+        TableRow(("dataset automorphism status", probe.dataset_automorphism_status, "pending")),
     )
 
 

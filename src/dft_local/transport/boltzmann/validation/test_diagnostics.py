@@ -437,14 +437,14 @@ def test_finite_field_input_health_probe_checks_symbol_health() -> None:
 
     probe = finite_field_input_health_probe(n_u=5, n_v=7, symmetrization="star")
 
-    assert probe["sample_count"] == 35
-    assert probe["h_star_defect_max"] < 1.0e-12
-    assert probe["s_star_defect_max"] < 1.0e-12
-    assert probe["h_hermitian_defect_rel_max"] < 1.0e-12
-    assert probe["s_hermitian_defect_rel_max"] < 1.0e-12
-    assert probe["s_eig_min"] > 1.0e-10
-    assert probe["s_condition_number_abs_max"] >= 1.0
-    assert probe["s_positive"] is True
+    assert probe.sample_count == 35
+    assert probe.h_star_defect_max < 1.0e-12
+    assert probe.s_star_defect_max < 1.0e-12
+    assert probe.h_hermitian_defect_rel_max < 1.0e-12
+    assert probe.s_hermitian_defect_rel_max < 1.0e-12
+    assert probe.s_eig_min > 1.0e-10
+    assert probe.s_condition_number_abs_max >= 1.0
+    assert probe.s_positive is True
 
 
 def test_finite_field_dc_input_health_section_contains_real_metrics() -> None:
@@ -496,14 +496,14 @@ def test_finite_field_band_crossing_hazard_probe_finds_toy_gap() -> None:
         mass=0.20,
     )
 
-    assert probe["sample_count"] == 100
-    assert probe["min_gap"] >= 0.0
-    assert probe["hazard_count"] >= 1
-    assert probe["hazard_fraction"] > 0.0
-    assert probe["has_hazard"] is True
-    assert np.isfinite(probe["min_gap_k1"])
-    assert np.isfinite(probe["min_gap_k2"])
-    assert probe["max_gap_neighbour_jump"] >= 0.0
+    assert probe.sample_count == 100
+    assert probe.min_gap >= 0.0
+    assert probe.hazard_count >= 1
+    assert probe.hazard_fraction > 0.0
+    assert probe.has_hazard is True
+    assert np.isfinite(probe.min_gap_k1)
+    assert np.isfinite(probe.min_gap_k2)
+    assert probe.max_gap_neighbour_jump >= 0.0
 
 
 def test_finite_field_dc_band_crossing_section_contains_real_metrics() -> None:
@@ -654,14 +654,14 @@ def test_finite_field_analytic_toy_coverage_probe_summarises_real_toys() -> None
 
     probe = finite_field_analytic_toy_coverage_probe()
 
-    assert probe["toy_count"] == 4
-    assert probe["separable_cosine_symbol_max_error"] < 1.0e-12
-    assert probe["separable_cosine_derivative_max_error"] < 1.0e-9
-    assert probe["identity_overlap_min_eig"] > 1.0e-10
-    assert probe["periodic_dirac_hazard_count"] >= 1
-    assert probe["velocity_hf_max_error"] < 1.0e-12
-    assert probe["unit_velocity_factor_error"] < 1.0e-12
-    assert probe["all_current_toys_pass"] is True
+    assert probe.toy_count == 4
+    assert probe.separable_cosine_symbol_max_error < 1.0e-12
+    assert probe.separable_cosine_derivative_max_error < 1.0e-9
+    assert probe.identity_overlap_min_eig > 1.0e-10
+    assert probe.periodic_dirac_hazard_count >= 1
+    assert probe.velocity_hf_max_error < 1.0e-12
+    assert probe.unit_velocity_factor_error < 1.0e-12
+    assert probe.all_current_toys_pass is True
 
 
 def test_finite_field_dc_analytic_toys_section_contains_real_metrics() -> None:
@@ -706,13 +706,13 @@ def test_finite_field_k_convergence_probe_checks_periodic_measure() -> None:
 
     probe = finite_field_k_convergence_probe()
 
-    assert probe["grid_count"] == 5
-    assert probe["coarsest_n"] == 5
-    assert probe["finest_n"] == 23
-    assert abs(probe["reference_average_grad_e_sq"] - 0.29) < 1.0e-15
-    assert probe["finest_abs_error"] < 1.0e-12
-    assert probe["max_abs_error"] < 1.0e-12
-    assert probe["all_grid_errors_small"] is True
+    assert probe.grid_count == 5
+    assert probe.coarsest_n == 5
+    assert probe.finest_n == 23
+    assert abs(probe.reference_average_grad_e_sq - 0.29) < 1.0e-15
+    assert probe.finest_abs_error < 1.0e-12
+    assert probe.max_abs_error < 1.0e-12
+    assert probe.all_grid_errors_small is True
 
 
 def test_finite_field_dc_k_convergence_section_contains_real_metrics() -> None:
@@ -757,16 +757,16 @@ def test_finite_field_symmetry_sanity_probe_checks_toy_symmetries() -> None:
 
     probe = finite_field_symmetry_sanity_probe()
 
-    assert probe["sample_count"] == 289
-    assert probe["energy_inversion_max_error"] < 1.0e-12
-    assert probe["dk1_odd_max_error"] < 1.0e-12
-    assert probe["dk2_odd_max_error"] < 1.0e-12
-    assert probe["tensor_xx"] > 0.0
-    assert probe["tensor_yy"] > 0.0
-    assert abs(probe["tensor_xy"]) < 1.0e-12
-    assert abs(probe["tensor_yx"]) < 1.0e-12
-    assert probe["tensor_antisym_abs"] < 1.0e-12
-    assert probe["all_symmetry_checks_pass"] is True
+    assert probe.sample_count == 289
+    assert probe.energy_inversion_max_error < 1.0e-12
+    assert probe.dk1_odd_max_error < 1.0e-12
+    assert probe.dk2_odd_max_error < 1.0e-12
+    assert probe.tensor_xx > 0.0
+    assert probe.tensor_yy > 0.0
+    assert abs(probe.tensor_xy) < 1.0e-12
+    assert abs(probe.tensor_yx) < 1.0e-12
+    assert probe.tensor_antisym_abs < 1.0e-12
+    assert probe.all_symmetry_checks_pass is True
 
 
 def test_finite_field_dc_symmetry_section_contains_real_metrics() -> None:
@@ -1012,3 +1012,22 @@ def test_finite_field_dc_mode_decomposition_section_contains_real_metrics() -> N
 
     assert rows["mode closure pass"] is True
     assert "dummy" not in set(rows.values())
+
+def test_finite_field_validation_probes_are_not_plain_dict_returns() -> None:
+    import inspect
+
+    from dft_local.transport.boltzmann.validation import core
+
+    offenders: list[str] = []
+    for name, fn in inspect.getmembers(core, inspect.isfunction):
+        if not name.startswith("finite_field_") or not name.endswith("_probe"):
+            continue
+        annotation = inspect.signature(fn).return_annotation
+        if annotation is inspect.Signature.empty:
+            offenders.append(name)
+            continue
+        if "dict[" in str(annotation):
+            offenders.append(name)
+
+    assert offenders == []
+
