@@ -1823,6 +1823,28 @@ Current unit-handling status:
 - Many finite-field toy quantities are intentionally dimensionless because they validate symbolic/synthetic models.
 - Full end-to-end SI conductivity agreement across multiple `UnitContext`s is still a postponed task.
 
+Current dataset-backed validation status:
+
+- Finite-field input health now uses the selected dataset-backed H/S kernels when a diagnostics context is available.
+- Input-health symbol checks use the degree-2 generic graphene symbol path, matching the production dataset-backed local symbol construction.
+- The input-health table reports both kernel-level star defects and formed-symbol Hermiticity defects.
+- Star symmetrization now shows the expected near-machine-precision Hermiticity defects in the formed H(k) and S(k) symbols.
+- The remaining input-health items are visual audits rather than scalar blockers.
+
+Current selected-band crossing hazard status:
+
+- The band-crossing hazard section now has a production dataset-backed selected-band adjacent-gap scan.
+- The scan solves the selected H/S symbol on the configured k-grid and inspects only adjacent sorted-energy gaps touching `band_index`.
+- For selected band `n`, this means the adjacent gaps `(n - 1, n)` and `(n, n + 1)` when those neighbours exist.
+- Crossings between unrelated band pairs are intentionally ignored because they do not directly threaten the selected band-labelled conductivity quantity.
+- The hazard-point table reports only k-points whose adjacent selected-band gap falls below the configured threshold.
+- The controlled periodic two-level Dirac-like toy remains only as a sanity check for the hazard-counting logic.
+
+Latest validation check:
+
+- Full pre-push validation passed with `358 passed, 1 xfailed`.
+- Current pushed validation commits are `04fb6d2 Use dataset degree-two kernels for input health` and `e82262e Add dataset-backed band crossing hazard probe`.
+
 Still postponed:
 
 - Type non-finite-field validation probes, including `operator_symbol_validation_probe()` and `gd_symbol_production_validation_probe()`.
