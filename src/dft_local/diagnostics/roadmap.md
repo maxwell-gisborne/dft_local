@@ -180,6 +180,18 @@ Improve:
 - split overview from expensive calculation
 - show assumptions clearly
 - show units
+## Current validation-domain state
+
+The finite-field validation probe layer is now typed.
+
+- All `finite_field_*_probe` functions return frozen dataclass probes rather than plain dictionaries.
+- Scalar diagnostic fields are annotated with `Annotated[float, qscalar(...)]` and carry a `unit_context`.
+- Finite-field diagnostic table rows use `diagnostic_scalar_quantity(...)` for typed scalar rendering.
+- `test_finite_field_validation_probes_are_not_plain_dict_returns` guards against regressions to dict-returning finite-field probes.
+- The latest full validation/render check passed with the finite-field typed probe layer enabled.
+
+This does not yet mean the whole validation package is typed. Non-finite-field validation helpers such as production symbol/operator probes are postponed below.
+
 ## Postponed tasks
 
 These are deliberately not part of the current finite-field typing slice, but should stay visible for later planning.
