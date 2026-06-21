@@ -180,7 +180,14 @@ Improve:
 - split overview from expensive calculation
 - show assumptions clearly
 - show units
-- add downloadable table later
+## Postponed tasks
+
+These are deliberately not part of the current finite-field typing slice, but should stay visible for later planning.
+
+- Type the remaining non-finite-field validation probe domains, including production symbol/operator validation probes and their diagnostics rows.
+- Revisit the postponed downloadable table task.
+- Audit whether all diagnostic table rows use typed quantities rather than raw float formatting.
+- Consider a broader guard test for the whole validation domain once all non-finite-field probes are typed.
 
 ## UI work
 
