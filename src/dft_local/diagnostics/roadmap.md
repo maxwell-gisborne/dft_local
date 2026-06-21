@@ -259,3 +259,10 @@ Remaining follow-up:
 - Inspect Vincent’s original derivation/code/prefactor, if available, to determine whether the missing/absorbed `(2π)^2` is a reference convention, an intermediate diagnostic, or an error.
 - Rename internal Vincent-scaled fields/rows more aggressively to include `vincent_normalised` or `no_2pi_denominator` where doing so reduces accidental misuse.
 - Add a future guardrail test if new transport code consumes Vincent probe fields.
+
+Strong DC normalisation guardrail:
+
+- Done: strong DC validation now reports continuum-normalised traces as the default physical path.
+- Done: no-`(2π)^2` traces are explicitly labelled Vincent-comparison scale only.
+- Done: mode decomposition now reports the strong DC conductivity trace in the continuum `A_BZ / (N_k (2π)^2)` normalisation.
+- Remaining: dataset-backed strong DC run still pending.

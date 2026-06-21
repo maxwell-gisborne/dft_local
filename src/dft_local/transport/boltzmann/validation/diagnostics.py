@@ -603,11 +603,13 @@ def _finite_field_strong_dc_rows(probe: FiniteFieldStrongDcValidationProbe) -> t
         TableRow(("source", probe.source, "reused strong DC implementation")),
         TableRow(("mode count", probe.mode_count, "FFT modes")),
         TableRow(("nonzero mode count", probe.nonzero_mode_count, "active modes")),
-        TableRow(("strong-grid trace", q("strong_grid_trace"), "S/m")),
-        TableRow(("weak-chain grid trace", q("weak_chain_grid_trace"), "S/m")),
-        TableRow(("Vincent target trace", q("vincent_target_trace"), "S/m")),
-        TableRow(("strong/weak trace gap", q("strong_vs_weak_rel_trace_gap"), "known derivative residual")),
-        TableRow(("strong/Vincent trace error %", q("strong_vs_vincent_percent_error"), "audit residual")),
+        TableRow(("strong continuum trace", q("continuum_strong_trace"), "default physical-continuum path")),
+        TableRow(("weak continuum trace", q("continuum_weak_trace"), "default physical-continuum path")),
+        TableRow(("strong no-2π-denominator trace", q("no_2pi_denominator_strong_trace"), "Vincent-comparison scale only")),
+        TableRow(("weak no-2π-denominator trace", q("no_2pi_denominator_weak_trace"), "Vincent-comparison scale only")),
+        TableRow(("Vincent target trace", q("vincent_target_trace"), "external target; not default normalisation")),
+        TableRow(("strong/weak trace gap", q("strong_vs_weak_rel_trace_gap"), "scale-invariant derivative residual")),
+        TableRow(("strong/Vincent trace error %", q("strong_vs_vincent_percent_error"), "computed on no-2π comparison scale")),
         TableRow(("mode reconstruction abs error", q("mode_reconstruction_abs_error"), "near 0")),
         TableRow(("imaginary leakage", q("imaginary_leakage"), "near 0")),
         TableRow(("imaginary leakage ratio", q("imaginary_leakage_ratio"), "near 0")),
@@ -1323,7 +1325,7 @@ The strong spectral zero-field trace should not be read as a failed Eq. 8.30 rec
                         title="Validation claim",
                         markdown="""*Claim.* The band-labelled strong DC conductivity is internally closed as a lattice-mode spectral tensor and its residual against the weak-chain calculation is exposed rather than hidden.
 
-This first implementation reuses the existing `BandIndexedStrongDcResult` on Vincent's epsilon grid. It checks that the mode tensor re-sums to the reported strong tensor, that Fourier coefficients and response factors are finite, and that imaginary leakage is negligible.
+This first implementation reuses the existing `BandIndexedStrongDcResult` on Vincent's epsilon grid. It checks that the mode tensor re-sums to the reported strong tensor, that Fourier coefficients and response factors are finite, and that imaginary leakage is negligible. The displayed default trace rows use the continuum `A_BZ / (N_k (2π)^2)` normalisation; no-`(2π)^2` rows are exposed only as Vincent-comparison scale diagnostics.
 """,
                     ),
                     Table(
@@ -1392,7 +1394,7 @@ This first implementation reuses the analytic sinusoidal Ashcroft probe. It veri
                         title="Validation claim",
                         markdown="""*Claim.* On the current strong-grid mode object, the lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the sampled fields and total strong spectral DC tensor.
 
-This first implementation checks the actual `BandIndexedStrongDcResult` mode objects: Gamma reconstructs the sampled velocity field, tilde(rho) reconstructs the sampled occupation, and summing the conductivity mode tensor reconstructs the total strong DC tensor. This validates the mode algebra used by the finite-field target, but dataset-backed finite-field mode closure remains pending.
+This first implementation checks the actual `BandIndexedStrongDcResult` mode objects: Gamma reconstructs the sampled velocity field, tilde(rho) reconstructs the sampled occupation, and summing the conductivity mode tensor reconstructs the total strong DC tensor. The reported conductivity trace is converted to the continuum `A_BZ / (N_k (2π)^2)` normalisation. This validates the mode algebra used by the finite-field target, but dataset-backed finite-field mode closure remains pending.
 """,
                     ),
                     Table(

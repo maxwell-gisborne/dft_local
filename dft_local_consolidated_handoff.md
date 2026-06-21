@@ -1869,3 +1869,10 @@ Important guardrail:
 - `finite_field_vincent_reconstruction_probe(...)` is a comparison/reporting probe. It deliberately displays no-`(2π)^2` rows to match the copied Vincent target.
 - Do not reuse Vincent comparison table rows such as “weak no-2π-denominator trace”, “Eq. 8.30 no-2π-denominator trace”, or the Vincent-scaled Gamma-Q-rho trace as physical SI conductivity.
 - Prefer explicitly named continuum fields such as `continuum_weak_trace` and `continuum_eq830_shifted_trace` when referring to the physical-continuum path.
+
+Strong DC validation follow-up:
+
+- The strong DC validation panel now reports continuum-normalised strong/weak traces by default.
+- No-`(2π)^2` strong/weak traces remain visible only as Vincent-comparison scale diagnostics.
+- The mode-decomposition probe now reports its conductivity trace after conversion to the continuum `A_BZ / (N_k (2π)^2)` normalisation.
+- The strong/weak trace gap remains scale-invariant and continues to expose the derivative-definition residual.

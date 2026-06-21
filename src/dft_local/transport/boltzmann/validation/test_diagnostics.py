@@ -922,8 +922,8 @@ def test_finite_field_strong_dc_validation_probe_checks_mode_closure() -> None:
 
     assert probe.mode_count > 0
     assert probe.nonzero_mode_count > 0
-    assert probe.strong_grid_trace > 0.0
-    assert probe.weak_chain_grid_trace > 0.0
+    assert probe.continuum_strong_trace > 0.0
+    assert probe.continuum_weak_trace > 0.0
     assert abs(probe.strong_vs_weak_rel_trace_gap) < 0.2
     assert probe.mode_reconstruction_abs_error < 1.0e-18
     assert probe.imaginary_leakage_ratio < 1.0e-12
@@ -963,6 +963,12 @@ def test_finite_field_dc_strong_dc_section_contains_real_metrics() -> None:
     }
 
     assert rows["strong DC internal pass"] is True
+    assert "strong continuum trace" in rows
+    assert "weak continuum trace" in rows
+    assert "strong no-2π-denominator trace" in rows
+    assert "weak no-2π-denominator trace" in rows
+    assert "strong-grid trace" not in rows
+    assert "weak-chain grid trace" not in rows
     assert "dummy" not in set(rows.values())
 
 

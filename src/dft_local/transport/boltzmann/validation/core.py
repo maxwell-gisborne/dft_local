@@ -141,6 +141,23 @@ class FiniteFieldStrongDcValidationProbe:
     mode_count: int
     nonzero_mode_count: int
 
+    continuum_strong_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="strong continuum trace"),
+    ]
+    continuum_weak_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="weak continuum trace"),
+    ]
+    no_2pi_denominator_strong_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="strong no-2π-denominator trace"),
+    ]
+    no_2pi_denominator_weak_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="weak no-2π-denominator trace"),
+    ]
+
     strong_grid_trace: Annotated[
         float,
         qscalar(CONDUCTIVITY, role="strong-grid trace"),
@@ -2490,7 +2507,9 @@ def finite_field_strong_dc_validation_probe() -> FiniteFieldStrongDcValidationPr
         relaxation_time_s=reference.relaxation_time_s,
     )
 
-    weak_grid_sigma = local.conductivity_tensor_S * ((2.0 * np.pi) ** 2)
+    two_pi_squared = (2.0 * np.pi) ** 2
+    continuum_weak_sigma = local.conductivity_tensor_S
+    no_2pi_denominator_weak_sigma = local.conductivity_tensor_S * two_pi_squared
 
     strong = band_indexed_strong_dc_from_velocity_grid(
         epsilon,
@@ -2502,18 +2521,26 @@ def finite_field_strong_dc_validation_probe() -> FiniteFieldStrongDcValidationPr
         electric_field_V_per_m=np.zeros(2),
     )
 
-    strong_grid_sigma = strong.conductivity_tensor_S.real
+    no_2pi_denominator_strong_sigma = strong.conductivity_tensor_S.real
+    continuum_strong_sigma = no_2pi_denominator_strong_sigma / two_pi_squared
+    strong_grid_sigma = no_2pi_denominator_strong_sigma
     strong_from_modes = np.sum(strong.conductivity_mode_tensor_S, axis=(0, 1))
     mode_reconstruction_abs_error = float(
         np.max(np.abs(strong_from_modes - strong.conductivity_tensor_S))
     )
 
-    strong_trace = float(np.trace(strong_grid_sigma))
-    weak_trace = float(np.trace(weak_grid_sigma))
+    continuum_strong_trace = float(np.trace(continuum_strong_sigma))
+    continuum_weak_trace = float(np.trace(continuum_weak_sigma))
+    no_2pi_denominator_strong_trace = float(np.trace(no_2pi_denominator_strong_sigma))
+    no_2pi_denominator_weak_trace = float(np.trace(no_2pi_denominator_weak_sigma))
     target_trace = float(np.trace(reference.expected_conductivity_S_per_m))
 
-    strong_vs_weak_rel_trace_gap = (strong_trace - weak_trace) / weak_trace
-    strong_vs_vincent_percent_error = 100.0 * (strong_trace - target_trace) / target_trace
+    strong_trace = continuum_strong_trace
+    weak_trace = continuum_weak_trace
+    strong_vs_weak_rel_trace_gap = (continuum_strong_trace - continuum_weak_trace) / continuum_weak_trace
+    strong_vs_vincent_percent_error = 100.0 * (
+        no_2pi_denominator_strong_trace - target_trace
+    ) / target_trace
 
     conductivity_norm = float(np.linalg.norm(strong.conductivity_tensor_S))
     imaginary_leakage_ratio = float(
@@ -2534,8 +2561,12 @@ def finite_field_strong_dc_validation_probe() -> FiniteFieldStrongDcValidationPr
         source="BandIndexedStrongDcResult on Vincent epsilon grid",
         mode_count=mode_count,
         nonzero_mode_count=nonzero_mode_count,
-        strong_grid_trace=float(strong_trace),
-        weak_chain_grid_trace=float(weak_trace),
+        continuum_strong_trace=float(continuum_strong_trace),
+        continuum_weak_trace=float(continuum_weak_trace),
+        no_2pi_denominator_strong_trace=float(no_2pi_denominator_strong_trace),
+        no_2pi_denominator_weak_trace=float(no_2pi_denominator_weak_trace),
+        strong_grid_trace=float(continuum_strong_trace),
+        weak_chain_grid_trace=float(continuum_weak_trace),
         vincent_target_trace=float(target_trace),
         strong_vs_weak_rel_trace_gap=float(strong_vs_weak_rel_trace_gap),
         strong_vs_vincent_percent_error=float(strong_vs_vincent_percent_error),
@@ -2680,7 +2711,7 @@ def finite_field_mode_decomposition_probe() -> FiniteFieldModeDecompositionProbe
         gamma_reconstruction_abs_error=float(gamma_abs_error),
         rho_reconstruction_abs_error=float(rho_abs_error),
         mode_tensor_reconstruction_abs_error=float(mode_tensor_abs_error),
-        conductivity_trace=float(np.trace(strong.conductivity_tensor_S.real)),
+        conductivity_trace=float(np.trace(strong.conductivity_tensor_S.real / ((2.0 * np.pi) ** 2))),
         conductivity_mode_norm_sum=float(total_mode_norm),
         top_1_mode_fraction=float(top_1_fraction),
         top_10_mode_fraction=float(top_10_fraction),
