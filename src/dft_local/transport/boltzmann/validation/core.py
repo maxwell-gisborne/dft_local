@@ -290,6 +290,79 @@ class FiniteFieldWeakDcLimitProbe:
 
 
 @dataclass(frozen=True, slots=True)
+class FiniteFieldVelocityValidationProbe:
+    """Typed scalar result for symbolic velocity-ingredient validation.
+
+    This probe checks dimensionless symbolic derivatives on a controlled toy.
+    The physical hbar/unit-context velocity conversion is covered separately
+    by the unit-scaling probe.
+    """
+
+    unit_context: UnitContext
+    source: str
+
+    k1: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="k1 sample point"),
+    ]
+    k2: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="k2 sample point"),
+    ]
+    finite_difference_eps: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="finite-difference epsilon"),
+    ]
+    analytic_dk1: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="analytic dE/dk1"),
+    ]
+    analytic_dk2: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="analytic dE/dk2"),
+    ]
+    production_dk1_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="production derivative dk1 absolute error"),
+    ]
+    production_dk2_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="production derivative dk2 absolute error"),
+    ]
+    finite_difference_dk1_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="finite-difference dk1 absolute error"),
+    ]
+    finite_difference_dk2_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="finite-difference dk2 absolute error"),
+    ]
+    hellmann_feynman_dk1_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Hellmann-Feynman dk1 absolute error"),
+    ]
+    hellmann_feynman_dk2_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Hellmann-Feynman dk2 absolute error"),
+    ]
+    generic_fixed_symbol_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="generic/fixed symbol absolute error"),
+    ]
+    generic_fixed_dk1_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="generic/fixed dk1 absolute error"),
+    ]
+    generic_fixed_dk2_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="generic/fixed dk2 absolute error"),
+    ]
+
+    unit_scaling_status: str
+    vincent_velocity_status: str
+
+
+@dataclass(frozen=True, slots=True)
 class OperatorValidationSummary:
     """Compact status summary for the operator-validation domain."""
 
@@ -1003,7 +1076,7 @@ def finite_difference_fixed_symbol_derivative(
     return (plus - minus) / (2.0 * eps)
 
 
-def finite_field_velocity_validation_probe() -> dict[str, float | str]:
+def finite_field_velocity_validation_probe() -> FiniteFieldVelocityValidationProbe:
     """Validate velocity ingredients on a controlled analytic production toy."""
 
     c0 = 1.25
@@ -1038,25 +1111,26 @@ def finite_field_velocity_validation_probe() -> dict[str, float | str]:
 
     generic_symbol_probe = gd_symbol_production_validation_probe()
 
-    return {
-        "source": "separable cosine production symbol toy",
-        "k1": float(k1),
-        "k2": float(k2),
-        "finite_difference_eps": float(eps),
-        "analytic_dk1": float(expected_dk1),
-        "analytic_dk2": float(expected_dk2),
-        "production_dk1_abs_error": float(abs(fixed_dk1[0, 0].real - expected_dk1)),
-        "production_dk2_abs_error": float(abs(fixed_dk2[0, 0].real - expected_dk2)),
-        "finite_difference_dk1_abs_error": float(abs(fd_dk1[0, 0].real - expected_dk1)),
-        "finite_difference_dk2_abs_error": float(abs(fd_dk2[0, 0].real - expected_dk2)),
-        "hellmann_feynman_dk1_abs_error": float(abs(hf_dk1 - expected_dk1)),
-        "hellmann_feynman_dk2_abs_error": float(abs(hf_dk2 - expected_dk2)),
-        "generic_fixed_symbol_abs_error": float(generic_symbol_probe["generic_symbol_channel_abs_error"]),
-        "generic_fixed_dk1_abs_error": float(generic_symbol_probe["generic_dk1_channel_abs_error"]),
-        "generic_fixed_dk2_abs_error": float(generic_symbol_probe["generic_dk2_channel_abs_error"]),
-        "unit_scaling_status": "pending physical hbar/unit-context check",
-        "vincent_velocity_status": "pending Vincent field comparison",
-    }
+    return FiniteFieldVelocityValidationProbe(
+        unit_context=SI_UNITS,
+        source="separable cosine production symbol toy",
+        k1=float(k1),
+        k2=float(k2),
+        finite_difference_eps=float(eps),
+        analytic_dk1=float(expected_dk1),
+        analytic_dk2=float(expected_dk2),
+        production_dk1_abs_error=float(abs(fixed_dk1[0, 0].real - expected_dk1)),
+        production_dk2_abs_error=float(abs(fixed_dk2[0, 0].real - expected_dk2)),
+        finite_difference_dk1_abs_error=float(abs(fd_dk1[0, 0].real - expected_dk1)),
+        finite_difference_dk2_abs_error=float(abs(fd_dk2[0, 0].real - expected_dk2)),
+        hellmann_feynman_dk1_abs_error=float(abs(hf_dk1 - expected_dk1)),
+        hellmann_feynman_dk2_abs_error=float(abs(hf_dk2 - expected_dk2)),
+        generic_fixed_symbol_abs_error=float(generic_symbol_probe["generic_symbol_channel_abs_error"]),
+        generic_fixed_dk1_abs_error=float(generic_symbol_probe["generic_dk1_channel_abs_error"]),
+        generic_fixed_dk2_abs_error=float(generic_symbol_probe["generic_dk2_channel_abs_error"]),
+        unit_scaling_status="pending physical hbar/unit-context check",
+        vincent_velocity_status="pending Vincent field comparison",
+    )
 
 
 def finite_field_unit_scaling_probe() -> dict[str, float | bool | str]:
@@ -1123,8 +1197,8 @@ def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool |
         float(symbol_probe["generic_dk2_channel_abs_error"]),
         float(symbol_probe["energy_surface_dk1_max_abs_error"]),
         float(symbol_probe["energy_surface_dk2_max_abs_error"]),
-        float(velocity["finite_difference_dk1_abs_error"]),
-        float(velocity["finite_difference_dk2_abs_error"]),
+        float(velocity.finite_difference_dk1_abs_error),
+        float(velocity.finite_difference_dk2_abs_error),
     )
 
     return {
@@ -1137,8 +1211,8 @@ def finite_field_analytic_toy_coverage_probe() -> dict[str, float | int | bool |
         "periodic_dirac_min_gap": float(band_hazards["min_gap"]),
         "periodic_dirac_hazard_count": int(band_hazards["hazard_count"]),
         "velocity_hf_max_error": float(max(
-            velocity["hellmann_feynman_dk1_abs_error"],
-            velocity["hellmann_feynman_dk2_abs_error"],
+            velocity.hellmann_feynman_dk1_abs_error,
+            velocity.hellmann_feynman_dk2_abs_error,
         )),
         "unit_velocity_factor_error": float(units["velocity_factor_abs_error"]),
         "all_current_toys_pass": bool(

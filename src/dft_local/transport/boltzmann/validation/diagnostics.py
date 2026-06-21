@@ -38,6 +38,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_input_health_probe,
     finite_field_band_crossing_hazard_probe,
     finite_field_velocity_validation_probe,
+    FiniteFieldVelocityValidationProbe,
     finite_field_unit_scaling_probe,
     finite_field_analytic_toy_coverage_probe,
     finite_field_k_convergence_probe,
@@ -310,24 +311,27 @@ def _finite_field_band_hazard_rows(probe: dict[str, object]) -> tuple[TableRow, 
     )
 
 
-def _finite_field_velocity_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "controlled first implementation")),
-        TableRow(("k1", _fmt_probe_value(probe["k1"]), "sample point")),
-        TableRow(("k2", _fmt_probe_value(probe["k2"]), "sample point")),
-        TableRow(("analytic dE/dk1", _fmt_probe_value(probe["analytic_dk1"]), "reference")),
-        TableRow(("analytic dE/dk2", _fmt_probe_value(probe["analytic_dk2"]), "reference")),
-        TableRow(("production derivative dk1 error", _fmt_probe_value(probe["production_dk1_abs_error"]), "near 0")),
-        TableRow(("production derivative dk2 error", _fmt_probe_value(probe["production_dk2_abs_error"]), "near 0")),
-        TableRow(("finite-difference dk1 error", _fmt_probe_value(probe["finite_difference_dk1_abs_error"]), "near finite-difference precision")),
-        TableRow(("finite-difference dk2 error", _fmt_probe_value(probe["finite_difference_dk2_abs_error"]), "near finite-difference precision")),
-        TableRow(("Hellmann-Feynman dk1 error", _fmt_probe_value(probe["hellmann_feynman_dk1_abs_error"]), "near 0")),
-        TableRow(("Hellmann-Feynman dk2 error", _fmt_probe_value(probe["hellmann_feynman_dk2_abs_error"]), "near 0")),
-        TableRow(("generic/fixed symbol error", _fmt_probe_value(probe["generic_fixed_symbol_abs_error"]), "near 0")),
-        TableRow(("generic/fixed dk1 error", _fmt_probe_value(probe["generic_fixed_dk1_abs_error"]), "near 0")),
-        TableRow(("generic/fixed dk2 error", _fmt_probe_value(probe["generic_fixed_dk2_abs_error"]), "near 0")),
-        TableRow(("unit scaling status", _fmt_probe_value(probe["unit_scaling_status"]), "pending")),
-        TableRow(("Vincent velocity status", _fmt_probe_value(probe["vincent_velocity_status"]), "pending")),
+        TableRow(("source", probe.source, "controlled first implementation")),
+        TableRow(("k1", q("k1"), "sample point")),
+        TableRow(("k2", q("k2"), "sample point")),
+        TableRow(("finite-difference epsilon", q("finite_difference_eps"), "step")),
+        TableRow(("analytic dE/dk1", q("analytic_dk1"), "reference")),
+        TableRow(("analytic dE/dk2", q("analytic_dk2"), "reference")),
+        TableRow(("production derivative dk1 error", q("production_dk1_abs_error"), "near 0")),
+        TableRow(("production derivative dk2 error", q("production_dk2_abs_error"), "near 0")),
+        TableRow(("finite-difference dk1 error", q("finite_difference_dk1_abs_error"), "near finite-difference precision")),
+        TableRow(("finite-difference dk2 error", q("finite_difference_dk2_abs_error"), "near finite-difference precision")),
+        TableRow(("Hellmann-Feynman dk1 error", q("hellmann_feynman_dk1_abs_error"), "near 0")),
+        TableRow(("Hellmann-Feynman dk2 error", q("hellmann_feynman_dk2_abs_error"), "near 0")),
+        TableRow(("generic/fixed symbol error", q("generic_fixed_symbol_abs_error"), "near 0")),
+        TableRow(("generic/fixed dk1 error", q("generic_fixed_dk1_abs_error"), "near 0")),
+        TableRow(("generic/fixed dk2 error", q("generic_fixed_dk2_abs_error"), "near 0")),
+        TableRow(("unit scaling status", probe.unit_scaling_status, "pending")),
+        TableRow(("Vincent velocity status", probe.vincent_velocity_status, "pending")),
     )
 
 

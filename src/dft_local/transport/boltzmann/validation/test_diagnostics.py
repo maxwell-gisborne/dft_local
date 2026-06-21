@@ -551,15 +551,15 @@ def test_finite_field_velocity_validation_probe_checks_derivatives() -> None:
 
     probe = finite_field_velocity_validation_probe()
 
-    assert probe["production_dk1_abs_error"] < 1.0e-12
-    assert probe["production_dk2_abs_error"] < 1.0e-12
-    assert probe["finite_difference_dk1_abs_error"] < 1.0e-9
-    assert probe["finite_difference_dk2_abs_error"] < 1.0e-9
-    assert probe["hellmann_feynman_dk1_abs_error"] < 1.0e-12
-    assert probe["hellmann_feynman_dk2_abs_error"] < 1.0e-12
-    assert probe["generic_fixed_symbol_abs_error"] < 1.0e-12
-    assert probe["generic_fixed_dk1_abs_error"] < 1.0e-12
-    assert probe["generic_fixed_dk2_abs_error"] < 1.0e-12
+    assert probe.production_dk1_abs_error < 1.0e-12
+    assert probe.production_dk2_abs_error < 1.0e-12
+    assert probe.finite_difference_dk1_abs_error < 1.0e-9
+    assert probe.finite_difference_dk2_abs_error < 1.0e-9
+    assert probe.hellmann_feynman_dk1_abs_error < 1.0e-12
+    assert probe.hellmann_feynman_dk2_abs_error < 1.0e-12
+    assert probe.generic_fixed_symbol_abs_error < 1.0e-12
+    assert probe.generic_fixed_dk1_abs_error < 1.0e-12
+    assert probe.generic_fixed_dk2_abs_error < 1.0e-12
 
 
 def test_finite_field_dc_velocity_section_contains_real_metrics() -> None:
