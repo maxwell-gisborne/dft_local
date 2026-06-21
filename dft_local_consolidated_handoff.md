@@ -1851,3 +1851,21 @@ Still postponed:
 - Add a broader whole-validation-domain guard once those probes are typed.
 - Revisit the downloadable table task.
 
+## Vincent/Ashcroft normalisation audit
+
+Current Vincent/Ashcroft normalisation audit status:
+
+- The finite-field DC Vincent comparison now includes an explicit normalisation audit table.
+- The reciprocal-space convention is checked in the report: `a_i dot b_j = 2π δ_ij`.
+- The reciprocal area relation is checked in the report: `det(B) = (2π)^2 / det(A)`.
+- The raw weak-chain and Eq. 8.30 shifted conductivity functions use the continuum Brillouin-zone measure `A_BZ / (N_k (2π)^2)`.
+- The copied Vincent target is reproduced only by the `A_BZ / N_k` normalisation, not by the continuum `A_BZ / (N_k (2π)^2)` measure.
+- This is now treated as a normalisation audit item, not as evidence that physical conductivity is defined up to convention.
+- Going forward, thesis/transport sections should use the continuum-limit/raw conductivity tensors, not the Vincent-scaled comparison rows.
+
+Important guardrail:
+
+- `conductivity_from_epsilon_grid(...)`, `conductivity_from_velocity_grid(...)`, and `conductivity_830_shifted_chain_rule_from_velocity_grid(...)` return the raw continuum-normalised tensors.
+- `finite_field_vincent_reconstruction_probe(...)` is a comparison/reporting probe. It deliberately displays no-`(2π)^2` rows to match the copied Vincent target.
+- Do not reuse Vincent comparison table rows such as “weak no-2π-denominator trace”, “Eq. 8.30 no-2π-denominator trace”, or the Vincent-scaled Gamma-Q-rho trace as physical SI conductivity.
+- Prefer explicitly named continuum fields such as `continuum_weak_trace` and `continuum_eq830_shifted_trace` when referring to the physical-continuum path.

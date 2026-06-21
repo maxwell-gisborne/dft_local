@@ -28,7 +28,9 @@ from dft_local.diagnostics.models import (
     MarkdownBlock,
     Table,
     TableRow,
+    TypstMathBlock,
 )
+from dft_local.diagnostics.user_strings import TypstMath
 from dft_local.transport.boltzmann.validation.core import (
     is_positive_semidefinite,
     tensor_invariant_report,
@@ -335,6 +337,12 @@ def _finite_field_dataset_band_hazard_rows(probe: FiniteFieldDatasetBandCrossing
         TableRow(("selected band", probe.selected_band, "band whose neighbouring crossings are relevant")),
         TableRow(("gap threshold", q("gap_threshold"), "hazard if selected-band adjacent gap is below this")),
         TableRow(("minimum adjacent gap", q("min_gap"), "larger is safer for energy-ordered labels")),
+        TableRow(("selected gap q05", q("selected_gap_q05"), "5th percentile selected adjacent gap")),
+        TableRow(("selected gap median", q("selected_gap_median"), "typical selected adjacent gap")),
+        TableRow(("selected gap q95", q("selected_gap_q95"), "95th percentile selected adjacent gap")),
+        TableRow(("selected gap max", q("selected_gap_max"), "largest selected adjacent gap")),
+        TableRow(("min gap / threshold", q("min_gap_over_threshold"), "below 1 is hazardous")),
+        TableRow(("median gap / threshold", q("median_gap_over_threshold"), "below 1 means typical selected gap is hazardous")),
         TableRow(("minimum-gap k1", q("min_gap_k1"), "location")),
         TableRow(("minimum-gap k2", q("min_gap_k2"), "location")),
         TableRow(("minimum-gap lower band", probe.min_gap_lower_band, "lower sorted label")),
@@ -372,7 +380,7 @@ def _finite_field_dataset_band_hazard_point_rows(
     return tuple(rows)
 
 
-def _finite_field_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tuple[TableRow, ...]:
+def _finite_field_analytic_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tuple[TableRow, ...]:
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
@@ -381,18 +389,50 @@ def _finite_field_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tu
         TableRow(("k2", q("k2"), "sample point")),
         TableRow(("finite-difference epsilon", q("finite_difference_eps"), "step")),
         TableRow(("analytic dE/dk1", q("analytic_dk1"), "reference")),
+        TableRow(("finite-difference dE/dk1", q("finite_difference_dk1"), "central finite difference")),
+        TableRow(("finite-difference dk1 error", q("finite_difference_dk1_abs_error"), "near finite-difference precision")),
         TableRow(("analytic dE/dk2", q("analytic_dk2"), "reference")),
+        TableRow(("finite-difference dE/dk2", q("finite_difference_dk2"), "central finite difference")),
+        TableRow(("finite-difference dk2 error", q("finite_difference_dk2_abs_error"), "near finite-difference precision")),
         TableRow(("production derivative dk1 error", q("production_dk1_abs_error"), "near 0")),
         TableRow(("production derivative dk2 error", q("production_dk2_abs_error"), "near 0")),
-        TableRow(("finite-difference dk1 error", q("finite_difference_dk1_abs_error"), "near finite-difference precision")),
-        TableRow(("finite-difference dk2 error", q("finite_difference_dk2_abs_error"), "near finite-difference precision")),
         TableRow(("Hellmann-Feynman dk1 error", q("hellmann_feynman_dk1_abs_error"), "near 0")),
         TableRow(("Hellmann-Feynman dk2 error", q("hellmann_feynman_dk2_abs_error"), "near 0")),
         TableRow(("generic/fixed symbol error", q("generic_fixed_symbol_abs_error"), "near 0")),
         TableRow(("generic/fixed dk1 error", q("generic_fixed_dk1_abs_error"), "near 0")),
         TableRow(("generic/fixed dk2 error", q("generic_fixed_dk2_abs_error"), "near 0")),
-        TableRow(("unit scaling status", probe.unit_scaling_status, "pending")),
-        TableRow(("Vincent velocity status", probe.vincent_velocity_status, "pending")),
+        TableRow(("unit scaling status", probe.unit_scaling_status, "separate section")),
+    )
+
+
+def _finite_field_vincent_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
+    return (
+        TableRow(("quoted point count", probe.vincent_sample_count, "Vincent quoted samples")),
+        TableRow(("find-simplex max velocity error", q("vincent_find_simplex_max_velocity_error"), "bad vertex-simplex choice")),
+        TableRow(("best-adjacent max velocity error", q("vincent_best_adjacent_max_velocity_error"), "roundoff")),
+        TableRow(("velocity error reduction", q("vincent_velocity_error_reduction"), "large")),
+        TableRow(("status", probe.vincent_velocity_status, "quoted samples")),
+    )
+
+
+def _finite_field_dataset_gamma_velocity_rows(probe: FiniteFieldVelocityValidationProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+    rel_change = float(probe.dataset_velocity_mean_square_rel_change)
+    rel_change_percent = "pending" if rel_change != rel_change else f"{100.0 * rel_change:.6g}%"
+
+    return (
+        TableRow(("grid", f"{probe.dataset_gamma_n_u} × {probe.dataset_gamma_n_v}", "selected validation grid")),
+        TableRow(("band index", probe.dataset_gamma_band_index, "energy-ordered selected band")),
+        TableRow(("same-grid Gamma abs error", q("dataset_gamma_same_grid_abs_error"), "near FFT roundoff when dataset is available")),
+        TableRow(("same-grid Gamma rel L2 error", q("dataset_gamma_same_grid_rel_l2_error"), "near FFT roundoff when dataset is available")),
+        TableRow(("coarse grid", f"{probe.dataset_gamma_coarse_n_u} × {probe.dataset_gamma_coarse_n_v}", "coarse comparison grid")),
+        TableRow(("velocity mean-square rel change", rel_change_percent, "coarse-to-selected k-grid stability proxy")),
+        TableRow(("hazard threshold", q("dataset_gamma_gap_threshold"), "same selected-band threshold as hazard section")),
+        TableRow(("selected-band hazard count", probe.dataset_gamma_hazard_count, "same count as band-crossing hazard section")),
+        TableRow(("selected-band hazard fraction", q("dataset_gamma_hazard_fraction"), "same fraction as band-crossing hazard section")),
+        TableRow(("status", probe.dataset_gamma_status, "dataset-backed closure")),
     )
 
 
@@ -471,23 +511,88 @@ def _finite_field_symmetry_rows(probe: FiniteFieldSymmetrySanityProbe) -> tuple[
     )
 
 
+def _finite_field_vincent_normalisation_rows(probe: FiniteFieldVincentReconstructionProbe) -> tuple[TableRow, ...]:
+    two_pi_squared = (2.0 * 3.141592653589793) ** 2
+
+    weak_no_denominator_trace = getattr(
+        probe,
+        "weak_trace",
+        probe.continuum_weak_trace * two_pi_squared,
+    )
+    weak_target_trace = probe.continuum_weak_trace / (
+        1.0 + probe.continuum_weak_trace_percent_error / 100.0
+    )
+    weak_no_denominator_percent_error = getattr(
+        probe,
+        "weak_trace_percent_error",
+        100.0 * (weak_no_denominator_trace - weak_target_trace) / weak_target_trace,
+    )
+
+    eq830_no_denominator_trace = getattr(
+        probe,
+        "eq830_shifted_trace",
+        probe.continuum_eq830_shifted_trace * two_pi_squared,
+    )
+    eq830_target_trace = probe.continuum_eq830_shifted_trace / (
+        1.0 + probe.continuum_eq830_shifted_trace_percent_error / 100.0
+    )
+    eq830_no_denominator_percent_error = getattr(
+        probe,
+        "eq830_shifted_trace_percent_error",
+        100.0 * (eq830_no_denominator_trace - eq830_target_trace) / eq830_target_trace,
+    )
+
+    return (
+        TableRow((
+            "reciprocal convention",
+            "a_i dot b_j = 2π δ_ij",
+            f"diag error {probe.reciprocal_dot_diag_max_abs_error:.3e}; offdiag {probe.reciprocal_dot_offdiag_max_abs:.3e}",
+        )),
+        TableRow((
+            "reciprocal area relation",
+            "det(B) = (2π)^2 / det(A)",
+            f"ratio {probe.reciprocal_det_ratio:.15g}; error {probe.reciprocal_det_ratio_abs_error:.3e}",
+        )),
+        TableRow((
+            "weak raw continuum trace",
+            probe.continuum_weak_trace,
+            f"{probe.continuum_weak_trace_percent_error:.12g}% vs Vincent",
+        )),
+        TableRow((
+            "weak no-2π-denominator trace",
+            weak_no_denominator_trace,
+            f"{weak_no_denominator_percent_error:.12g}% vs Vincent",
+        )),
+        TableRow((
+            "Eq. 8.30 raw continuum trace",
+            probe.continuum_eq830_shifted_trace,
+            f"{probe.continuum_eq830_shifted_trace_percent_error:.12g}% vs Vincent",
+        )),
+        TableRow((
+            "Eq. 8.30 no-2π-denominator trace",
+            eq830_no_denominator_trace,
+            f"{eq830_no_denominator_percent_error:.12g}% vs Vincent",
+        )),
+        TableRow((
+            "normalisation conclusion",
+            "Vincent target is reproduced only by A_BZ/Nk, not by the continuum A_BZ/(Nk (2π)^2) measure",
+            "physical SI normalisation remains an explicit audit item",
+        )),
+    )
+
+
 def _finite_field_vincent_rows(probe: FiniteFieldVincentReconstructionProbe) -> tuple[TableRow, ...]:
     q = lambda field: diagnostic_scalar_quantity(probe, field)
 
     return (
-        TableRow(("source", probe.source, "reused comparison domain")),
-        TableRow(("Vincent target trace", q("target_trace"), "S/m")),
-        TableRow(("weak-chain trace", q("weak_chain_trace"), "S/m")),
-        TableRow(("weak-chain trace error %", q("weak_chain_trace_percent_error"), "residual")),
-        TableRow(("strong-grid trace", q("strong_grid_trace"), "S/m")),
-        TableRow(("strong-grid trace error %", q("strong_grid_trace_percent_error"), "separate spectral derivative residual")),
-        TableRow(("shifted Eq. 8.30 trace", q("shifted_830_trace"), "S/m")),
-        TableRow(("shifted Eq. 8.30 trace error %", q("shifted_830_trace_percent_error"), "hypothesis check")),
-        TableRow(("find-simplex max velocity error", q("find_simplex_max_velocity_error"), "m/s")),
-        TableRow(("best-adjacent max velocity error", q("best_adjacent_max_velocity_error"), "m/s")),
-        TableRow(("velocity error reduction", q("velocity_error_reduction"), "large")),
-        TableRow(("best adjacent matches Vincent", probe.best_adjacent_matches_vincent, "True")),
-        TableRow(("residual status", probe.residual_status, "audit note")),
+        TableRow(("comparison source", probe.source, "external audit anchor")),
+        TableRow(("Vincent target", q("target_trace"), "reference")),
+        TableRow(("Eq. 8.30 finite-difference trace", q("shifted_830_trace"), q("shifted_830_trace_percent_error"))),
+        TableRow(("weak chain-rule limit", q("weak_chain_trace"), q("weak_chain_trace_percent_error"))),
+        TableRow(("Eq. 8.30 Gamma-Q-rho trace", q("eq830_modal_trace"), q("eq830_modal_trace_percent_error"))),
+        TableRow(("Eq. 8.30 modal closure residual", q("eq830_modal_direct_trace_percent_error"), "modal trace minus direct trace; near 0")),
+        TableRow(("strong spectral zero-field trace", q("strong_grid_trace"), q("strong_grid_trace_percent_error"))),
+        TableRow(("conductivity residual", probe.residual_status, "open")),
     )
 
 
@@ -707,12 +812,12 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
     dashboard_rows = (
         TableRow(("input health", "complete", "selected H/S symbols define stable generalized eigenproblems")),
         TableRow(("band-crossing hazards", "partial", "dataset-backed adjacent-gap hazards are mapped; velocity overlays and label-overlap maps remain pending")),
-        TableRow(("velocity validation", "partial", "analytic and finite-difference checks are live; Gamma/Vincent checks remain explicit pending rows")),
+        TableRow(("velocity validation", "partial", "analytic finite-difference, Vincent quoted-velocity, and dataset Gamma closure checks are live; velocity maps remain pending")),
         TableRow(("Vincent reconstruction", "open-audit", "velocity samples are resolved; 2π normalization and residual few-percent conductivity gap remain visible audit items")),
         TableRow(("strong DC contact", "partial", "strong band-labelled result is checked on Vincent-grid inputs; shared-regime comparison still being tightened")),
         TableRow(("weak DC limit", "toy-only", "finite-field result approaches weak-field result as E -> 0 in matched spectral-basis toy")),
         TableRow(("mode closure", "partial", "Gamma, F, and tilde(rho) reconstruct the strong-grid conductivity object; dataset-backed closure remains pending")),
-        TableRow(("analytic toys", "partial", "periodic known-input tests are live; finite-field Gamma/F/rho toy remains pending")),
+        TableRow(("analytic toys", "partial", "periodic known-input tests are live; finite-field Gamma/Q/rho toy remains pending")),
         TableRow(("unit consistency", "partial", "core unit factors are checked; full end-to-end SI conductivity agreement remains pending")),
         TableRow(("k convergence", "toy-only", "periodic quadrature convergence is checked; dataset-backed conductivity convergence remains pending")),
         TableRow(("symmetry sanity", "toy-only", "toy tensor symmetries are checked; dataset-backed direction sweep remains pending")),
@@ -758,7 +863,16 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
         n_u=int(inputs.get("n_u", 11)),
         n_v=int(inputs.get("n_v", 11)),
     )
-    velocity_probe = finite_field_velocity_validation_probe()
+    velocity_probe = finite_field_velocity_validation_probe(
+        KH_input,
+        KS_input,
+        n_u=int(inputs.get("n_u", 11)),
+        n_v=int(inputs.get("n_v", 11)),
+        band_index=int(inputs.get("band_index", 0)),
+        symmetrization=symmetrization,
+        gap_threshold=float(inputs.get("gap_threshold", 0.05)),
+        dataset_hazard_probe=dataset_band_hazard_probe,
+    )
     unit_scaling_probe = finite_field_unit_scaling_probe()
     analytic_toy_probe = finite_field_analytic_toy_coverage_probe()
     k_convergence_probe = finite_field_k_convergence_probe()
@@ -842,11 +956,11 @@ The `2π` normalization is listed explicitly because it changes the physical con
                     MarkdownBlock(
                         id="finite_field_dc_validation_input_health_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** For the selected symmetrization scheme, the Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.
+                        markdown="""*Claim.* For the selected symmetrization scheme, the Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.
 
 This section uses the selected dataset-backed `GdKernelArrays` kernel family when diagnostic context is available, then applies the selected symmetrization scheme. `raw` reports the extracted kernels as-is, `star` applies kernel-level star symmetrization, and `direct` applies Hermitian projection after forming each local symbol. The overlap symbol is checked as Hermitian positive definite, not unitary.
 
-The input-health table reports Hermiticity at two different stages. **H kernel star defect max** checks the local kernel before forming any k-space symbol, by comparing each inverse-paired block K_H(g^{-1}) with the adjoint of K_H(g). A nonzero value means the extracted local kernel is not itself star/Hermitian compatible. **H(k) Hermiticity defect rel max** checks the dense symbol after evaluating the kernel over the sampled k-grid. In `star` mode both should fall to roundoff; in `direct` mode only the formed symbol is repaired, so the kernel defect may remain.
+The input-health table reports Hermiticity at two different stages. *H kernel star defect max* checks the local kernel before forming any k-space symbol, by comparing each inverse-paired block $K_H (g^(-1))$ with the adjoint of $K_H (g)$. A nonzero value means the extracted local kernel is not itself star/Hermitian compatible. *$H(k)$ Hermiticity defect rel max* checks the dense symbol after evaluating the kernel over the sampled k-grid. In `star` mode both should fall to roundoff; in `direct` mode only the formed symbol is repaired, so the kernel defect may remain.
 """,
                     ),
                     Table(
@@ -878,9 +992,17 @@ The input-health table reports Hermiticity at two different stages. **H kernel s
                     MarkdownBlock(
                         id="finite_field_dc_validation_band_crossing_hazards_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The diagnostic can identify k-space regions where near crossings make energy-ordered band labels fragile.
+                        markdown="""*Claim.* The diagnostic can identify k-space regions where near crossings make energy-ordered band labels fragile.
 
 This section identifies k-points where the selected energy-ordered band label becomes fragile. At each sampled k-point, the selected dataset-backed H/S symbol is solved and only adjacent gaps touching the selected band are inspected. For band `n`, this means the gaps to `n-1` and `n+1` when those neighbours exist. A k-point is marked hazardous when one of those selected-band adjacent gaps falls below the configured threshold. Crossings between unrelated bands are not reported here because they do not directly threaten the selected band-labelled conductivity quantity. The controlled two-level toy is retained only as a sanity check for the hazard logic; the production result is the dataset-backed hazard-point table.
+
+The selected-gap quantiles make full-grid hazard counts interpretable. If the median selected gap is below the threshold, a full-grid hazard count can simply mean that the threshold is too large for this band scale, or that the selected band is globally close to an adjacent band. If the selected-gap quantiles are comfortably above the threshold but the hazard count remains high, that would point toward a detector logic or unit bug.
+
+Interpretation rule: if `median gap / threshold` is below one, the chosen threshold or selected band makes the whole grid fragile. If `median gap / threshold` is comfortably above one but `min gap / threshold` is below one, the detector is finding isolated near-crossings. If the quantiles are above threshold but the hazard count is still large, that would indicate a detector logic or units bug.
+
+For the current anchored dataset run with `band_index = 0` and `gap_threshold = 0.01`, the detector reports isolated hazards rather than global band fragility. The minimum selected adjacent gap is below threshold, so hazards are correctly flagged, but the median selected gap is hundreds of times larger than the threshold and only two points out of 10000 are hazardous. The two reported k-points are symmetry-related and have matching gaps, which is consistent with a genuine pair of local near-crossings rather than a detector-wide threshold or units failure.
+
+Therefore this section should be read as a crossing-localisation diagnostic. The selected-band finite-difference velocity is generally safe away from the flagged points, but velocity anomalies near those k-points should be interpreted with care or handled by a crossing-aware band-continuity or degenerate-subspace method.
 """,
                     ),
                     Table(
@@ -935,28 +1057,95 @@ This section identifies k-points where the selected energy-ordered band label be
                     MarkdownBlock(
                         id="finite_field_dc_validation_velocity_validation_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** On a controlled periodic production-symbol toy, the velocity ingredients agree across analytic derivatives, finite differences, generalized Hellmann-Feynman derivatives, and fixed/generic symbol conventions.
+                        markdown="""*Claim.* The velocity layer is validated through three independent checks: analytic finite differences on a periodic toy, Vincent's quoted velocity samples, and Gamma reconstruction of a selected-band dataset-backed finite-difference velocity field.
 
-This first implementation uses the separable cosine production-symbol toy. It validates the derivative machinery that finite-field conductivity will reuse. Physical `hbar`/unit-context scaling is handled in the unit-scaling section. Modal Gamma reconstruction and Vincent velocity comparison remain explicit pending rows rather than hidden assumptions.
+The analytic toy checks that central finite differences reproduce a known periodic cosine velocity. The Vincent check reproduces quoted velocity samples through the best-adjacent Delaunay interpretation at the quoted k-points. The dataset-backed Gamma check reconstructs the selected-band finite-difference velocity sampled on the real H/S symbol grid. Physical `hbar`/unit-context scaling is handled in the unit-scaling section.
+""",
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_analytic_velocity_prose",
+                        title="Analytic finite-difference velocity",
+                        markdown="""This table isolates the lowest-level velocity derivative machinery before using real dataset bands or external reference data.
+
+The input is a controlled separable cosine production-symbol toy. Because the band energy is periodic and analytic, the exact derivatives `dE/dk1` and `dE/dk2` are known at the sampled point. The central finite-difference rows check that the finite-difference velocity calculation reproduces those analytic derivatives to finite-difference precision.
+
+The production derivative rows check the direct symbol-derivative path, where the k-dependence enters through the representation factors in the group symbol. The Hellmann-Feynman rows check that the derivative of the local eigenvalue agrees with the generalized eigenproblem expression using `D_i H - E D_i S`. The generic/fixed rows check that the fixed-representation and generic-symbol code paths agree to roundoff.
+
+Therefore this table proves that the local derivative engine used by the velocity calculation has the correct sign, axis, coefficient, eigenproblem plumbing, and representation-path consistency on a known periodic input. It does not by itself validate real dataset band continuity, physical m/s scaling, Vincent conductivity agreement, or Gamma reconstruction; those are checked in the neighbouring validation sections.
 """,
                     ),
                     Table(
-                        id="finite_field_dc_validation_velocity_validation_table",
-                        title="Velocity validation metrics",
-                        description="First real velocity table for the finite-field validation diagnostic.",
+                        id="finite_field_dc_validation_analytic_velocity_table",
+                        title="Analytic finite-difference velocity",
+                        description="Known periodic cosine input checked against central finite differences and production derivative machinery.",
                         headers=("metric", "value", "target"),
-                        rows=_finite_field_velocity_rows(velocity_probe),
+                        rows=_finite_field_analytic_velocity_rows(velocity_probe),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_vincent_simplex_ambiguity_prose",
+                        title="Delaunay simplex ambiguity",
+                        markdown="""Vincent's quoted velocity samples are reconstructed from a sampled energy surface by taking local gradients on a Delaunay triangulation.
+
+At some quoted k-points the sample lies on, or numerically very close to, a grid vertex or simplex boundary. In that situation there is not a unique neighbouring simplex whose affine energy plane should be used. The default Delaunay `find_simplex` choice is deterministic, but it can select a neighbouring triangle whose local gradient is not the one used by Vincent's quoted value.
+
+The correction procedure is therefore to inspect the adjacent candidate simplices around the quoted point, compute the velocity from each local affine gradient, and compare those candidates with the quoted Vincent velocity. The `find-simplex` row reports the error from the default simplex choice. The `best-adjacent` row reports the best error among the neighbouring simplex candidates. A collapse from a large `find-simplex` error to a roundoff-sized `best-adjacent` error means the quoted Vincent velocity is present in the reconstructed velocity field, and the discrepancy was a boundary/simplex convention rather than a units, sign, axis, or derivative-magnitude error.
+
+This check validates Vincent's quoted velocity samples only. It does not by itself prove full conductivity agreement, because conductivity also depends on the reciprocal-space measure, weights, chemical potential, relaxation time, and tensor summation convention.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_vincent_velocity_table",
+                        title="Vincent quoted velocity reconstruction",
+                        description="Quoted velocity samples reproduced by resolving the adjacent-simplex ambiguity at grid vertices.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_vincent_velocity_rows(velocity_probe),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_dataset_gamma_velocity_prose",
+                        title="Dataset Gamma closure and k-grid stability",
+                        markdown="""This table checks the modal closure of a dataset-backed finite-difference velocity field.
+
+The selected energy-ordered band is first sampled on the dataset-backed H/S symbol grid. A periodic central finite difference then gives a sampled velocity field `v_fd(k)`. Gamma coefficients are computed from that sampled field by the discrete Fourier transform,
+
+`Gamma_q = (1 / N_k) sum_k exp(-i q dot k) v_fd(k)`
+
+and the field is reconstructed on the same grid by the inverse sum,
+
+`v_reconstructed(k) = sum_q exp(i q dot k) Gamma_q`
+
+The same-grid absolute and relative L2 errors measure `v_reconstructed - v_fd`. Values at machine precision mean that the Gamma coefficients faithfully encode the sampled finite-difference velocity field on that grid. This is an algebraic closure check of the mode representation, not yet a proof that the selected band is physically continuous.
+
+The coarse-to-selected k-grid stability row compares a scalar mean-square velocity statistic between the coarse grid and the selected validation grid. It is displayed as a percentage. A small percentage means the bulk velocity-magnitude statistic is not changing much under this one refinement step, but it is only a proxy; a full convergence check would scan several grid sizes and inspect componentwise or spatially resolved residuals.
+
+The selected-band hazard rows are copied from the band-crossing hazard probe used earlier in the report. They are not independently recomputed here. This keeps the Gamma velocity table consistent with the detailed selected-gap quantiles and hazardous-point table. A nonzero hazard count means that the sampled velocity field should be interpreted carefully near those k-points; it does not invalidate the same-grid Gamma closure itself.
+""",
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_dataset_gamma_velocity_table",
+                        title="Dataset Gamma reconstruction of finite-difference velocity",
+                        description="Selected-band dataset-backed finite-difference velocity reconstructed from Gamma coefficients.",
+                        headers=("metric", "value", "target"),
+                        rows=_finite_field_dataset_gamma_velocity_rows(velocity_probe),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_remaining_velocity_prose",
+                        title="Remaining velocity work",
+                        markdown="""The remaining velocity work is now mostly visual and continuity-oriented.
+
+The scalar derivative checks, Vincent quoted-point maximum-error check, dataset Gamma closure, coarse-to-selected k-grid stability proxy, and selected-band hazard reuse are live. What remains is to display the velocity field over k-space, display the Gamma reconstruction residual field, expose Vincent's quoted samples component-by-component, and add a crossing-aware continuity visualisation near the flagged selected-band hazards.
+""",
                     ),
                     Table(
                         id="finite_field_dc_validation_velocity_validation_placeholders",
                         title="Remaining production velocity checks",
-                        description="Dataset-backed and Vincent-backed checks still needed before this section fully validates production band velocities.",
+                        description="Visualisations and crossing-aware continuity checks still needed before this section fully validates production band velocities.",
                         headers=("check", "status"),
                         rows=(
-                            TableRow(("Gamma modal reconstruction", "pending")),
-                            TableRow(("Vincent velocity comparison table", "pending")),
-                            TableRow(("physical hbar/unit-context scaling", "pending")),
-                            TableRow(("velocity k-map", "pending")),
+                            TableRow(("velocity k-map", "pending visualisation")),
+                            TableRow(("velocity k-map with Gamma reconstruction residuals", "pending visualisation")),
+                            TableRow(("component-level Vincent quoted-point table", "pending table; scalar max-error check is already live")),
+                            TableRow(("physical hbar/unit-context scaling", "covered in unit-scaling section; production velocity-map overlay pending")),
+                            TableRow(("crossing-aware velocity interpretation", "hazard metadata live; eigenvector-overlap / subspace-continuity map pending")),
                         ),
                     ),
                 ),
@@ -970,17 +1159,144 @@ This first implementation uses the separable cosine production-symbol toy. It va
                     MarkdownBlock(
                         id="finite_field_dc_validation_vincent_reconstruction_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The implementation exposes which parts of Vincent's reference calculation are reconstructed and which parts remain convention or formula audit items.
+                        markdown="""*Claim.* For a selected band on Vincent's sampled grid, the implementation reconstructs Vincent's Eq. 8.30 conductivity up to the known grid-measure convention and a remaining few-percent finite-difference/chain-rule residual.
 
-This first finite-field validation section reuses the existing Ashcroft/Vincent comparison domain. It shows that the velocity samples are resolved by the adjacent-simplex Delaunay ambiguity. It also reports weak-chain, shifted Eq. 8.30, and strong-grid conductivity traces against Vincent's target trace. The conductivity residual is kept visible as an open audit item rather than treated as a solved validation proof.
+This section is not a band-free theory check. It is a selected-band reconstruction check. The velocity construction has already been validated earlier, including the Gamma reconstruction of the sampled velocity field. Here the question is narrower: starting from the selected-band energy grid, can the diagnostic reproduce the conductivity implied by Vincent's Eq. 8.30 and compare it with the weak chain-rule limit?
+
+The same Eq. 8.30 calculation is also reconstructed through a Gamma, Q, and tilde-rho modal decomposition. The existing strong spectral zero-field trace is kept as a separate comparison row because it is a different derivative construction, not the Eq. 8.30 modal reconstruction.
+
+Vincent's finite-field expression shifts the Fermi factor and one velocity factor along the electric-field direction before integrating over the relaxation-time parameter.
+""",
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_eq830_equation",
+                        math=TypstMath(
+                            "$ sigma_(alpha beta)^\"8.30\" (E) = (e^2) / (k_B T tau) sum_k w_k integral_0^infinity dd(s) space s exp(-s / tau) space g_0 (k + (s e) / hbar E) space  (1 - g_0 (k + (s e) / hbar E)) v_n^beta (k + (s e) / hbar E) v_n^alpha (k) $",
+                            display=True,
+                            name="finite_field_vincent_eq830_equation",
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_vincent_eq830_discrete_prose",
+                        title="Finite-difference Eq. 8.30 trace",
+                        markdown="""The `Eq. 8.30 finite-difference trace` row is the direct numerical implementation of this selected-band formula. The sampled band energy is differentiated numerically to obtain the velocities, the shifted argument is evaluated on the grid convention used by the comparison domain, and the resulting tensor is displayed in Vincent's grid-measure convention. This is the row that should be compared directly with Vincent's reported conductivity after the known $(2 pi)^2$ measure issue is accounted for.
+
+The weak chain-rule row is the zero-field limit of the same calculation.
+""",
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_weak_limit_equation",
+                        math=TypstMath(
+                            "$ sigma_(alpha beta)^\"weak\" = e^2 tau sum_k w_k (-partial_E g_0 (E_k)) space v_n^alpha (k) v_n^beta (k) $",
+                            display=True,
+                            name="finite_field_vincent_weak_limit_equation",
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_vincent_weak_limit_prose",
+                        title="Weak chain-rule limit",
+                        markdown="""The weak row should sit close to the finite-difference Eq. 8.30 row when the applied field shift is small and the finite-difference/quadrature choices are consistent. In the current comparison, these two rows differ only by the small finite-field and grid quadrature effect, while both remain a few percent from Vincent. That is the evidence that the remaining Vincent residual is not a missing velocity signal; it is already present in the finite-difference/chain-rule conductivity reconstruction.
+
+The following modal check decomposes the same selected-band Eq. 8.30 calculation into lattice Fourier modes.
+""",
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_modal_equation",
+                        math=TypstMath(
+                            "$ sigma_(alpha beta)^\"8.30 modal\" (E) = C sum_R Gamma_R^alpha Q_R (E) tilde(rho)_R^beta $",
+                            display=True,
+                            name="finite_field_vincent_modal_equation",
+                        ),
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_modal_definitions_equation",
+                        math=TypstMath(
+                            "$ v_n^alpha (k) = sum_R e^(i R dot k) Gamma_R^alpha, quad rho_E^beta (k) = g_0 (k) (1 - g_0 (k)) v_n^beta (k) = sum_R e^(i R dot k) tilde(rho)_R^beta $",
+                            display=True,
+                            name="finite_field_vincent_modal_definitions_equation",
+                        ),
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_modal_response_equation",
+                        math=TypstMath(
+                            "$ Q_R (E) = sum_l w_l t_l B_R (delta k_l), quad delta k_l = (tau t_l e) / hbar E $",
+                            display=True,
+                            name="finite_field_vincent_modal_response_equation",
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_vincent_modal_prose",
+                        title="Eq. 8.30 modal reconstruction",
+                        markdown="""The `Eq. 8.30 Gamma-Q-rho trace` row is the selected-band modal reconstruction of the same finite-field Eq. 8.30 quadrature. It uses `Gamma` for the velocity coefficients and $tilde(rho)$ for the occupation-weighted velocity coefficients. The scalar $Q_R (E)$ is the quadrature-and-shift factor for mode $R$ in the direct Eq. 8.30 implementation.
+
+Here $C$ collects the factors that are common to the direct Eq. 8.30 trace and the modal reconstruction: the physical conductivity prefactor, the k-cell/grid measure, and the normalisation used for the selected comparison row. The raw implementation uses the continuum Brillouin-zone measure $d^2 k / (2 pi)^2$, because the reciprocal grid cell is $A_("BZ") / N_k$ and the prefactor still contains $(2 pi)^(-2)$. The Vincent target is instead reproduced only after multiplying the raw tensor by $(2 pi)^2$, i.e. by using $A_("BZ") / N_k$ without the continuum denominator.
+
+The table below therefore treats the Vincent comparison as a normalisation audit. It does not assert that the physical conductivity is defined up to convention. The physical SI normalisation should be unique; the point is that the copied Vincent target appears to use a different k-measure normalisation from the standard continuum form.
+
+The quadrature index $l$ runs over the Gauss-Laguerre nodes used for the relaxation-time integral, with node $t_l$ and weight $w_l$. The field-dependent shift is $delta k_l = (tau t_l e) / hbar E$. The factor $B_R(delta k_l)$ is the periodic bilinear shift response used by the direct finite-difference implementation. If the shifted grid were evaluated by an exact Fourier shift rather than bilinear interpolation, this factor would reduce to the corresponding phase response for mode $R$.
+
+This row is therefore a representation check, not a new physical formula. It asks whether the Gamma/Q/$tilde(rho)$ modal summation reconstructs the direct shifted-chain-rule Eq. 8.30 calculation. The `modal closure residual` row is the closure error for that check.
+
+This $Q_R(E)$ is not the same object as the strong-field response factor $F_(n,R)^beta(E)$ used in the strong spectral formula below. The letter `F` is reserved here for the differential response factor from the thesis notes.
+""",
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_strong_spectral_equation",
+                        math=TypstMath(
+                            "$ sigma_(alpha beta)^\"strong\" (E) = e A_\"BZ\" sum_n sum_R tilde(f)^0_(n,R) Gamma_(n,R)^alpha F_(n,R)^beta (E) $",
+                            display=True,
+                            name="finite_field_vincent_strong_spectral_equation",
+                        ),
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_strong_response_equation",
+                        math=TypstMath(
+                            "$ F_(n,R)^beta (E) = (- i (e tau_n / hbar) R^beta) / (1 - i (e tau_n / hbar) E dot R)^2, quad F_(n,R)^beta (0) = - i (e tau_n / hbar) R^beta $",
+                            display=True,
+                            name="finite_field_vincent_strong_response_equation",
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_vincent_strong_spectral_prose",
+                        title="Strong spectral zero-field trace",
+                        markdown="""The `strong spectral zero-field trace` row is a different modal object. It follows the strong-field spectral construction from the thesis notes. The sampled equilibrium occupation $f_0(k) = f_0(E_n(k))$ is stored as Fourier coefficients $tilde(f)^0_(n,R)$, and the field dependence is carried by the differential response factor $F_(n,R)^beta(E)$.
+
+This $F$ is the notes-style field derivative factor. It comes from differentiating the strong-field denominator $(1 - i (e tau_n / hbar) E dot R)^(-1)$ with respect to the electric-field component $E^beta$. At zero field it reduces to multiplication by $- i (e tau_n / hbar) R^beta$, which is the spectral derivative of the sampled periodic occupation response.
+
+This is not the same operation as the weak chain-rule row. The weak chain-rule row differentiates the selected-band energy first, forms the velocity, and then applies the pointwise derivative $f_0'(E(k)) partial_k E(k)$. The strong spectral row instead differentiates the already-sampled periodic occupation field $f_0(k)$ as a Fourier series. On a finite grid, especially near a sharp or under-resolved Fermi window, these two procedures need not agree.
+
+Therefore the strong spectral row is included as a comparison and warning row: it shows the behaviour of the notes-style spectral derivative construction, while the Eq. 8.30 Gamma-Q-rho row is the modal reconstruction of the direct shifted-chain-rule Eq. 8.30 calculation.
+""",
+                    ),
+                    TypstMathBlock(
+                        id="finite_field_dc_validation_vincent_residual_equation",
+                        math=TypstMath(
+                            "$ Delta = 100 times abs(Tr(sigma^\"calc\") - Tr(sigma^\"vin\")) / abs(Tr(sigma^\"vin\")) $",
+                            display=True,
+                            name="finite_field_vincent_residual_equation",
+                        ),
+                    ),
+                    MarkdownBlock(
+                        id="finite_field_dc_validation_vincent_residual_prose",
+                        title="Residual interpretation",
+                        markdown="""The intended reading is: Eq. 8.30 finite differences reproduce Vincent's conductivity to the known grid-measure convention and a few-percent residual; the weak chain-rule limit explains why this residual is already present in the finite-difference chain-rule calculation; and the Eq. 8.30 Gamma-Q-rho row checks that the selected-band modal decomposition reconstructs the direct Eq. 8.30 implementation.
+
+The strong spectral zero-field trace should not be read as a failed Eq. 8.30 reconstruction. It is a different comparison row, included to expose the difference between the pointwise chain-rule derivative and the spectral derivative of the sampled occupation.
 """,
                     ),
                     Table(
                         id="finite_field_dc_validation_vincent_reconstruction_table",
-                        title="Vincent reconstruction metrics",
-                        description="Summary of existing Ashcroft/Vincent reconstruction checks.",
-                        headers=("metric", "value", "target"),
+                        title="Selected-band Eq. 8.30 reconstruction",
+                        description="Trace reconstructions shown as value/residual pairs against Vincent's target trace.",
+                        headers=("path", "value", "residual/status"),
                         rows=_finite_field_vincent_rows(vincent_probe),
+                    ),
+                    Table(
+                        id="finite_field_dc_validation_vincent_normalisation_table",
+                        title="Vincent normalisation audit",
+                        description="Checks whether the comparison uses the continuum d²k/(2π)² measure or the A_BZ/Nk grid measure without the continuum denominator.",
+                        headers=("check", "value", "status"),
+                        rows=_finite_field_vincent_normalisation_rows(vincent_probe),
                     ),
                     Table(
                         id="finite_field_dc_validation_vincent_reconstruction_placeholders",
@@ -1005,7 +1321,7 @@ This first finite-field validation section reuses the existing Ashcroft/Vincent 
                     MarkdownBlock(
                         id="finite_field_dc_validation_strong_dc_validation_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The band-labelled strong DC conductivity is internally closed as a lattice-mode spectral tensor and its residual against the weak-chain calculation is exposed rather than hidden.
+                        markdown="""*Claim.* The band-labelled strong DC conductivity is internally closed as a lattice-mode spectral tensor and its residual against the weak-chain calculation is exposed rather than hidden.
 
 This first implementation reuses the existing `BandIndexedStrongDcResult` on Vincent's epsilon grid. It checks that the mode tensor re-sums to the reported strong tensor, that Fourier coefficients and response factors are finite, and that imaginary leakage is negligible.
 """,
@@ -1040,7 +1356,7 @@ This first implementation reuses the existing `BandIndexedStrongDcResult` on Vin
                     MarkdownBlock(
                         id="finite_field_dc_validation_weak_dc_limit_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** On a matched spectral-basis analytic toy, the finite-field DC conductivity approaches the weak-field DC result as E -> 0.
+                        markdown="""*Claim.* On a matched spectral-basis analytic toy, the finite-field DC conductivity approaches the weak-field DC result as E -> 0.
 
 This first implementation reuses the analytic sinusoidal Ashcroft probe. It verifies the zero-field limit and reports finite-field departures across an eta sweep. It separates the clean matched-basis weak limit from the Vincent-grid derivative-definition residual exposed in the strong DC section. Dataset-backed electric-field sweeps remain pending.
 """,
@@ -1074,7 +1390,7 @@ This first implementation reuses the analytic sinusoidal Ashcroft probe. It veri
                     MarkdownBlock(
                         id="finite_field_dc_validation_mode_decomposition_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** On the current strong-grid mode object, the lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the sampled fields and total strong spectral DC tensor.
+                        markdown="""*Claim.* On the current strong-grid mode object, the lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the sampled fields and total strong spectral DC tensor.
 
 This first implementation checks the actual `BandIndexedStrongDcResult` mode objects: Gamma reconstructs the sampled velocity field, tilde(rho) reconstructs the sampled occupation, and summing the conductivity mode tensor reconstructs the total strong DC tensor. This validates the mode algebra used by the finite-field target, but dataset-backed finite-field mode closure remains pending.
 """,
@@ -1109,9 +1425,9 @@ This first implementation checks the actual `BandIndexedStrongDcResult` mode obj
                     MarkdownBlock(
                         id="finite_field_dc_validation_analytic_toys_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** Controlled analytic toys isolate algebra, derivatives, crossings, overlap health, and unit scaling before any BigDFT dataset-specific effects are introduced.
+                        markdown="""*Claim.* Controlled analytic toys isolate algebra, derivatives, crossings, overlap health, and unit scaling before any BigDFT dataset-specific effects are introduced.
 
-This section now summarises the real toy-backed probes used by the validation ladder. The missing analytic target is the finite-field lattice-mode closure toy for Gamma/F/rho decomposition.
+This section now summarises the real toy-backed probes used by the validation ladder. The missing analytic target is the finite-field lattice-mode closure toy for Gamma/Q/rho decomposition.
 """,
                     ),
                     Table(
@@ -1127,7 +1443,7 @@ This section now summarises the real toy-backed probes used by the validation la
                         description="Analytic toy coverage still needed before the full finite-field validation target is independently covered.",
                         headers=("check", "status"),
                         rows=(
-                            TableRow(("finite-field Gamma/F/rho closure toy", "pending")),
+                            TableRow(("finite-field Gamma/Q/rho closure toy", "pending")),
                             TableRow(("periodic two-band conductivity toy", "pending")),
                             TableRow(("active-subspace near-crossing toy", "pending")),
                         ),
@@ -1143,7 +1459,7 @@ This section now summarises the real toy-backed probes used by the validation la
                     MarkdownBlock(
                         id="finite_field_dc_validation_unit_scaling_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The core unit factors needed by finite-field velocity and conductivity comparisons are explicit and numerically checked.
+                        markdown="""*Claim.* The core unit factors needed by finite-field velocity and conductivity comparisons are explicit and numerically checked.
 
 This first implementation checks the conversion factors that later calculation-level comparisons depend on: Hartree to eV, Bohr to Å, hbar in each working context, velocity scaling, inverse-energy Fermi-window scaling, and the requirement that mu be converted with the Hamiltonian. It does not yet prove that a full conductivity calculation is invariant under changing internal unit systems; that remains an explicit pending check.
 """,
@@ -1178,7 +1494,7 @@ This first implementation checks the conversion factors that later calculation-l
                     MarkdownBlock(
                         id="finite_field_dc_validation_k_convergence_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** On a periodic analytic velocity-square toy, the sampled k-grid measure matches the exact full-period average under N_u/N_v refinement.
+                        markdown="""*Claim.* On a periodic analytic velocity-square toy, the sampled k-grid measure matches the exact full-period average under N_u/N_v refinement.
 
 This first implementation checks the grid-measure part of conductivity convergence on a controlled periodic integrand. It is not yet a dataset-backed conductivity convergence table, but it does exercise the normalisation convention before the stronger conductivity comparison is wired in.
 """,
@@ -1213,7 +1529,7 @@ This first implementation checks the grid-measure part of conductivity convergen
                     MarkdownBlock(
                         id="finite_field_dc_validation_symmetry_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** On a controlled separable-cosine toy, the expected k-inversion and velocity-square tensor symmetries are satisfied up to numerical roundoff.
+                        markdown="""*Claim.* On a controlled separable-cosine toy, the expected k-inversion and velocity-square tensor symmetries are satisfied up to numerical roundoff.
 
 This first implementation checks even energy under k inversion, odd derivatives under k inversion, and a symmetric diagonal velocity-square tensor with vanishing cross component. It does not yet validate dataset-backed H/S/H_star/S_star automorphisms or graphene direction-sweep symmetries; those remain explicit pending checks.
 """,

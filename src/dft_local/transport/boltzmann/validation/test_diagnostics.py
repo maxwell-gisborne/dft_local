@@ -595,17 +595,37 @@ def test_finite_field_dc_velocity_section_contains_real_metrics() -> None:
         if isinstance(block, Table)
     }
 
-    assert "finite_field_dc_validation_velocity_validation_table" in tables
+    assert "finite_field_dc_validation_analytic_velocity_table" in tables
+    assert "finite_field_dc_validation_vincent_velocity_table" in tables
+    assert "finite_field_dc_validation_dataset_gamma_velocity_table" in tables
 
-    rows = {
-        row.cells[0]: row.cells[1]
-        for row in tables["finite_field_dc_validation_velocity_validation_table"].rows
+    analytic_metrics = {
+        row.cells[0]
+        for row in tables["finite_field_dc_validation_analytic_velocity_table"].rows
     }
+    assert "analytic dE/dk1" in analytic_metrics
+    assert "finite-difference dE/dk1" in analytic_metrics
+    assert "finite-difference dk1 error" in analytic_metrics
+    assert "Hellmann-Feynman dk1 error" in analytic_metrics
 
-    assert_display_quantity(rows["production derivative dk1 error"], 0.0)
-    assert_display_quantity(rows["Hellmann-Feynman dk1 error"], 0.0)
-    assert "dummy" not in set(rows.values())
+    vincent_metrics = {
+        row.cells[0]
+        for row in tables["finite_field_dc_validation_vincent_velocity_table"].rows
+    }
+    assert "quoted point count" in vincent_metrics
+    assert "best-adjacent max velocity error" in vincent_metrics
+    assert "velocity error reduction" in vincent_metrics
 
+    gamma_metrics = {
+        row.cells[0]
+        for row in tables["finite_field_dc_validation_dataset_gamma_velocity_table"].rows
+    }
+    assert "same-grid Gamma abs error" in gamma_metrics
+    assert "same-grid Gamma rel L2 error" in gamma_metrics
+    assert "velocity mean-square rel change" in gamma_metrics
+    assert "hazard threshold" in gamma_metrics
+    assert "selected-band hazard count" in gamma_metrics
+    assert "selected-band hazard fraction" in gamma_metrics
 
 def test_finite_field_unit_scaling_probe_checks_core_factors() -> None:
     from dft_local.transport.boltzmann.validation.core import (
@@ -854,14 +874,43 @@ def test_finite_field_dc_vincent_section_contains_real_metrics() -> None:
     }
 
     assert "finite_field_dc_validation_vincent_reconstruction_table" in tables
+    table = tables["finite_field_dc_validation_vincent_reconstruction_table"]
+    assert table.headers == ("path", "value", "residual/status")
 
     rows = {
-        row.cells[0]: row.cells[1]
-        for row in tables["finite_field_dc_validation_vincent_reconstruction_table"].rows
+        row.cells[0]: row.cells
+        for row in table.rows
     }
 
-    assert rows["best adjacent matches Vincent"] is True
-    assert "dummy" not in set(rows.values())
+    assert "Vincent target" in rows
+    assert "Eq. 8.30 finite-difference trace" in rows
+    assert "weak chain-rule limit" in rows
+    assert "Eq. 8.30 Gamma-Q-rho trace" in rows
+    assert "Eq. 8.30 modal closure residual" in rows
+    assert "strong spectral zero-field trace" in rows
+    assert "Delaunay best-adjacent velocity" not in rows
+    assert "velocity reconstruction" not in rows
+    assert len(rows["Eq. 8.30 finite-difference trace"]) == 3
+    assert len(rows["weak chain-rule limit"]) == 3
+    assert rows["Eq. 8.30 Gamma-Q-rho trace"][1] != "pending"
+    assert "finite_field_dc_validation_vincent_normalisation_table" in tables
+    normalisation_rows = {
+        row.cells[0]: row.cells
+        for row in tables["finite_field_dc_validation_vincent_normalisation_table"].rows
+    }
+    assert "reciprocal convention" in normalisation_rows
+    assert "reciprocal area relation" in normalisation_rows
+    assert "weak raw continuum trace" in normalisation_rows
+    assert "weak no-2π-denominator trace" in normalisation_rows
+    assert "Eq. 8.30 raw continuum trace" in normalisation_rows
+    assert "Eq. 8.30 no-2π-denominator trace" in normalisation_rows
+    assert "normalisation conclusion" in normalisation_rows
+    assert "dummy" not in {
+        cell
+        for row in table.rows
+        for cell in row.cells
+        if isinstance(cell, str)
+    }
 
 
 def test_finite_field_strong_dc_validation_probe_checks_mode_closure() -> None:

@@ -39,6 +39,39 @@ class FiniteFieldVincentReconstructionProbe:
 
     unit_context: UnitContext
     source: str
+    continuum_weak_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="weak raw continuum trace"),
+    ]
+    continuum_weak_trace_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="weak raw continuum trace error", display_unit=PERCENT),
+    ]
+    continuum_eq830_shifted_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="Eq. 8.30 raw continuum trace"),
+    ]
+    continuum_eq830_shifted_trace_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Eq. 8.30 raw continuum trace error", display_unit=PERCENT),
+    ]
+    reciprocal_dot_diag_max_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="reciprocal dot-product diagonal error"),
+    ]
+    reciprocal_dot_offdiag_max_abs: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="reciprocal dot-product off-diagonal magnitude"),
+    ]
+    reciprocal_det_ratio: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="reciprocal determinant ratio"),
+    ]
+    reciprocal_det_ratio_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="reciprocal determinant ratio error"),
+    ]
+
 
     target_trace: Annotated[
         float,
@@ -68,6 +101,19 @@ class FiniteFieldVincentReconstructionProbe:
         float,
         qscalar(DIMENSIONLESS, role="shifted Eq. 8.30 trace error", display_unit=PERCENT),
     ]
+    eq830_modal_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="Eq. 8.30 Gamma-Q-rho trace"),
+    ]
+    eq830_modal_trace_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Eq. 8.30 Gamma-Q-rho trace error", display_unit=PERCENT),
+    ]
+    eq830_modal_direct_trace_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Eq. 8.30 modal/direct trace mismatch", display_unit=PERCENT),
+    ]
+
     find_simplex_max_velocity_error: Annotated[
         float,
         qscalar(VELOCITY, role="find-simplex max velocity error"),
@@ -331,6 +377,14 @@ class FiniteFieldVelocityValidationProbe:
         float,
         qscalar(DIMENSIONLESS, role="production derivative dk2 absolute error"),
     ]
+    finite_difference_dk1: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="finite-difference dE/dk1"),
+    ]
+    finite_difference_dk2: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="finite-difference dE/dk2"),
+    ]
     finite_difference_dk1_abs_error: Annotated[
         float,
         qscalar(DIMENSIONLESS, role="finite-difference dk1 absolute error"),
@@ -360,8 +414,50 @@ class FiniteFieldVelocityValidationProbe:
         qscalar(DIMENSIONLESS, role="generic/fixed dk2 absolute error"),
     ]
 
+    vincent_sample_count: int
+    vincent_find_simplex_max_velocity_error: Annotated[
+        float,
+        qscalar(VELOCITY, role="Vincent find-simplex max velocity error"),
+    ]
+    vincent_best_adjacent_max_velocity_error: Annotated[
+        float,
+        qscalar(VELOCITY, role="Vincent best-adjacent max velocity error"),
+    ]
+    vincent_velocity_error_reduction: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="Vincent velocity error reduction"),
+    ]
+
+    dataset_gamma_n_u: int
+    dataset_gamma_n_v: int
+    dataset_gamma_band_index: int
+    dataset_gamma_same_grid_abs_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="dataset Gamma same-grid absolute error"),
+    ]
+    dataset_gamma_same_grid_rel_l2_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="dataset Gamma same-grid relative L2 error"),
+    ]
+    dataset_gamma_coarse_n_u: int
+    dataset_gamma_coarse_n_v: int
+    dataset_velocity_mean_square_rel_change: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="dataset finite-difference velocity mean-square relative change"),
+    ]
+    dataset_gamma_hazard_count: int
+    dataset_gamma_hazard_fraction: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="dataset Gamma selected-band hazard fraction"),
+    ]
+    dataset_gamma_gap_threshold: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="dataset Gamma selected-band hazard threshold"),
+    ]
+
     unit_scaling_status: str
     vincent_velocity_status: str
+    dataset_gamma_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -600,6 +696,30 @@ class FiniteFieldDatasetBandCrossingHazardProbe:
     min_gap: Annotated[
         float,
         qscalar(DIMENSIONLESS, role="minimum adjacent band gap"),
+    ]
+    selected_gap_q05: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="selected adjacent gap 5th percentile"),
+    ]
+    selected_gap_median: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="selected adjacent gap median"),
+    ]
+    selected_gap_q95: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="selected adjacent gap 95th percentile"),
+    ]
+    selected_gap_max: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="selected adjacent gap maximum"),
+    ]
+    min_gap_over_threshold: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="minimum selected gap divided by threshold"),
+    ]
+    median_gap_over_threshold: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="median selected gap divided by threshold"),
     ]
     min_gap_k1: Annotated[
         float,
@@ -1461,6 +1581,7 @@ def finite_field_dataset_band_crossing_hazard_probe(
     min_gap_k2 = 0.0
     min_gap_lower_band = -1
     min_gap_upper_band = -1
+    selected_gap_values: list[float] = []
     hazard_count = 0
 
     for i, k1 in enumerate(k1_grid):
@@ -1503,6 +1624,7 @@ def finite_field_dataset_band_crossing_hazard_probe(
 
             for lower_band in relevant_lower_bands:
                 gap_value = float(adjacent_gaps[lower_band])
+                selected_gap_values.append(gap_value)
 
                 if gap_value < min_gap:
                     min_gap = gap_value
@@ -1550,6 +1672,19 @@ def finite_field_dataset_band_crossing_hazard_probe(
                         float(np.max(np.abs(gaps[a, b, :] - gaps[i, j, :]))),
                     )
 
+    if not selected_gap_values:
+        raise RuntimeError("dataset band hazard probe found no selected adjacent gaps")
+
+    selected_gap_array = np.asarray(selected_gap_values, dtype=np.float64)
+    selected_gap_q05 = float(np.quantile(selected_gap_array, 0.05))
+    selected_gap_median = float(np.quantile(selected_gap_array, 0.50))
+    selected_gap_q95 = float(np.quantile(selected_gap_array, 0.95))
+    selected_gap_max = float(np.max(selected_gap_array))
+    min_gap_over_threshold = float(min_gap / gap_threshold) if gap_threshold > 0.0 else np.inf
+    median_gap_over_threshold = (
+        float(selected_gap_median / gap_threshold) if gap_threshold > 0.0 else np.inf
+    )
+
     sample_count = int(n_u) * int(n_v)
     hazard_points = sorted(hazard_points, key=lambda point: point.gap)
 
@@ -1563,6 +1698,12 @@ def finite_field_dataset_band_crossing_hazard_probe(
         selected_band=int(band_index),
         gap_threshold=float(gap_threshold),
         min_gap=float(min_gap),
+        selected_gap_q05=float(selected_gap_q05),
+        selected_gap_median=float(selected_gap_median),
+        selected_gap_q95=float(selected_gap_q95),
+        selected_gap_max=float(selected_gap_max),
+        min_gap_over_threshold=float(min_gap_over_threshold),
+        median_gap_over_threshold=float(median_gap_over_threshold),
         min_gap_k1=float(min_gap_k1),
         min_gap_k2=float(min_gap_k2),
         min_gap_lower_band=int(min_gap_lower_band),
@@ -1599,8 +1740,100 @@ def finite_difference_fixed_symbol_derivative(
     return (plus - minus) / (2.0 * eps)
 
 
-def finite_field_velocity_validation_probe() -> FiniteFieldVelocityValidationProbe:
-    """Validate velocity ingredients on a controlled analytic production toy."""
+def _energy_ordered_band_grid(
+    KH: GdKernelArrays,
+    KS: GdKernelArrays,
+    *,
+    n_u: int,
+    n_v: int,
+    band_index: int,
+    symmetrization: str,
+) -> np.ndarray:
+    """Sample a selected sorted-energy band on the logical k-grid."""
+
+    if n_u < 3 or n_v < 3:
+        raise ValueError("dataset velocity Gamma check needs n_u,n_v >= 3")
+    if band_index < 0:
+        raise ValueError(f"band_index must be non-negative, got {band_index}")
+
+    if symmetrization == "star":
+        KH = KH.star_symmetrised(matrix_name=f"{KH.matrix_name} velocity Gamma star")
+        KS = KS.star_symmetrised(matrix_name=f"{KS.matrix_name} velocity Gamma star")
+    elif symmetrization not in {"direct", "raw"}:
+        raise ValueError(f"unknown symmetrization scheme: {symmetrization!r}")
+
+    k1_grid = np.linspace(-np.pi, np.pi, int(n_u), endpoint=False)
+    k2_grid = np.linspace(-np.pi, np.pi, int(n_v), endpoint=False)
+    energy_grid: np.ndarray | None = None
+
+    for i, k1 in enumerate(k1_grid):
+        for j, k2 in enumerate(k2_grid):
+            pair = SymbolPair(KH=KH, KS=KS, k1=float(k1), k2=float(k2), degree=2)
+            problem = pair.form()
+            H = problem.Hk
+            S = problem.Sk
+            if symmetrization == "direct":
+                H = 0.5 * (H + H.conj().T)
+                S = 0.5 * (S + S.conj().T)
+
+            vals = np.sort(la.eigvalsh(H, S).real)
+            if int(band_index) >= int(vals.shape[0]):
+                raise ValueError(
+                    f"band_index {band_index} out of range for {int(vals.shape[0])} bands"
+                )
+
+            if energy_grid is None:
+                energy_grid = np.empty((int(n_u), int(n_v)), dtype=np.float64)
+            energy_grid[i, j] = float(vals[int(band_index)])
+
+    if energy_grid is None:
+        raise RuntimeError("dataset velocity Gamma check sampled no energies")
+    return energy_grid
+
+
+def _logical_periodic_finite_difference_velocity(energy_grid: np.ndarray) -> np.ndarray:
+    """Central finite-difference velocity on the logical periodic k-grid."""
+
+    energy = np.asarray(energy_grid, dtype=np.float64)
+    if energy.ndim != 2:
+        raise ValueError(f"expected a 2D energy grid, got shape {energy.shape!r}")
+
+    n_u, n_v = energy.shape
+    dk1 = 2.0 * np.pi / float(n_u)
+    dk2 = 2.0 * np.pi / float(n_v)
+
+    velocity = np.empty(energy.shape + (2,), dtype=np.float64)
+    velocity[..., 0] = (np.roll(energy, -1, axis=0) - np.roll(energy, 1, axis=0)) / (2.0 * dk1)
+    velocity[..., 1] = (np.roll(energy, -1, axis=1) - np.roll(energy, 1, axis=1)) / (2.0 * dk2)
+    return velocity
+
+
+def _gamma_reconstruct_velocity(velocity: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Return Gamma coefficients and same-grid reconstructed velocity."""
+
+    v = np.asarray(velocity, dtype=np.float64)
+    gamma = np.empty(v.shape, dtype=np.complex128)
+    reconstructed = np.empty(v.shape, dtype=np.float64)
+
+    for alpha in range(v.shape[-1]):
+        gamma[..., alpha] = np.fft.ifft2(v[..., alpha])
+        reconstructed[..., alpha] = np.fft.fft2(gamma[..., alpha]).real
+
+    return gamma, reconstructed
+
+
+def finite_field_velocity_validation_probe(
+    KH: GdKernelArrays | None = None,
+    KS: GdKernelArrays | None = None,
+    *,
+    n_u: int = 11,
+    n_v: int = 11,
+    band_index: int = 0,
+    symmetrization: str = "star",
+    gap_threshold: float = 0.05,
+    dataset_hazard_probe: FiniteFieldDatasetBandCrossingHazardProbe | None = None,
+) -> FiniteFieldVelocityValidationProbe:
+    """Validate velocity ingredients on analytic, Vincent, and dataset-backed inputs."""
 
     c0 = 1.25
     c1 = 0.70
@@ -1634,6 +1867,99 @@ def finite_field_velocity_validation_probe() -> FiniteFieldVelocityValidationPro
 
     generic_symbol_probe = gd_symbol_production_validation_probe()
 
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        load_vincent_input_data,
+        reciprocal_lattice_vectors_from_primitives,
+        vincent_delaunay_adjacent_simplex_velocity_probe,
+        vincent_sample_velocity_targets,
+    )
+
+    vincent_inputs = load_vincent_input_data()
+    vincent_k, _vincent_velocity = vincent_sample_velocity_targets()
+    vincent_adjacent = vincent_delaunay_adjacent_simplex_velocity_probe(
+        vincent_inputs.epsilon_of_k,
+        vincent_inputs.primitive_lattice_vectors_bohr,
+    )
+    vincent_find_simplex_max_error = max(float(row["find_simplex_error"]) for row in vincent_adjacent)
+    vincent_best_adjacent_max_error = max(float(row["best_adjacent_error"]) for row in vincent_adjacent)
+    vincent_error_reduction = vincent_find_simplex_max_error / vincent_best_adjacent_max_error
+
+    dataset_gamma_n_u = int(n_u)
+    dataset_gamma_n_v = int(n_v)
+    dataset_gamma_band_index = int(band_index)
+    dataset_gamma_same_grid_abs_error = np.nan
+    dataset_gamma_same_grid_rel_l2_error = np.nan
+    dataset_gamma_coarse_n_u = 0
+    dataset_gamma_coarse_n_v = 0
+    dataset_velocity_mean_square_rel_change = np.nan
+    dataset_gamma_hazard_count = 0
+    dataset_gamma_hazard_fraction = np.nan
+    dataset_gamma_gap_threshold = float(gap_threshold)
+    dataset_gamma_status = "pending dataset-backed context"
+
+    if dataset_hazard_probe is not None:
+        dataset_gamma_hazard_count = int(dataset_hazard_probe.hazard_count)
+        dataset_gamma_hazard_fraction = float(dataset_hazard_probe.hazard_fraction)
+        dataset_gamma_gap_threshold = float(dataset_hazard_probe.gap_threshold)
+
+    if KH is not None and KS is not None:
+        energy_grid = _energy_ordered_band_grid(
+            KH,
+            KS,
+            n_u=int(n_u),
+            n_v=int(n_v),
+            band_index=int(band_index),
+            symmetrization=symmetrization,
+        )
+        dataset_velocity = _logical_periodic_finite_difference_velocity(energy_grid)
+        _gamma, dataset_reconstructed = _gamma_reconstruct_velocity(dataset_velocity)
+        dataset_gamma_same_grid_abs_error = float(
+            np.max(np.abs(dataset_reconstructed - dataset_velocity))
+        )
+        velocity_norm = float(np.linalg.norm(dataset_velocity))
+        dataset_gamma_same_grid_rel_l2_error = float(
+            np.linalg.norm(dataset_reconstructed - dataset_velocity) / velocity_norm
+            if velocity_norm > 0.0
+            else np.nan
+        )
+
+        dataset_gamma_coarse_n_u = max(3, int(n_u) // 2)
+        dataset_gamma_coarse_n_v = max(3, int(n_v) // 2)
+        coarse_energy_grid = _energy_ordered_band_grid(
+            KH,
+            KS,
+            n_u=dataset_gamma_coarse_n_u,
+            n_v=dataset_gamma_coarse_n_v,
+            band_index=int(band_index),
+            symmetrization=symmetrization,
+        )
+        coarse_velocity = _logical_periodic_finite_difference_velocity(coarse_energy_grid)
+        fine_mean_square = float(np.mean(np.sum(dataset_velocity * dataset_velocity, axis=-1)))
+        coarse_mean_square = float(np.mean(np.sum(coarse_velocity * coarse_velocity, axis=-1)))
+        dataset_velocity_mean_square_rel_change = float(
+            abs(fine_mean_square - coarse_mean_square) / abs(fine_mean_square)
+            if fine_mean_square != 0.0
+            else np.nan
+        )
+
+        if dataset_hazard_probe is None:
+            hazard = finite_field_dataset_band_crossing_hazard_probe(
+                KH,
+                KS,
+                n_u=int(n_u),
+                n_v=int(n_v),
+                gap_threshold=float(gap_threshold),
+                band_index=int(band_index),
+                symmetrization=symmetrization,
+                source="velocity validation selected-band hazard fallback",
+                max_hazard_points=0,
+            )
+            dataset_gamma_hazard_count = int(hazard.hazard_count)
+            dataset_gamma_hazard_fraction = float(hazard.hazard_fraction)
+            dataset_gamma_gap_threshold = float(hazard.gap_threshold)
+
+        dataset_gamma_status = "same-grid Gamma closure checked on dataset finite-difference velocity"
+
     return FiniteFieldVelocityValidationProbe(
         unit_context=SI_UNITS,
         source="separable cosine production symbol toy",
@@ -1644,6 +1970,8 @@ def finite_field_velocity_validation_probe() -> FiniteFieldVelocityValidationPro
         analytic_dk2=float(expected_dk2),
         production_dk1_abs_error=float(abs(fixed_dk1[0, 0].real - expected_dk1)),
         production_dk2_abs_error=float(abs(fixed_dk2[0, 0].real - expected_dk2)),
+        finite_difference_dk1=float(fd_dk1[0, 0].real),
+        finite_difference_dk2=float(fd_dk2[0, 0].real),
         finite_difference_dk1_abs_error=float(abs(fd_dk1[0, 0].real - expected_dk1)),
         finite_difference_dk2_abs_error=float(abs(fd_dk2[0, 0].real - expected_dk2)),
         hellmann_feynman_dk1_abs_error=float(abs(hf_dk1 - expected_dk1)),
@@ -1651,8 +1979,24 @@ def finite_field_velocity_validation_probe() -> FiniteFieldVelocityValidationPro
         generic_fixed_symbol_abs_error=float(generic_symbol_probe["generic_symbol_channel_abs_error"]),
         generic_fixed_dk1_abs_error=float(generic_symbol_probe["generic_dk1_channel_abs_error"]),
         generic_fixed_dk2_abs_error=float(generic_symbol_probe["generic_dk2_channel_abs_error"]),
-        unit_scaling_status="pending physical hbar/unit-context check",
-        vincent_velocity_status="pending Vincent field comparison",
+        vincent_sample_count=int(vincent_k.shape[0]),
+        vincent_find_simplex_max_velocity_error=float(vincent_find_simplex_max_error),
+        vincent_best_adjacent_max_velocity_error=float(vincent_best_adjacent_max_error),
+        vincent_velocity_error_reduction=float(vincent_error_reduction),
+        dataset_gamma_n_u=int(dataset_gamma_n_u),
+        dataset_gamma_n_v=int(dataset_gamma_n_v),
+        dataset_gamma_band_index=int(dataset_gamma_band_index),
+        dataset_gamma_same_grid_abs_error=float(dataset_gamma_same_grid_abs_error),
+        dataset_gamma_same_grid_rel_l2_error=float(dataset_gamma_same_grid_rel_l2_error),
+        dataset_gamma_coarse_n_u=int(dataset_gamma_coarse_n_u),
+        dataset_gamma_coarse_n_v=int(dataset_gamma_coarse_n_v),
+        dataset_velocity_mean_square_rel_change=float(dataset_velocity_mean_square_rel_change),
+        dataset_gamma_hazard_count=int(dataset_gamma_hazard_count),
+        dataset_gamma_hazard_fraction=float(dataset_gamma_hazard_fraction),
+        dataset_gamma_gap_threshold=float(dataset_gamma_gap_threshold),
+        unit_scaling_status="covered separately in unit-scaling section",
+        vincent_velocity_status="best-adjacent Delaunay samples reproduce Vincent quoted velocities",
+        dataset_gamma_status=str(dataset_gamma_status),
     )
 
 
@@ -1747,7 +2091,7 @@ def finite_field_analytic_toy_coverage_probe() -> FiniteFieldAnalyticToyCoverage
             and int(band_hazards.hazard_count) >= 1
             and float(units.velocity_factor_abs_error) < 1.0e-12
         ),
-        missing_toy="finite-field lattice-mode Gamma/F/rho closure toy",
+        missing_toy="finite-field lattice-mode Gamma/Q/rho closure toy",
     )
 
 
@@ -1892,6 +2236,109 @@ def finite_field_symmetry_sanity_probe(
     )
 
 
+
+def _eq830_gamma_f_rho_bilinear_modal_tensor(
+    epsilon_Ha: np.ndarray,
+    velocity_m_per_s: np.ndarray,
+    primitive_lattice_vectors_bohr: np.ndarray,
+    *,
+    chemical_potential_J: float,
+    temperature_K: float,
+    relaxation_time_s: float,
+    electric_field_V_per_m: np.ndarray,
+    laguerre_order: int = 48,
+) -> np.ndarray:
+    """Reconstruct Vincent Eq. 8.30 through Gamma/F/tilde(rho) modes.
+
+    This mirrors ``conductivity_830_shifted_chain_rule_from_velocity_grid``.
+    The direct implementation evaluates the shifted Eq. 8.30 factor with
+    periodic bilinear interpolation.  The modal response below therefore
+    includes the exact Fourier response of that same bilinear shift, rather
+    than the response of an ideal spectral shift.
+    """
+
+    from dft_local.transport.boltzmann.ashcroft_comparison.core import (
+        ELECTRON_CHARGE_C,
+        HARTREE_TO_J,
+        HBAR_J_S,
+        KB_J_K,
+        cartesian_k_to_fractional,
+        fermi_window,
+        reciprocal_cell_area_per_m2,
+    )
+
+    epsilon_J = np.asarray(epsilon_Ha, dtype=np.float64) * HARTREE_TO_J
+    velocity = np.asarray(velocity_m_per_s, dtype=np.float64)
+    field = np.asarray(electric_field_V_per_m, dtype=np.float64)
+
+    if epsilon_J.ndim != 2:
+        raise ValueError(f"Expected a 2D epsilon grid, got shape {epsilon_J.shape}")
+    if velocity.shape != epsilon_J.shape + (2,):
+        raise ValueError(
+            f"velocity shape {velocity.shape} does not match epsilon shape {epsilon_J.shape} + (2,)"
+        )
+    if field.shape != (2,):
+        raise ValueError(f"Expected electric field shape (2,), got {field.shape}")
+
+    n1, n2 = epsilon_J.shape
+    nk = float(n1 * n2)
+
+    weight = fermi_window(epsilon_J, chemical_potential_J, temperature_K)
+    weighted_velocity = weight[..., None] * velocity
+
+    gamma = np.empty(velocity.shape, dtype=np.complex128)
+    rho_tilde = np.empty(velocity.shape, dtype=np.complex128)
+    for alpha in range(2):
+        gamma[..., alpha] = np.fft.ifft2(velocity[..., alpha])
+        rho_tilde[..., alpha] = np.fft.ifft2(weighted_velocity[..., alpha])
+
+    neg_i = (-np.arange(n1)) % n1
+    neg_j = (-np.arange(n2)) % n2
+
+    mode_i = (np.fft.fftfreq(n1) * n1).astype(np.float64)
+    mode_j = (np.fft.fftfreq(n2) * n2).astype(np.float64)
+    mi, mj = np.meshgrid(mode_i, mode_j, indexing="ij")
+
+    nodes, weights = np.polynomial.laguerre.laggauss(laguerre_order)
+
+    response = np.zeros((n1, n2), dtype=np.complex128)
+    for node, quadrature_weight in zip(nodes, weights, strict=True):
+        shift_per_m = (ELECTRON_CHARGE_C * relaxation_time_s * float(node) / HBAR_J_S) * field
+        shift_fractional = cartesian_k_to_fractional(shift_per_m, primitive_lattice_vectors_bohr)
+
+        shift_grid_1 = float(shift_fractional[0]) * n1
+        shift_grid_2 = float(shift_fractional[1]) * n2
+
+        base_1 = np.floor(shift_grid_1)
+        base_2 = np.floor(shift_grid_2)
+        frac_1 = shift_grid_1 - base_1
+        frac_2 = shift_grid_2 - base_2
+
+        # Response for the -mode partner under the same periodic bilinear
+        # interpolation used by the direct Eq. 8.30 implementation.
+        factor_1 = np.exp(2j * np.pi * mi * base_1 / n1) * (
+            (1.0 - frac_1) + frac_1 * np.exp(2j * np.pi * mi / n1)
+        )
+        factor_2 = np.exp(2j * np.pi * mj * base_2 / n2) * (
+            (1.0 - frac_2) + frac_2 * np.exp(2j * np.pi * mj / n2)
+        )
+        response += float(quadrature_weight * node) * factor_1 * factor_2
+
+    raw = np.zeros((2, 2), dtype=np.float64)
+    for alpha in range(2):
+        gamma_alpha = gamma[..., alpha]
+        for beta in range(2):
+            rho_beta_neg = rho_tilde[np.ix_(neg_i, neg_j)][..., beta]
+            raw[alpha, beta] = float((nk * np.sum(gamma_alpha * rho_beta_neg * response)).real)
+
+    k_cell_area = reciprocal_cell_area_per_m2(primitive_lattice_vectors_bohr, epsilon_J.shape)
+    weighted = raw * k_cell_area
+    prefactor = ELECTRON_CHARGE_C ** 2 * relaxation_time_s / (
+        (2.0 * np.pi) ** 2 * KB_J_K * temperature_K
+    )
+    return prefactor * weighted
+
+
 def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstructionProbe:
     """Summarise existing Vincent/Ashcroft reconstruction checks."""
 
@@ -1900,6 +2347,7 @@ def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstruct
         conductivity_830_shifted_chain_rule_from_velocity_grid,
         conductivity_from_epsilon_grid,
         load_vincent_input_data,
+        reciprocal_lattice_vectors_from_primitives,
         vincent_delaunay_adjacent_simplex_velocity_probe,
         vincent_reference,
     )
@@ -1920,7 +2368,25 @@ def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstruct
     weak_sigma = local.conductivity_tensor_S * ((2.0 * np.pi) ** 2)
     weak_trace = float(np.trace(weak_sigma))
     target_trace = float(np.trace(sigma_target))
+
+    reciprocal_bohr = reciprocal_lattice_vectors_from_primitives(ai)
+    reciprocal_dot = ai @ reciprocal_bohr.T
+    reciprocal_target = (2.0 * np.pi) * np.eye(2)
+    reciprocal_dot_error = reciprocal_dot - reciprocal_target
+    reciprocal_dot_diag_max_abs_error = float(np.max(np.abs(np.diag(reciprocal_dot_error))))
+    reciprocal_dot_offdiag_max_abs = float(
+        max(abs(reciprocal_dot_error[0, 1]), abs(reciprocal_dot_error[1, 0]))
+    )
+    reciprocal_det = abs(float(np.linalg.det(reciprocal_bohr)))
+    real_det = abs(float(np.linalg.det(ai)))
+    reciprocal_det_ratio = float(reciprocal_det / (((2.0 * np.pi) ** 2) / real_det))
+    reciprocal_det_ratio_abs_error = float(abs(reciprocal_det_ratio - 1.0))
+
     weak_trace_percent_error = 100.0 * (weak_trace - target_trace) / target_trace
+
+    continuum_weak_trace = float(np.trace(local.conductivity_tensor_S))
+    continuum_weak_trace_percent_error = 100.0 * (continuum_weak_trace - target_trace) / target_trace
+
 
     strong = band_indexed_strong_dc_from_velocity_grid(
         epsilon,
@@ -1946,7 +2412,26 @@ def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstruct
     )
     shifted_sigma = shifted.conductivity_tensor_S * ((2.0 * np.pi) ** 2)
     shifted_trace = float(np.trace(shifted_sigma))
+
+    continuum_eq830_shifted_trace = float(np.trace(shifted.conductivity_tensor_S))
+    continuum_eq830_shifted_trace_percent_error = 100.0 * (
+        continuum_eq830_shifted_trace - target_trace
+    ) / target_trace
+
     shifted_trace_percent_error = 100.0 * (shifted_trace - target_trace) / target_trace
+
+    eq830_modal_sigma = _eq830_gamma_f_rho_bilinear_modal_tensor(
+        epsilon,
+        local.velocity_m_per_s,
+        ai,
+        chemical_potential_J=local.chemical_potential_J,
+        temperature_K=reference.temperature_K,
+        relaxation_time_s=reference.relaxation_time_s,
+        electric_field_V_per_m=reference.electric_field_V_per_m,
+    ) * ((2.0 * np.pi) ** 2)
+    eq830_modal_trace = float(np.trace(eq830_modal_sigma))
+    eq830_modal_trace_percent_error = 100.0 * (eq830_modal_trace - target_trace) / target_trace
+    eq830_modal_direct_trace_percent_error = 100.0 * (eq830_modal_trace - shifted_trace) / shifted_trace
 
     adjacent = vincent_delaunay_adjacent_simplex_velocity_probe(epsilon, ai)
     find_simplex_max_error = max(float(row["find_simplex_error"]) for row in adjacent)
@@ -1954,6 +2439,14 @@ def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstruct
     velocity_error_reduction = find_simplex_max_error / best_adjacent_max_error
 
     return FiniteFieldVincentReconstructionProbe(
+        continuum_weak_trace=float(continuum_weak_trace),
+        continuum_weak_trace_percent_error=float(continuum_weak_trace_percent_error),
+        continuum_eq830_shifted_trace=float(continuum_eq830_shifted_trace),
+        continuum_eq830_shifted_trace_percent_error=float(continuum_eq830_shifted_trace_percent_error),
+        reciprocal_dot_diag_max_abs_error=float(reciprocal_dot_diag_max_abs_error),
+        reciprocal_dot_offdiag_max_abs=float(reciprocal_dot_offdiag_max_abs),
+        reciprocal_det_ratio=float(reciprocal_det_ratio),
+        reciprocal_det_ratio_abs_error=float(reciprocal_det_ratio_abs_error),
         unit_context=SI_UNITS,
         source="existing Ashcroft/Vincent comparison domain",
         target_trace=float(target_trace),
@@ -1963,6 +2456,9 @@ def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstruct
         strong_grid_trace_percent_error=float(strong_grid_trace_percent_error),
         shifted_830_trace=float(shifted_trace),
         shifted_830_trace_percent_error=float(shifted_trace_percent_error),
+        eq830_modal_trace=float(eq830_modal_trace),
+        eq830_modal_trace_percent_error=float(eq830_modal_trace_percent_error),
+        eq830_modal_direct_trace_percent_error=float(eq830_modal_direct_trace_percent_error),
         find_simplex_max_velocity_error=float(find_simplex_max_error),
         best_adjacent_max_velocity_error=float(best_adjacent_max_error),
         velocity_error_reduction=float(velocity_error_reduction),

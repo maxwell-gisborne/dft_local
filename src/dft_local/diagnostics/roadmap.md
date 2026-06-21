@@ -234,3 +234,28 @@ These are deliberately not part of the current finite-field typing slice, but sh
 - readable tables
 - graph components with axis labels
 - useful error pages
+
+## Vincent/Ashcroft normalisation audit
+
+Status: partially resolved / guarded.
+
+Implemented:
+
+- Added a Vincent normalisation audit table to the finite-field DC validation report.
+- The table verifies the reciprocal convention `a_i dot b_j = 2π δ_ij`.
+- The table verifies the reciprocal area relation `det(B) = (2π)^2 / det(A)`.
+- The table shows that the raw weak-chain and Eq. 8.30 shifted calculations use the continuum measure `A_BZ / (N_k (2π)^2)`.
+- The table shows that the copied Vincent target is reproduced only after removing the continuum denominator, i.e. by using `A_BZ / N_k`.
+- Prose now treats this as a normalisation audit rather than as a harmless display convention.
+
+Decision for future sections:
+
+- Use the continuum-limit/raw conductivity tensors for thesis transport work.
+- Treat Vincent-normalised/no-`(2π)^2` rows as comparison-only diagnostics.
+- Do not propagate Vincent normalisation into new conductivity derivations or dataset-backed transport sections.
+
+Remaining follow-up:
+
+- Inspect Vincent’s original derivation/code/prefactor, if available, to determine whether the missing/absorbed `(2π)^2` is a reference convention, an intermediate diagnostic, or an error.
+- Rename internal Vincent-scaled fields/rows more aggressively to include `vincent_normalised` or `no_2pi_denominator` where doing so reduces accidental misuse.
+- Add a future guardrail test if new transport code consumes Vincent probe fields.
