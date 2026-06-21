@@ -297,7 +297,8 @@ def _finite_field_input_health_rows(probe: FiniteFieldInputHealthProbe) -> tuple
         TableRow(("min eig S(k)", q("s_eig_min"), "> 1e-10")),
         TableRow(("max cond S(k)", q("s_condition_number_abs_max"), "finite")),
         TableRow(("S positive", probe.s_positive, "True")),
-        TableRow(("max neighbour energy jump", q("energy_neighbour_jump_max"), "smoothness proxy")),
+        TableRow(("max neighbour energy jump", q("energy_neighbour_jump_max"), "coarse smoothness proxy; not a convergence proof")),
+        TableRow(("symbol-grid convergence", "pending", "compare symbol/energy/velocity grids under N_u,N_v refinement")),
     )
 
 
@@ -540,7 +541,7 @@ def _finite_field_dc_inputs() -> tuple[InputSpec, ...]:
             "mu",
             "Chemical potential μ",
             "float",
-            0.0,
+            1.23644,
             help="Chemical potential for the selected run, in the active energy units.",
         ),
         InputSpec(
@@ -613,7 +614,7 @@ def _finite_field_dc_input_rows(inputs) -> tuple[TableRow, ...]:
     return (
         TableRow(("dataset", str(inputs.get("dataset", "default")))),
         TableRow(("temperature T", DisplayQuantity(float(inputs.get("temperature", 300.0)), TEMPERATURE, KELVIN, name="temperature"))),
-        TableRow(("chemical potential mu", DisplayQuantity(float(inputs.get("mu", 0.0)), ENERGY, ELECTRON_VOLT, name="mu"))),
+        TableRow(("chemical potential mu", DisplayQuantity(float(inputs.get("mu", 1.23644)), ENERGY, ELECTRON_VOLT, name="mu"))),
         TableRow(("relaxation time tau", DisplayQuantity(float(inputs.get("tau", 1.0)), TIME, FEMTOSECOND, name="tau"))),
         TableRow(("units", str(inputs.get("units", "eVAng")))),
         TableRow(("N_u", int(inputs.get("n_u", 11)))),
@@ -622,68 +623,31 @@ def _finite_field_dc_input_rows(inputs) -> tuple[TableRow, ...]:
         TableRow(("field angle theta", DisplayQuantity(float(inputs.get("theta", 0.0)), DIMENSIONLESS, UNITLESS, name="theta"))),
         TableRow(("band index n", int(inputs.get("band_index", 0)))),
         TableRow(("symmetrization scheme", str(inputs.get("symmetrization", "star")))),
-        TableRow(("reciprocal 2π normalization", "dummy; must be physically audited, not treated as cosmetic convention")),
-        TableRow(("conductivity normalization", "dummy")),
+        TableRow(("band label convention", "energy ordering at each sampled k")),
+        TableRow(("reciprocal 2π normalization", "physical audit required; not cosmetic")),
+        TableRow(("k-domain / reciprocal measure", "sampled reciprocal cell; audited against Vincent and analytic checks")),
+        TableRow(("conductivity normalization", "SI conductivity in S/m after reciprocal-measure and prefactor audit")),
+        TableRow(("report status", "first-pass validation bundle with explicit pending rows")),
     )
 
 
-def _finite_field_dc_section(
-    *,
-    section_id: str,
-    title: str,
-    description: str,
-    claim: str,
-    evidence: tuple[tuple[str, str, str], ...],
-    placeholders: tuple[str, ...],
-    collapsed: bool = False,
-) -> DiagnosticSection:
-    return DiagnosticSection(
-        id=section_id,
-        title=title,
-        description=description,
-        collapsed=collapsed,
-        body=(
-            MarkdownBlock(
-                id=f"{section_id}_prose",
-                title="Validation claim",
-                markdown=f"""**Claim.** {claim}
-
-This section is currently a scaffold. The tables below name the evidence that must be filled in by later diagnostics.
-""",
-            ),
-            Table(
-                id=f"{section_id}_evidence_plan",
-                title="Evidence plan",
-                description="Checks, plots, or tables that will turn this section from prose into validation evidence.",
-                headers=("evidence", "status", "purpose"),
-                rows=tuple(TableRow(row) for row in evidence),
-            ),
-            Table(
-                id=f"{section_id}_placeholders",
-                title="Diagnostic placeholders",
-                description="Concrete diagnostic blocks to replace with computed outputs.",
-                headers=("placeholder", "status"),
-                rows=tuple(TableRow((item, "dummy")) for item in placeholders),
-            ),
-        ),
-    )
 
 
 def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
-    """Scaffold for validating finite-field, band-labelled DC conductivity."""
+    """First-pass report for validating finite-field, band-labelled DC conductivity."""
 
     dashboard_rows = (
-        TableRow(("input health", "dummy", "starred H/S symbols define stable generalized eigenproblems")),
-        TableRow(("band-crossing hazards", "dummy", "near crossings and label jumps are mapped in k-space")),
-        TableRow(("velocity validation", "dummy", "velocity agrees with analytic, finite-difference, unit, Gamma, and Vincent checks")),
-        TableRow(("Vincent reconstruction", "dummy", "2π normalization and residual few-percent gap are isolated")),
-        TableRow(("strong DC contact", "dummy", "strong band-labelled result agrees with Vincent/Ashcroft form in shared regime")),
-        TableRow(("weak DC limit", "dummy", "finite-field result approaches weak-field result as E -> 0")),
-        TableRow(("mode closure", "dummy", "Gamma, F, and tilde(rho) reconstruct total conductivity")),
-        TableRow(("analytic toys", "dummy", "periodic known-input tests give known outputs")),
-        TableRow(("unit consistency", "dummy", "same physical calculation agrees after SI conversion")),
-        TableRow(("k convergence", "dummy", "conductivity stabilizes under N_u, N_v refinement")),
-        TableRow(("symmetry sanity", "dummy", "tensor and direction sweeps obey expected symmetries")),
+        TableRow(("input health", "complete", "selected H/S symbols define stable generalized eigenproblems")),
+        TableRow(("band-crossing hazards", "toy-only", "near crossings and label hazards are mapped on a controlled k-space toy")),
+        TableRow(("velocity validation", "partial", "analytic and finite-difference checks are live; Gamma/Vincent checks remain explicit pending rows")),
+        TableRow(("Vincent reconstruction", "open-audit", "velocity samples are resolved; 2π normalization and residual few-percent conductivity gap remain visible audit items")),
+        TableRow(("strong DC contact", "partial", "strong band-labelled result is checked on Vincent-grid inputs; shared-regime comparison still being tightened")),
+        TableRow(("weak DC limit", "toy-only", "finite-field result approaches weak-field result as E -> 0 in matched spectral-basis toy")),
+        TableRow(("mode closure", "partial", "Gamma, F, and tilde(rho) reconstruct the strong-grid conductivity object; dataset-backed closure remains pending")),
+        TableRow(("analytic toys", "partial", "periodic known-input tests are live; finite-field Gamma/F/rho toy remains pending")),
+        TableRow(("unit consistency", "partial", "core unit factors are checked; full end-to-end SI conductivity agreement remains pending")),
+        TableRow(("k convergence", "toy-only", "periodic quadrature convergence is checked; dataset-backed conductivity convergence remains pending")),
+        TableRow(("symmetry sanity", "toy-only", "toy tensor symmetries are checked; dataset-backed direction sweep remains pending")),
     )
 
     input_rows = _finite_field_dc_input_rows(inputs)
@@ -708,7 +672,7 @@ def compute_finite_field_dc_validation(ctx, inputs) -> DiagnosticResult:
 
     return DiagnosticResult(
         title="Finite-field DC validation",
-        summary="Scaffold for validating finite-field, band-labelled DC conductivity and its lattice-mode decomposition.",
+        summary="First-pass validation report for finite-field, band-labelled DC conductivity and its lattice-mode decomposition.",
         body=(
             DiagnosticSection(
                 id="finite_field_dc_validation_overview",
@@ -727,9 +691,22 @@ The diagnostic is arranged as a validation ladder: first the inputs, then the ve
 """,
                     ),
                     Table(
+                        id="finite_field_dc_validation_dashboard_status_key",
+                        title="Status key",
+                        description="Meaning of dashboard status labels. These labels describe evidence maturity, not final scientific truth.",
+                        headers=("status", "meaning"),
+                        rows=(
+                            TableRow(("complete", "current evidence directly supports the section claim for the selected target")),
+                            TableRow(("partial", "some real evidence exists, but important checks remain")),
+                            TableRow(("toy-only", "real evidence exists, but only on analytic or synthetic toy inputs")),
+                            TableRow(("open-audit", "real evidence exists, but a known discrepancy remains under investigation")),
+                            TableRow(("pending", "planned evidence is visible but not implemented yet")),
+                        ),
+                    ),
+                    Table(
                         id="finite_field_dc_validation_dashboard",
                         title="Validation dashboard",
-                        description="Dummy pass/warn/fail summary. Later sections should feed this table.",
+                        description="First-pass status summary. Later sections provide the evidence and explicit pending rows.",
                         headers=("category", "status", "claim"),
                         rows=dashboard_rows,
                     ),
@@ -752,7 +729,7 @@ The `2π` normalization is listed explicitly because it changes the physical con
                     Table(
                         id="finite_field_dc_validation_inputs_table",
                         title="Selected run",
-                        description="Dummy values until the real diagnostic inputs are wired in.",
+                        description="Selected inputs, conventions, and normalization choices for this validation run.",
                         headers=("input", "value"),
                         rows=input_rows,
                     ),
@@ -761,15 +738,15 @@ The `2π` normalization is listed explicitly because it changes the physical con
             DiagnosticSection(
                 id="finite_field_dc_validation_input_health",
                 title="Input health",
-                description="Algebraic and sampling checks for starred H and S symbols.",
+                description="Algebraic and sampling checks for the selected H and S symbol construction.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_input_health_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The starred Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.
+                        markdown="""**Claim.** For the selected symmetrization scheme, the Hamiltonian and overlap symbols define stable Hermitian generalized eigenproblems over the sampled k-domain.
 
-This first implementation uses controlled production `GdKernelArrays` toy kernels. It validates the same symbol path as the real calculation without loading the full dataset. The raw overlap symbol is checked as Hermitian positive definite, not unitary.
+This first implementation uses controlled production `GdKernelArrays` toy kernels. It validates the same symbol path as the real calculation without loading the full dataset. The raw overlap symbol is checked as Hermitian positive definite, not unitary. When star symmetrization is selected, the diagnostic also reports kernel star defects.
 """,
                     ),
                     Table(
@@ -781,9 +758,9 @@ This first implementation uses controlled production `GdKernelArrays` toy kernel
                     ),
                     Table(
                         id="finite_field_dc_validation_input_health_placeholders",
-                        title="Remaining placeholders",
-                        description="Dataset-backed diagnostics still to replace the toy-backed first implementation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining input-health checks",
+                        description="Dataset-backed checks still needed before this section validates the full production H/S symbol input.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("dataset-backed H/S health table", "pending")),
                             TableRow(("symbol smoothness plot", "pending")),
@@ -795,34 +772,35 @@ This first implementation uses controlled production `GdKernelArrays` toy kernel
             DiagnosticSection(
                 id="finite_field_dc_validation_band_crossing_hazards",
                 title="Band-crossing hazards",
-                description="Maps k-space regions where energy-ordered band labels become fragile.",
+                description="Validates the k-space hazard logic for fragile energy-ordered band labels.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_band_crossing_hazards_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** For the selected energy-ordered band, the diagnostic identifies k-space regions where near crossings or eigenvector jumps can contaminate velocity and conductivity.
+                        markdown="""**Claim.** The diagnostic can identify k-space regions where near crossings make energy-ordered band labels fragile.
 
-This first implementation uses a periodic two-level Dirac-like toy model. It is not a real graphene band map yet. It exists to make the hazard logic concrete: compute adjacent-band gaps, locate the minimum gap, count points below a threshold, and report neighbour-jump smoothness proxies.
+This first implementation uses a periodic two-level Dirac-like toy model. It is not a selected-band graphene map yet. It exists to make the hazard logic concrete: compute adjacent-band gaps, locate the minimum gap, count points below a threshold, and report neighbour-jump smoothness proxies. The production version should use the selected `band_index`, report the adjacent-band gap map, and overlay velocity anomalies near the flagged regions.
 """,
                     ),
                     Table(
                         id="finite_field_dc_validation_band_crossing_hazards_table",
                         title="Band-crossing hazard metrics",
-                        description="First real hazard table for energy-ordered band labels.",
+                        description="Toy-backed hazard table for energy-ordered band labels.",
                         headers=("metric", "value", "target"),
                         rows=_finite_field_band_hazard_rows(band_hazard_probe),
                     ),
                     Table(
                         id="finite_field_dc_validation_band_crossing_hazards_placeholders",
-                        title="Remaining placeholders",
-                        description="Dataset-backed diagnostics still to replace the toy-backed first implementation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining selected-band checks",
+                        description="Dataset-backed checks needed before this section explains anomalies in the chosen conductivity band.",
+                        headers=("check", "status"),
                         rows=(
-                            TableRow(("real band minimum-gap k-map", "pending")),
-                            TableRow(("same-label S-overlap continuation map", "pending")),
-                            TableRow(("velocity anomaly overlay", "pending")),
-                            TableRow(("active near-degenerate subspace comparison", "pending")),
+                            TableRow(("selected-band adjacent-gap k-map", "pending")),
+                            TableRow(("selected-band minimum-gap location table", "pending")),
+                            TableRow(("velocity anomaly overlay near gap hazards", "pending")),
+                            TableRow(("eigenvector-overlap / label-jump k-map", "pending")),
+                            TableRow(("degenerate-subspace fallback check", "pending")),
                         ),
                     ),
                 ),
@@ -830,15 +808,15 @@ This first implementation uses a periodic two-level Dirac-like toy model. It is 
             DiagnosticSection(
                 id="finite_field_dc_validation_velocity_validation",
                 title="Velocity validation",
-                description="Checks the band velocity used by conductivity before conductivity is tested.",
+                description="Checks the derivative machinery used to build band velocities before conductivity is tested.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_velocity_validation_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** Band velocities agree across analytic derivatives, finite differences, generalized Hellmann-Feynman derivatives, and fixed/generic symbol conventions.
+                        markdown="""**Claim.** On a controlled periodic production-symbol toy, the velocity ingredients agree across analytic derivatives, finite differences, generalized Hellmann-Feynman derivatives, and fixed/generic symbol conventions.
 
-This first implementation uses the separable cosine production-symbol toy. It validates the derivative machinery that finite-field conductivity will reuse. Modal Gamma reconstruction, Vincent velocity comparison, and physical unit scaling remain explicit pending rows rather than hidden assumptions.
+This first implementation uses the separable cosine production-symbol toy. It validates the derivative machinery that finite-field conductivity will reuse. Physical `hbar`/unit-context scaling is handled in the unit-scaling section. Modal Gamma reconstruction and Vincent velocity comparison remain explicit pending rows rather than hidden assumptions.
 """,
                     ),
                     Table(
@@ -850,9 +828,9 @@ This first implementation uses the separable cosine production-symbol toy. It va
                     ),
                     Table(
                         id="finite_field_dc_validation_velocity_validation_placeholders",
-                        title="Remaining placeholders",
-                        description="Dataset-backed and Vincent-backed checks still to replace the toy-backed first implementation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining production velocity checks",
+                        description="Dataset-backed and Vincent-backed checks still needed before this section fully validates production band velocities.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("Gamma modal reconstruction", "pending")),
                             TableRow(("Vincent velocity comparison table", "pending")),
@@ -865,15 +843,15 @@ This first implementation uses the separable cosine production-symbol toy. It va
             DiagnosticSection(
                 id="finite_field_dc_validation_vincent_reconstruction",
                 title="Vincent reconstruction",
-                description="Reconstructs Vincent's reference calculation and isolates convention differences.",
+                description="Audits reconstruction of Vincent's reference calculation and isolates remaining convention differences.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_vincent_reconstruction_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The implementation reconstructs Vincent's reference calculation when the same dispersion, units, interpolation convention, k-grid measure, temperature, chemical potential, and relaxation time are used.
+                        markdown="""**Claim.** The implementation exposes which parts of Vincent's reference calculation are reconstructed and which parts remain convention or formula audit items.
 
-This first finite-field validation section reuses the existing Ashcroft/Vincent comparison domain. It exposes the current reconstruction status directly inside the finite-field ladder: velocity samples are resolved by adjacent-simplex Delaunay ambiguity, while the conductivity residual remains a formula/convention audit item.
+This first finite-field validation section reuses the existing Ashcroft/Vincent comparison domain. It shows that the velocity samples are resolved by the adjacent-simplex Delaunay ambiguity. It also reports weak-chain, shifted Eq. 8.30, and strong-grid conductivity traces against Vincent's target trace. The conductivity residual is kept visible as an open audit item rather than treated as a solved validation proof.
 """,
                     ),
                     Table(
@@ -885,12 +863,12 @@ This first finite-field validation section reuses the existing Ashcroft/Vincent 
                     ),
                     Table(
                         id="finite_field_dc_validation_vincent_reconstruction_placeholders",
-                        title="Remaining placeholders",
-                        description="Reconstruction checks still to wire directly into this finite-field validation domain.",
-                        headers=("placeholder", "status"),
+                        title="Remaining Vincent audit checks",
+                        description="Reconstruction checks still needed before this section can claim full agreement with Vincent's reference calculation.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("component-level Vincent tensor table", "pending")),
-                            TableRow(("2π/grid-measure audit rows", "pending")),
+                            TableRow(("explicit 2π/grid-measure ablation table", "pending")),
                             TableRow(("chemical-potential convention sweep", "pending")),
                             TableRow(("direct finite-field reproduction against Vincent inputs", "pending")),
                         ),
@@ -900,7 +878,7 @@ This first finite-field validation section reuses the existing Ashcroft/Vincent 
             DiagnosticSection(
                 id="finite_field_dc_validation_strong_dc_validation",
                 title="Strong DC validation",
-                description="Checks the finite-field band-labelled strong DC tensor in regimes where independent formulae should meet.",
+                description="Checks the band-indexed strong spectral DC tensor on Vincent-grid inputs before dataset-backed finite-field runs.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
@@ -920,12 +898,13 @@ This first implementation reuses the existing `BandIndexedStrongDcResult` on Vin
                     ),
                     Table(
                         id="finite_field_dc_validation_strong_dc_validation_placeholders",
-                        title="Remaining placeholders",
-                        description="Checks still needed for the full finite-field validation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining strong DC checks",
+                        description="Checks still needed before this section validates the full dataset-backed finite-field conductivity target.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("component-level strong tensor table", "pending")),
                             TableRow(("temperature / smoothness regime table", "pending")),
+                            TableRow(("nonzero-field response sweep", "pending")),
                             TableRow(("dataset-backed band-labelled strong DC run", "pending")),
                         ),
                     ),
@@ -934,15 +913,15 @@ This first implementation reuses the existing `BandIndexedStrongDcResult` on Vin
             DiagnosticSection(
                 id="finite_field_dc_validation_weak_dc_limit",
                 title="Weak DC limit",
-                description="Small-field limit of finite-field DC conductivity.",
+                description="Small-field limit check on a matched spectral-basis analytic finite-field toy.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_weak_dc_limit_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The finite-field band-labelled DC conductivity approaches the weak-field DC result as E -> 0 when both calculations use the same spectral derivative basis.
+                        markdown="""**Claim.** On a matched spectral-basis analytic toy, the finite-field DC conductivity approaches the weak-field DC result as E -> 0.
 
-This first implementation reuses the analytic sinusoidal Ashcroft probe. It separates the clean matched-basis weak limit from the Vincent-grid derivative-definition residual exposed in the strong DC section.
+This first implementation reuses the analytic sinusoidal Ashcroft probe. It verifies the zero-field limit and reports finite-field departures across an eta sweep. It separates the clean matched-basis weak limit from the Vincent-grid derivative-definition residual exposed in the strong DC section. Dataset-backed electric-field sweeps remain pending.
 """,
                     ),
                     Table(
@@ -954,9 +933,9 @@ This first implementation reuses the analytic sinusoidal Ashcroft probe. It sepa
                     ),
                     Table(
                         id="finite_field_dc_validation_weak_dc_limit_placeholders",
-                        title="Remaining placeholders",
-                        description="Checks still needed for the full finite-field validation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining weak-limit checks",
+                        description="Checks still needed before this section validates the dataset-backed finite-field weak-limit target.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("dataset-backed E sweep", "pending")),
                             TableRow(("finite-minus-weak error plot", "pending")),
@@ -968,15 +947,15 @@ This first implementation reuses the analytic sinusoidal Ashcroft probe. It sepa
             DiagnosticSection(
                 id="finite_field_dc_validation_mode_decomposition",
                 title="Mode decomposition",
-                description="Closure checks for Gamma, F, and tilde(rho).",
+                description="Closure checks for Gamma, F, and tilde(rho) on the strong-grid mode object.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_mode_decomposition_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the total finite-field band-labelled DC conductivity tensor.
+                        markdown="""**Claim.** On the current strong-grid mode object, the lattice-mode decomposition into Gamma, F, and tilde(rho) reconstructs the sampled fields and total strong spectral DC tensor.
 
-This first implementation checks the actual `BandIndexedStrongDcResult` mode objects: Gamma reconstructs the sampled velocity field, tilde(rho) reconstructs the sampled occupation, and summing the conductivity mode tensor reconstructs the total strong DC tensor.
+This first implementation checks the actual `BandIndexedStrongDcResult` mode objects: Gamma reconstructs the sampled velocity field, tilde(rho) reconstructs the sampled occupation, and summing the conductivity mode tensor reconstructs the total strong DC tensor. This validates the mode algebra used by the finite-field target, but dataset-backed finite-field mode closure remains pending.
 """,
                     ),
                     Table(
@@ -988,9 +967,9 @@ This first implementation checks the actual `BandIndexedStrongDcResult` mode obj
                     ),
                     Table(
                         id="finite_field_dc_validation_mode_decomposition_placeholders",
-                        title="Remaining placeholders",
-                        description="Mode visualisation and dataset-backed closure checks still required.",
-                        headers=("placeholder", "status"),
+                        title="Remaining mode-decomposition checks",
+                        description="Mode visualisation and dataset-backed finite-field closure checks still required.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("component-level mode contribution table", "pending")),
                             TableRow(("cumulative mode contribution curve", "pending")),
@@ -1023,9 +1002,9 @@ This section now summarises the real toy-backed probes used by the validation la
                     ),
                     Table(
                         id="finite_field_dc_validation_analytic_toys_placeholders",
-                        title="Remaining placeholders",
-                        description="Analytic toy coverage still needed for the full finite-field validation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining analytic toy checks",
+                        description="Analytic toy coverage still needed before the full finite-field validation target is independently covered.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("finite-field Gamma/F/rho closure toy", "pending")),
                             TableRow(("periodic two-band conductivity toy", "pending")),
@@ -1037,15 +1016,15 @@ This section now summarises the real toy-backed probes used by the validation la
             DiagnosticSection(
                 id="finite_field_dc_validation_unit_scaling",
                 title="Unit consistency",
-                description="Physical scaling and SI conversion checks.",
+                description="Core physical scaling factors needed for SI conversion checks.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_unit_scaling_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The same physical calculation gives the same SI result after conversion from different internal unit systems.
+                        markdown="""**Claim.** The core unit factors needed by finite-field velocity and conductivity comparisons are explicit and numerically checked.
 
-This first implementation checks the core unit factors that all later finite-field comparisons depend on: Hartree to eV, Bohr to Å, hbar in each working context, velocity scaling, inverse-energy Fermi-window scaling, and the requirement that mu be converted with the Hamiltonian.
+This first implementation checks the conversion factors that later calculation-level comparisons depend on: Hartree to eV, Bohr to Å, hbar in each working context, velocity scaling, inverse-energy Fermi-window scaling, and the requirement that mu be converted with the Hamiltonian. It does not yet prove that a full conductivity calculation is invariant under changing internal unit systems; that remains an explicit pending check.
 """,
                     ),
                     Table(
@@ -1057,9 +1036,9 @@ This first implementation checks the core unit factors that all later finite-fie
                     ),
                     Table(
                         id="finite_field_dc_validation_unit_scaling_placeholders",
-                        title="Remaining placeholders",
-                        description="Full calculation-level unit checks still to replace this lightweight first implementation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining unit-consistency checks",
+                        description="Calculation-level unit checks still needed before this section validates full SI conductivity invariance.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("same physical velocity AU/eVÅ calculation", "covered in Boltzmann tests; pending local summary")),
                             TableRow(("same physical conductivity AU/eVÅ/SI calculation", "pending")),
@@ -1072,15 +1051,15 @@ This first implementation checks the core unit factors that all later finite-fie
             DiagnosticSection(
                 id="finite_field_dc_validation_k_convergence",
                 title="k-point convergence",
-                description="Refinement in N_u and N_v only.",
+                description="Grid-measure refinement checks before dataset-backed conductivity convergence.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_k_convergence_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** The reported conductivity is stable under refinement of N_u and N_v.
+                        markdown="""**Claim.** On a periodic analytic velocity-square toy, the sampled k-grid measure matches the exact full-period average under N_u/N_v refinement.
 
-This first implementation checks the grid-measure part of that claim on a periodic analytic velocity-square average. It is not yet a dataset-backed conductivity convergence table, but it does exercise the normalisation convention before the stronger conductivity comparison is wired in.
+This first implementation checks the grid-measure part of conductivity convergence on a controlled periodic integrand. It is not yet a dataset-backed conductivity convergence table, but it does exercise the normalisation convention before the stronger conductivity comparison is wired in.
 """,
                     ),
                     Table(
@@ -1092,9 +1071,9 @@ This first implementation checks the grid-measure part of that claim on a period
                     ),
                     Table(
                         id="finite_field_dc_validation_k_convergence_placeholders",
-                        title="Remaining placeholders",
-                        description="Dataset-backed convergence still required for the full finite-field validation.",
-                        headers=("placeholder", "status"),
+                        title="Remaining k-convergence checks",
+                        description="Dataset-backed conductivity convergence still required for the full finite-field validation.",
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("sigma component convergence", "pending")),
                             TableRow(("trace / norm convergence", "pending")),
@@ -1107,15 +1086,15 @@ This first implementation checks the grid-measure part of that claim on a period
             DiagnosticSection(
                 id="finite_field_dc_validation_symmetry",
                 title="Symmetry sanity",
-                description="Tensor, k-space, and direction-sweep symmetry checks.",
+                description="Toy tensor and k-inversion checks before dataset-backed lattice symmetry validation.",
                 collapsed=False,
                 body=(
                     MarkdownBlock(
                         id="finite_field_dc_validation_symmetry_prose",
                         title="Validation claim",
-                        markdown="""**Claim.** Tensor components and direction sweeps obey expected lattice and time-reversal symmetries up to finite-size and sampling defects.
+                        markdown="""**Claim.** On a controlled separable-cosine toy, the expected k-inversion and velocity-square tensor symmetries are satisfied up to numerical roundoff.
 
-This first implementation checks the symmetry algebra on a controlled separable cosine toy: even energy under k inversion, odd derivative under k inversion, and a symmetric diagonal velocity-square tensor with vanishing cross component.
+This first implementation checks even energy under k inversion, odd derivatives under k inversion, and a symmetric diagonal velocity-square tensor with vanishing cross component. It does not yet validate dataset-backed H/S/H_star/S_star automorphisms or graphene direction-sweep symmetries; those remain explicit pending checks.
 """,
                     ),
                     Table(
@@ -1127,9 +1106,9 @@ This first implementation checks the symmetry algebra on a controlled separable 
                     ),
                     Table(
                         id="finite_field_dc_validation_symmetry_placeholders",
-                        title="Remaining placeholders",
+                        title="Remaining symmetry checks",
                         description="Dataset-backed symmetry checks still required for the full finite-field validation.",
-                        headers=("placeholder", "status"),
+                        headers=("check", "status"),
                         rows=(
                             TableRow(("H/S/H_star/S_star automorphism checks", "pending")),
                             TableRow(("direction-sweep lattice periodicity", "pending")),
