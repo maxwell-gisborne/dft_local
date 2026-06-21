@@ -8,6 +8,7 @@ import pytest
 
 from dft_local.core.units import (
     CONDUCTIVITY,
+    DIMENSIONLESS,
     ENERGY,
     EV_ANGSTROM_FS,
     INVERSE_ENERGY,
@@ -28,7 +29,7 @@ from dft_local.core.units import (
 )
 
 
-TEST_PERCENT = Unit("%", ENERGY / ENERGY, 0.01)
+TEST_PERCENT = Unit("%", DIMENSIONLESS, 0.01)
 
 def test_dimension_algebra_builds_derived_dimensions() -> None:
     assert VELOCITY == LENGTH / TIME
@@ -76,7 +77,7 @@ def test_quantity_scalar_annotation_exposes_schema_without_wrapping_value() -> N
     @dataclass(frozen=True)
     class ExampleScalars:
         sigma_trace: Annotated[float, qscalar(CONDUCTIVITY, role="conductivity trace")]
-        residual: Annotated[float | None, qscalar(ENERGY / ENERGY, role="residual", display_unit=TEST_PERCENT)]
+        residual: Annotated[float | None, qscalar(DIMENSIONLESS, role="residual", display_unit=TEST_PERCENT)]
         unit_context: UnitContext
 
     obj = ExampleScalars(sigma_trace=2.0, residual=3.0, unit_context=SI_UNITS)
@@ -87,7 +88,7 @@ def test_quantity_scalar_annotation_exposes_schema_without_wrapping_value() -> N
     assert specs["sigma_trace"].dimension == CONDUCTIVITY
     assert specs["sigma_trace"].role == "conductivity trace"
     assert specs["sigma_trace"].display_unit is None
-    assert specs["residual"].dimension == ENERGY / ENERGY
+    assert specs["residual"].dimension == DIMENSIONLESS
     assert specs["residual"].display_unit == TEST_PERCENT
 
 
@@ -110,7 +111,7 @@ def test_diagnostic_scalar_quantity_reifies_field_value_with_context_unit() -> N
 def test_diagnostic_scalar_quantity_uses_display_unit_override() -> None:
     @dataclass(frozen=True)
     class ErrorScalars:
-        residual: Annotated[float, qscalar(ENERGY / ENERGY, role="trace error", display_unit=TEST_PERCENT)]
+        residual: Annotated[float, qscalar(DIMENSIONLESS, role="trace error", display_unit=TEST_PERCENT)]
         unit_context: UnitContext
 
     obj = ErrorScalars(residual=4.1, unit_context=SI_UNITS)
@@ -118,7 +119,7 @@ def test_diagnostic_scalar_quantity_uses_display_unit_override() -> None:
     quantity = diagnostic_scalar_quantity(obj, "residual")
 
     assert quantity.value == pytest.approx(4.1)
-    assert quantity.dimension == ENERGY / ENERGY
+    assert quantity.dimension == DIMENSIONLESS
     assert quantity.unit == TEST_PERCENT
     assert quantity.name == "trace error"
 
