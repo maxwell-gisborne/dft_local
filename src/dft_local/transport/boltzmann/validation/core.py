@@ -79,6 +79,61 @@ class FiniteFieldVincentReconstructionProbe:
 
 
 @dataclass(frozen=True, slots=True)
+class FiniteFieldStrongDcValidationProbe:
+    """Typed scalar result for the strong DC validation panel."""
+
+    unit_context: UnitContext
+    source: str
+
+    mode_count: int
+    nonzero_mode_count: int
+
+    strong_grid_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="strong-grid trace"),
+    ]
+    weak_chain_grid_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="weak-chain grid trace"),
+    ]
+    vincent_target_trace: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="Vincent target trace"),
+    ]
+    strong_vs_weak_rel_trace_gap: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="strong/weak trace gap"),
+    ]
+    strong_vs_vincent_percent_error: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="strong/Vincent trace error", display_unit=PERCENT),
+    ]
+    mode_reconstruction_abs_error: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="mode reconstruction absolute error"),
+    ]
+    imaginary_leakage: Annotated[
+        float,
+        qscalar(CONDUCTIVITY, role="imaginary leakage"),
+    ]
+    imaginary_leakage_ratio: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="imaginary leakage ratio"),
+    ]
+    strongest_mode_fraction: Annotated[
+        float,
+        qscalar(DIMENSIONLESS, role="strongest mode fraction"),
+    ]
+
+    occupation_coeff_shape: tuple[int, int]
+
+    response_factor_finite: bool
+    velocity_coefficients_finite: bool
+    strong_dc_internal_pass: bool
+    residual_status: str
+
+
+@dataclass(frozen=True, slots=True)
 class OperatorValidationSummary:
     """Compact status summary for the operator-validation domain."""
 
@@ -1159,7 +1214,7 @@ def finite_field_vincent_reconstruction_probe() -> FiniteFieldVincentReconstruct
     )
 
 
-def finite_field_strong_dc_validation_probe() -> dict[str, float | int | bool | str]:
+def finite_field_strong_dc_validation_probe() -> FiniteFieldStrongDcValidationProbe:
     """Validate the band-indexed strong spectral DC tensor on Vincent inputs."""
 
     from dft_local.transport.boltzmann.ashcroft_comparison.core import (
@@ -1221,31 +1276,34 @@ def finite_field_strong_dc_validation_probe() -> dict[str, float | int | bool | 
     nonzero_mode_count = int(np.count_nonzero(mode_abs > 1.0e-18))
     mode_count = int(mode_abs.size)
 
-    return {
-        "source": "BandIndexedStrongDcResult on Vincent epsilon grid",
-        "mode_count": mode_count,
-        "nonzero_mode_count": nonzero_mode_count,
-        "strong_grid_trace_S_per_m": float(strong_trace),
-        "weak_chain_grid_trace_S_per_m": float(weak_trace),
-        "vincent_target_trace_S_per_m": float(target_trace),
-        "strong_vs_weak_rel_trace_gap": float(strong_vs_weak_rel_trace_gap),
-        "strong_vs_vincent_percent_error": float(strong_vs_vincent_percent_error),
-        "mode_reconstruction_abs_error": float(mode_reconstruction_abs_error),
-        "imaginary_leakage_S": float(strong.imaginary_leakage_S),
-        "imaginary_leakage_ratio": float(imaginary_leakage_ratio),
-        "strongest_mode_fraction": float(strongest_mode_fraction),
-        "occupation_coeff_shape_0": int(strong.occupation_coefficients.shape[0]),
-        "occupation_coeff_shape_1": int(strong.occupation_coefficients.shape[1]),
-        "response_factor_finite": bool(np.isfinite(strong.response_factor).all()),
-        "velocity_coefficients_finite": bool(np.isfinite(strong.velocity_coefficients_m_per_s_per_m2).all()),
-        "strong_dc_internal_pass": bool(
+    return FiniteFieldStrongDcValidationProbe(
+        unit_context=SI_UNITS,
+        source="BandIndexedStrongDcResult on Vincent epsilon grid",
+        mode_count=mode_count,
+        nonzero_mode_count=nonzero_mode_count,
+        strong_grid_trace=float(strong_trace),
+        weak_chain_grid_trace=float(weak_trace),
+        vincent_target_trace=float(target_trace),
+        strong_vs_weak_rel_trace_gap=float(strong_vs_weak_rel_trace_gap),
+        strong_vs_vincent_percent_error=float(strong_vs_vincent_percent_error),
+        mode_reconstruction_abs_error=float(mode_reconstruction_abs_error),
+        imaginary_leakage=float(strong.imaginary_leakage_S),
+        imaginary_leakage_ratio=float(imaginary_leakage_ratio),
+        strongest_mode_fraction=float(strongest_mode_fraction),
+        occupation_coeff_shape=(
+            int(strong.occupation_coefficients.shape[0]),
+            int(strong.occupation_coefficients.shape[1]),
+        ),
+        response_factor_finite=bool(np.isfinite(strong.response_factor).all()),
+        velocity_coefficients_finite=bool(np.isfinite(strong.velocity_coefficients_m_per_s_per_m2).all()),
+        strong_dc_internal_pass=bool(
             mode_reconstruction_abs_error < 1.0e-18
             and imaginary_leakage_ratio < 1.0e-12
             and np.isfinite(strongest_mode_fraction)
             and np.isfinite(strong_vs_weak_rel_trace_gap)
         ),
-        "residual_status": "strong spectral tensor is internally closed; weak-chain gap is derivative-definition residual",
-    }
+        residual_status="strong spectral tensor is internally closed; weak-chain gap is derivative-definition residual",
+    )
 
 
 def finite_field_weak_dc_limit_probe() -> dict[str, float | int | bool | str]:

@@ -45,6 +45,7 @@ from dft_local.transport.boltzmann.validation.core import (
     finite_field_vincent_reconstruction_probe,
     FiniteFieldVincentReconstructionProbe,
     finite_field_strong_dc_validation_probe,
+    FiniteFieldStrongDcValidationProbe,
     finite_field_weak_dc_limit_probe,
     finite_field_mode_decomposition_probe,
     operator_symbol_validation_probe,
@@ -414,25 +415,27 @@ def _finite_field_vincent_rows(probe: FiniteFieldVincentReconstructionProbe) -> 
     )
 
 
-def _finite_field_strong_dc_rows(probe: dict[str, object]) -> tuple[TableRow, ...]:
+def _finite_field_strong_dc_rows(probe: FiniteFieldStrongDcValidationProbe) -> tuple[TableRow, ...]:
+    q = lambda field: diagnostic_scalar_quantity(probe, field)
+
     return (
-        TableRow(("source", _fmt_probe_value(probe["source"]), "reused strong DC implementation")),
-        TableRow(("mode count", _fmt_probe_value(probe["mode_count"]), "FFT modes")),
-        TableRow(("nonzero mode count", _fmt_probe_value(probe["nonzero_mode_count"]), "active modes")),
-        TableRow(("strong-grid trace", _fmt_probe_value(probe["strong_grid_trace_S_per_m"]), "S/m")),
-        TableRow(("weak-chain grid trace", _fmt_probe_value(probe["weak_chain_grid_trace_S_per_m"]), "S/m")),
-        TableRow(("Vincent target trace", _fmt_probe_value(probe["vincent_target_trace_S_per_m"]), "S/m")),
-        TableRow(("strong/weak trace gap", _fmt_probe_value(probe["strong_vs_weak_rel_trace_gap"]), "known derivative residual")),
-        TableRow(("strong/Vincent trace error %", _fmt_probe_value(probe["strong_vs_vincent_percent_error"]), "audit residual")),
-        TableRow(("mode reconstruction abs error", _fmt_probe_value(probe["mode_reconstruction_abs_error"]), "near 0")),
-        TableRow(("imaginary leakage", _fmt_probe_value(probe["imaginary_leakage_S"]), "near 0")),
-        TableRow(("imaginary leakage ratio", _fmt_probe_value(probe["imaginary_leakage_ratio"]), "near 0")),
-        TableRow(("strongest mode fraction", _fmt_probe_value(probe["strongest_mode_fraction"]), "finite")),
-        TableRow(("occupation coeff shape", f"{probe['occupation_coeff_shape_0']} × {probe['occupation_coeff_shape_1']}", "grid shape")),
-        TableRow(("response factor finite", _fmt_probe_value(probe["response_factor_finite"]), "True")),
-        TableRow(("velocity coefficients finite", _fmt_probe_value(probe["velocity_coefficients_finite"]), "True")),
-        TableRow(("strong DC internal pass", _fmt_probe_value(probe["strong_dc_internal_pass"]), "True")),
-        TableRow(("residual status", _fmt_probe_value(probe["residual_status"]), "audit note")),
+        TableRow(("source", probe.source, "reused strong DC implementation")),
+        TableRow(("mode count", probe.mode_count, "FFT modes")),
+        TableRow(("nonzero mode count", probe.nonzero_mode_count, "active modes")),
+        TableRow(("strong-grid trace", q("strong_grid_trace"), "S/m")),
+        TableRow(("weak-chain grid trace", q("weak_chain_grid_trace"), "S/m")),
+        TableRow(("Vincent target trace", q("vincent_target_trace"), "S/m")),
+        TableRow(("strong/weak trace gap", q("strong_vs_weak_rel_trace_gap"), "known derivative residual")),
+        TableRow(("strong/Vincent trace error %", q("strong_vs_vincent_percent_error"), "audit residual")),
+        TableRow(("mode reconstruction abs error", q("mode_reconstruction_abs_error"), "near 0")),
+        TableRow(("imaginary leakage", q("imaginary_leakage"), "near 0")),
+        TableRow(("imaginary leakage ratio", q("imaginary_leakage_ratio"), "near 0")),
+        TableRow(("strongest mode fraction", q("strongest_mode_fraction"), "finite")),
+        TableRow(("occupation coeff shape", f"{probe.occupation_coeff_shape[0]} × {probe.occupation_coeff_shape[1]}", "grid shape")),
+        TableRow(("response factor finite", probe.response_factor_finite, "True")),
+        TableRow(("velocity coefficients finite", probe.velocity_coefficients_finite, "True")),
+        TableRow(("strong DC internal pass", probe.strong_dc_internal_pass, "True")),
+        TableRow(("residual status", probe.residual_status, "audit note")),
     )
 
 

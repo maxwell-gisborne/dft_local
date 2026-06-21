@@ -861,16 +861,16 @@ def test_finite_field_strong_dc_validation_probe_checks_mode_closure() -> None:
 
     probe = finite_field_strong_dc_validation_probe()
 
-    assert probe["mode_count"] > 0
-    assert probe["nonzero_mode_count"] > 0
-    assert probe["strong_grid_trace_S_per_m"] > 0.0
-    assert probe["weak_chain_grid_trace_S_per_m"] > 0.0
-    assert abs(probe["strong_vs_weak_rel_trace_gap"]) < 0.2
-    assert probe["mode_reconstruction_abs_error"] < 1.0e-18
-    assert probe["imaginary_leakage_ratio"] < 1.0e-12
-    assert probe["response_factor_finite"] is True
-    assert probe["velocity_coefficients_finite"] is True
-    assert probe["strong_dc_internal_pass"] is True
+    assert probe.mode_count > 0
+    assert probe.nonzero_mode_count > 0
+    assert probe.strong_grid_trace > 0.0
+    assert probe.weak_chain_grid_trace > 0.0
+    assert abs(probe.strong_vs_weak_rel_trace_gap) < 0.2
+    assert probe.mode_reconstruction_abs_error < 1.0e-18
+    assert probe.imaginary_leakage_ratio < 1.0e-12
+    assert probe.response_factor_finite is True
+    assert probe.velocity_coefficients_finite is True
+    assert probe.strong_dc_internal_pass is True
 
 
 def test_finite_field_dc_strong_dc_section_contains_real_metrics() -> None:
